@@ -217,8 +217,27 @@ randomUniform low high = T (funcall "tf.random_uniform" [showShape @s
                                                         ,named "maxval" (float high)
                                                         ,named "dtype" (showTyp @t)])
 
+randomOrthogonal :: forall n s t. (KnownBits t, KnownNat n, KnownShape s) => T (n ':s) ('Typ 'Float t)
+randomOrthogonal = T (funcall "tf.orthogonal_initializer" [named "shape" (showShape @(n ': s))
+                                                          ,named "dtype" (showTyp @('Typ 'Float t))])
+
 constant :: forall s w. KnownShape s => Float -> T s ('Typ 'Float w)
 constant c = T (funcall "tf.constant" [float c, named "shape" (showShape @s)])
+
+
+---------------------------
+-- Contrib
+
+
+glorotUniform :: forall a b t. (KnownNat a, KnownNat b, KnownTyp t) => Tensor '[a,b] t
+glorotUniform = randomUniform low high
+  where
+    low, high, fan_in, fan_out :: Float
+    low = -4.0 Prelude.* Prelude.sqrt(6.0/(fan_in Prelude.+ fan_out)) -- use 4 for sigmoid, 1 for tanh activation 
+    high = 4.0 Prelude.* Prelude.sqrt(6.0/(fan_in Prelude.+ fan_out))
+    fan_in = fromIntegral (natVal (Proxy @ a))
+    fan_out = fromIntegral (natVal (Proxy @ b))
+
 
 -------------------------
 -- Generic parameters
@@ -226,7 +245,7 @@ constant c = T (funcall "tf.constant" [float c, named "shape" (showShape @s)])
 class Parameter p where
   parameter :: String -> p -> Gen p
 
-instance KnownShape shape => Parameter (T shape t) where
+instance Parameter (T shape t) where
   parameter = parameter'
 
 instance (Parameter p, Parameter q) => Parameter (p,q) where
@@ -237,7 +256,3 @@ instance (Parameter p1, Parameter p2, Parameter p3) => Parameter (p1,p2,p3) wher
 
 instance (Parameter p1, Parameter p2, Parameter p3, Parameter p4) => Parameter (p1,p2,p3,p4) where
   parameter s (x,y,z,w) = (,,,) <$> parameter (s<>"_1") x <*> parameter (s<>"_2") y <*> parameter (s<>"_3") z <*> parameter (s<>"_4") w
-
--- Local Variables:
--- dante-project-root: ".."
--- End:

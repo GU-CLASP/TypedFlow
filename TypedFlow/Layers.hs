@@ -22,7 +22,7 @@ module TypedFlow.Layers where
 import Prelude hiding (tanh,Num(..),Floating(..))
 import qualified Prelude
 import GHC.TypeLits
-import Text.PrettyPrint.Compact (text)
+-- import Text.PrettyPrint.Compact (text)
 import Data.Proxy
 
 import TypedFlow.TF
@@ -55,19 +55,16 @@ type (a ⊸ b) = (Tensor '[a,b] Float32, Tensor '[b] Float32)
 -- Feed-forward layers
 
 -- | embedding layer
+
+type EmbbeddingP numObjects embeddingSize t = Tensor '[numObjects, embeddingSize] ('Typ 'Float t)
+
+embeddingInitializer :: (KnownNat numObjects, KnownBits b, KnownNat embeddingSize) => EmbbeddingP numObjects embeddingSize b
+embeddingInitializer = randomUniform (-1) 1
+
 embedding :: ∀ embeddingSize numObjects batchSize t.
-             Tensor '[numObjects, embeddingSize] t -> Tensor '[1,batchSize] Int32 -> Tensor '[embeddingSize,batchSize] t
+             EmbbeddingP numObjects embeddingSize t -> Tensor '[1,batchSize] Int32 -> Tensor '[embeddingSize,batchSize] ('Typ 'Float t)
 embedding param input = gather @ '[embeddingSize] (transpose param) (squeeze0 input)
 
-
-glorotUniform :: forall a b t. (KnownNat a, KnownNat b, KnownTyp t) => Tensor '[a,b] t
-glorotUniform = randomUniform low high
-  where
-    low, high, fan_in, fan_out :: Float
-    low = -4.0 Prelude.* Prelude.sqrt(6.0/(fan_in Prelude.+ fan_out)) -- use 4 for sigmoid, 1 for tanh activation 
-    high = 4.0 Prelude.* Prelude.sqrt(6.0/(fan_in Prelude.+ fan_out))
-    fan_in = fromIntegral (natVal (Proxy @ a))
-    fan_out = fromIntegral (natVal (Proxy @ b))
 
 denseInitialiser :: (KnownNat n, KnownNat m) => (n ⊸ m)
 denseInitialiser = (glorotUniform,truncatedNormal 0.1)
@@ -114,11 +111,25 @@ type RnnCell state input output = (state , input) -> Gen (state , output)
 timeDistribute :: (Tensor a t -> Tensor b t') -> RnnCell () (T a t) (T b t')
 timeDistribute pureLayer (s,a) = return (s, pureLayer a)
 
-lstm :: ∀ n x bs. (KnownNat bs) => 
-        (((n + x) ⊸ n),
-         ((n + x) ⊸ n),
-         ((n + x) ⊸ n),
-         ((n + x) ⊸ n)) ->
+cellInitializerBit :: ∀ n x. (KnownNat n, KnownNat x) => (n + x) ⊸ n
+cellInitializerBit = (concat0 recurrentInitializer kernelInitializer,biasInitializer)
+  where
+        recurrentInitializer :: Tensor '[n, n] Float32
+        recurrentInitializer = randomOrthogonal
+        kernelInitializer :: Tensor '[x, n] Float32
+        kernelInitializer = glorotUniform
+        biasInitializer = zeros
+
+type LSTMP n x = (((n + x) ⊸ n),
+                  ((n + x) ⊸ n),
+                  ((n + x) ⊸ n),
+                  ((n + x) ⊸ n))
+
+lstmInitializer :: (KnownNat n, KnownNat x) => LSTMP n x
+lstmInitializer = (cellInitializerBit, cellInitializerBit, cellInitializerBit,cellInitializerBit)
+
+
+lstm :: ∀ n x bs. (KnownNat bs) => LSTMP n x ->
         RnnCell (T '[n,bs] Float32, T '[n,bs] Float32) (Tensor '[x,bs] Float32) (Tensor '[n,bs] Float32)
 lstm (wf,wi,wc,wo) ((ht1 , ct1) , input) = do
   hx <- assign (concat0 ht1 input)
