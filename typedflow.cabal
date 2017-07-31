@@ -1,0 +1,22 @@
+name:           typedflow
+version:        0.1
+category:       Deep Learning
+synopsis:       Typed frontend to TensorFlow and higher-order deep learning
+description:    Typed frontend to TensorFlow and higher-order deep learning
+license:        LGPL-3
+license-file:   LICENSE
+author:         Jean-Philippe Bernardy
+maintainer:     jean-philippe.bernardy@gu.se
+Cabal-Version:  >= 1.12
+build-type:     Simple
+
+library
+  default-language: Haskell2010
+  build-depends:
+    base==4.*,
+    ghc-typelits-knownnat,
+    pretty-compact,
+    mtl
+
+  exposed-modules:
+       TypedFlow

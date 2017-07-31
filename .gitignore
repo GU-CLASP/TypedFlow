@@ -1,3 +1,5 @@
+.styx
+*~
 dist
 dist-*
 cabal-dev
