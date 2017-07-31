@@ -20,10 +20,8 @@
 module TypedFlow.Layers where
 
 import Prelude hiding (tanh,Num(..),Floating(..))
-import qualified Prelude
+import qualified Prelude ()
 import GHC.TypeLits
--- import Text.PrettyPrint.Compact (text)
-import Data.Proxy
 
 import TypedFlow.TF
 import TypedFlow.Types
@@ -62,8 +60,8 @@ embeddingInitializer :: (KnownNat numObjects, KnownBits b, KnownNat embeddingSiz
 embeddingInitializer = randomUniform (-1) 1
 
 embedding :: ∀ embeddingSize numObjects batchSize t.
-             EmbbeddingP numObjects embeddingSize t -> Tensor '[1,batchSize] Int32 -> Tensor '[embeddingSize,batchSize] ('Typ 'Float t)
-embedding param input = gather @ '[embeddingSize] (transpose param) (squeeze0 input)
+             EmbbeddingP numObjects embeddingSize t -> Tensor '[batchSize] Int32 -> Tensor '[embeddingSize,batchSize] ('Typ 'Float t)
+embedding param input = gather @ '[embeddingSize] (transpose param) input
 
 
 denseInitialiser :: (KnownNat n, KnownNat m) => (n ⊸ m)
@@ -105,11 +103,9 @@ type RnnCell state input output = (state , input) -> Gen (state , output)
 
 -- | Any pure function (feed-forward layer) can be transformed into a
 -- cell by ignoring the RNN state.
--- timeDistribute :: (Tensor (a ': batchShape) -> Tensor (b ': batchShape)) -> RnnCell () (a ': batchShape) (b ': batchShape)
--- timeDistribute pureLayer (s,a) = return (s, pureLayer a)
 
-timeDistribute :: (Tensor a t -> Tensor b t') -> RnnCell () (T a t) (T b t')
-timeDistribute pureLayer (s,a) = return (s, pureLayer a)
+timeDistribute :: (a -> b) -> RnnCell () a b
+timeDistribute pureLayer ((),a) = return ((), pureLayer a)
 
 cellInitializerBit :: ∀ n x. (KnownNat n, KnownNat x) => (n + x) ⊸ n
 cellInitializerBit = (concat0 recurrentInitializer kernelInitializer,biasInitializer)

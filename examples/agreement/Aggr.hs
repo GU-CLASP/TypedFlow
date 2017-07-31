@@ -10,9 +10,9 @@ module Aggr where
 
 import TypedFlow
 
+
 agreement :: KnownNat batchSize => Tensor '[20,batchSize] Int32 -> Gen (Tensor '[20,batchSize] Float32)
-agreement input' = do
-  let input = expandDim1 input'
+agreement input = do
   embs <- parameter "embs" embeddingInitializer
   lstm1 <- parameter "w1" lstmInitializer
   lstm2 <- parameter "w2" lstmInitializer
