@@ -35,7 +35,10 @@ matvecmul :: Tensor (cols ': rows ': '[]) t -> Tensor (cols ': batchSize ': '[])
 matvecmul m v = matmul v (transpose m)
 
 (∙) :: Tensor '[cols, rows] t -> Tensor '[cols,batchSize] t -> Tensor '[rows,batchSize] t
-(∙) = matvecmul
+x ∙ y = matvecmul x y
+
+(·) :: ∀ cols batchSize t. Tensor '[cols,batchSize] t -> Tensor '[cols,batchSize] t -> Tensor '[batchSize] t
+x · y = reduceSum0 (x ⊙ y)
 
 
 ---------------------
@@ -155,6 +158,29 @@ infixr .--.
 -- layer @l@ will observe.
 addAttention :: KnownShape s => (state -> T (x ': s) t) -> RnnCell state (T ((a+x) ': s) t) (T (b ': s) t) -> RnnCell state (T (a ': s) t) (T (b ': s) t)
 addAttention attn l (s,a) = l (s,concat0 a (attn s))
+
+
+repeatT :: ∀ n s t. T s t -> T (n ': s) t
+repeatT = error " TODO "
+
+concat1 :: ∀ x ys d1 d2 t. (KnownShape ys) =>  T (x ': d1 ': ys) t -> T (x ': d2 ': ys) t -> T (x ': (d1 + d2) ': ys) t
+concat1 = error " TODO "
+
+mapT :: (T '[x,batchSize] t -> T '[y,batchSize] u) ->  T '[n,x,batchSize] t -> T '[n,y,batchSize] u
+mapT =  error " TODO "
+
+
+attnExample :: ∀ d m e batchSize. (KnownNat m, KnownNat batchSize) =>
+               ((e+d) ⊸ 1) ->
+               T '[m,d,batchSize] Float32 -> T '[e,batchSize] Float32 -> T '[d,batchSize] Float32
+attnExample w h st = ct
+  where ct :: T '[d,batchSize] Float32
+        ct = squeeze0 (matmul h (expandDim0 αt))
+        αt :: T '[m,batchSize] Float32
+        αt = softmax0 (squeeze1 (mapT (dense w) (concat1 (repeatT st) h)))
+
+
+-- attnExample' w h e  = addAttention (attnExample w h) (lstm _)
 
 
 -- | Build a RNN by repeating a cell @n@ times.

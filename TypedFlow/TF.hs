@@ -58,7 +58,7 @@ reduceSum, reduceMean :: ∀ s s' n t. KnownLen s' => Tensor (s ++ (n ': s')) t 
 reduceSum = reduce @s @s' @n "sum"
 reduceMean = reduce @s @s' @n "mean"
 
-reduceSum0 :: ∀ s' n. KnownLen s' => Tensor (n ': s') Float32 -> Tensor s' Float32
+reduceSum0 :: ∀ s' n t. KnownLen s' => Tensor (n ': s') t -> Tensor s' t
 reduceSum0 = reduceSum @'[]
 
 add :: ∀ s d t. Tensor (d++s) t -> Tensor d t -> Tensor (d++s) t -- note ++s for for 'broadcasting'
@@ -87,6 +87,8 @@ equal = binOp "tf.equal"
 
 matmul :: Tensor (o ': n ': s) t -> Tensor (m ': o ': s) t -> Tensor (m ': n ': s) t
 matmul = binOp "tf.matmul"
+
+
 
 sigmoid, tanh, log, relu :: ∀ s. Tensor s Float32 -> Tensor s Float32
 sigmoid = unOp "tf.sigmoid"
@@ -125,6 +127,9 @@ squeeze (T x) = T (funcall "tf.squeeze" [x, text "axis=" <> integer (shapeLen @ 
 
 squeeze0 :: ∀ s t. KnownLen s => Tensor (1 ': s) t -> Tensor s t
 squeeze0 = squeeze @ '[]
+
+squeeze1 :: ∀ n s t. KnownLen s => Tensor (n ': 1 ': s) t -> Tensor (n ': s) t
+squeeze1 = squeeze @ '[n]
 
 linearize2 :: ∀ m n s t. (KnownNat m, KnownNat n, KnownShape s) => Tensor (m ': n ': s) t -> Tensor (m*n ': s) t
 linearize2 (T t) = T (funcall "tf.reshape" [t, showShapeMinus @(m*n ': s)])
@@ -184,7 +189,7 @@ convolution (T input) (T filters) = T (funcall "tf.nn.convolution" [input,filter
 
 
 
-softmax0 :: T (n ': s) Float32 -> T (n ': s) Float32
+softmax0 :: T (n ': s) ('Typ 'Float w) -> T (n ': s) ('Typ 'Float w)
 softmax0 = unOp "tf.nn.softmax"
 
 round :: T s ('Typ 'Float w) -> T s ('Typ 'Float w)
