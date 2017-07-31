@@ -40,6 +40,11 @@ x ∙ y = matvecmul x y
 (·) :: ∀ cols batchSize t. Tensor '[cols,batchSize] t -> Tensor '[cols,batchSize] t -> Tensor '[batchSize] t
 x · y = reduceSum0 (x ⊙ y)
 
+mapT :: KnownNat n => (T '[x,batchSize] t -> T '[y,batchSize] u) ->  T '[n,x,batchSize] t -> Gen (T '[n,y,batchSize] u)
+mapT f t = do
+  xs <- unstack t
+  return (stack (fmap f xs))
+
 
 ---------------------
 -- Linear functions
@@ -152,35 +157,34 @@ infixr .--.
 (.--.) = stackRnnLayers
 
 -- | @addAttention attn l@ adds the attention function @attn@ to the
--- layer @l@.  Note that @attn@ can depend in particular on a constant
--- external value @h@ which is the complete input to pay attention to.
--- The type parameter @x@ is the size of the portion of @h@ that the
--- layer @l@ will observe.
-addAttention :: KnownShape s => (state -> T (x ': s) t) -> RnnCell state (T ((a+x) ': s) t) (T (b ': s) t) -> RnnCell state (T (a ': s) t) (T (b ': s) t)
-addAttention attn l (s,a) = l (s,concat0 a (attn s))
+-- rnn cell @l@.  Note that @attn@ can depend in particular on a
+-- constant external value @h@ which is the complete input to pay
+-- attention to.  The type parameter @x@ is the size of the portion of
+-- @h@ that the cell @l@ will observe.
+addAttention :: KnownShape s =>
+                (state -> Gen (T (x ': s) t)) ->
+                RnnCell state (T ((a+x) ': s) t) (T (b ': s) t) ->
+                RnnCell state (T ( a    ': s) t) (T (b ': s) t)
+addAttention attn l (s,a) = do
+  focus <- attn s
+  l (s,concat0 a focus)
 
 
-repeatT :: ∀ n s t. T s t -> T (n ': s) t
-repeatT = error " TODO "
-
-concat1 :: ∀ x ys d1 d2 t. (KnownShape ys) =>  T (x ': d1 ': ys) t -> T (x ': d2 ': ys) t -> T (x ': (d1 + d2) ': ys) t
-concat1 = error " TODO "
-
-mapT :: (T '[x,batchSize] t -> T '[y,batchSize] u) ->  T '[n,x,batchSize] t -> T '[n,y,batchSize] u
-mapT =  error " TODO "
-
-
-attnExample :: ∀ d m e batchSize. (KnownNat m, KnownNat batchSize) =>
+-- | @attnExample1 θ h st@ combines each element of the vector h with
+-- s, and applies a dense layer with parameters θ. The "winning"
+-- element of h (using softmax) is returned.
+attnExample1 :: ∀ d m e batchSize. (KnownNat m, KnownNat batchSize) =>
                ((e+d) ⊸ 1) ->
-               T '[m,d,batchSize] Float32 -> T '[e,batchSize] Float32 -> T '[d,batchSize] Float32
-attnExample w h st = ct
-  where ct :: T '[d,batchSize] Float32
+               T '[m,d,batchSize] Float32 -> T '[e,batchSize] Float32 -> Gen (T '[d,batchSize] Float32)
+attnExample1 w h st = do
+  xx <- mapT (dense w) (concat1 (replicateT st) h)
+  let   αt :: T '[m,batchSize] Float32
+        αt = softmax0 (squeeze1 xx)
+        ct :: T '[d,batchSize] Float32
         ct = squeeze0 (matmul h (expandDim0 αt))
-        αt :: T '[m,batchSize] Float32
-        αt = softmax0 (squeeze1 (mapT (dense w) (concat1 (repeatT st) h)))
+  return ct
 
-
--- attnExample' w h e  = addAttention (attnExample w h) (lstm _)
+-- attnExample' θ1 θ2 h  = addAttention (attnExample1 θ1 h . snd) (lstm θ2)
 
 
 -- | Build a RNN by repeating a cell @n@ times.

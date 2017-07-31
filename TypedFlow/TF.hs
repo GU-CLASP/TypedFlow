@@ -21,6 +21,7 @@ module TypedFlow.TF where
 
 import Prelude hiding (tanh,Num(..),Floating(..))
 import qualified Prelude
+import Prelude ((-))
 import Text.PrettyPrint.Compact hiding (Last)
 import GHC.TypeLits
 import Data.Proxy
@@ -104,23 +105,37 @@ split0 (T x) = do
   gen (v1 <> text "," <> v2 <> text " = " <> funcall "tf.split" [x, list [showDim @ n, showDim @ m], text "axis=" <> showShapeLen @batchShape])
   return (T v1, T v2)
 
+concatT :: ∀ n d1 d2 s t.
+    (KnownPeano n, KnownLen s, (d1+d2) ~ At n s) =>
+    T (Take n s ++ (d1 ': Drop (Succ n) s)) t -> T (Take n s ++ (d2 ': Drop ('Succ n) s)) t -> T s t
+concatT (T x) (T y) = T (funcall "tf.concat" [list [x,y], text "axis=" <> integer (shapeLen @s - peanoInt @n - 1)])
+
 concat0 :: ∀ ys d1 d2 t. (KnownShape ys) =>  T (d1 ': ys) t -> T (d2 ': ys) t -> T ((d1 + d2) ': ys) t
-concat0 t u =
-  let T x = t
-      T y = u
-  in (T (funcall "tf.concat" [list [x,y], text "axis=" <> integer (shapeLen @ ys)]))
+concat0 = concatT @Dim0
+  -- let T x = t
+  --     T y = u
+  -- in (T (funcall "tf.concat" [list [x,y], text "axis=" <> integer (shapeLen @ ys)]))
 
-expandDim :: ∀ s0 s t. KnownLen s => Tensor (s0 ++ s) t -> Tensor (s0 ++ (1 ': s)) t
-expandDim (T x) = (T (funcall "tf.expand_dims" [x, text "axis=" <> integer (shapeLen @ s)]))
+concat1 :: ∀ n ys d1 d2 t. (KnownShape ys) =>  T (n ': d1 ': ys) t -> T (n ': d2 ': ys) t -> T (n ': (d1 + d2) ': ys) t
+concat1 = concatT @Dim1
 
-expandDim' :: forall n s t. KnownLen s => Tensor s t -> Tensor (Take n s ++ (1 ': Drop n s)) t
-expandDim' (T x) = (T (funcall "tf.expand_dims" [x, text "axis=" <> integer (shapeLen @ s)]))
+-- expandDim :: ∀ s0 s t. KnownLen s => Tensor (s0 ++ s) t -> Tensor (s0 ++ (1 ': s)) t
+-- expandDim (T x) = (T (funcall "tf.expand_dims" [x, text "axis=" <> integer (shapeLen @ s)]))
 
-expandDim0 :: ∀ s t. KnownShape s => Tensor s t -> Tensor (1 ': s) t
+expandDim' :: forall n s t. (KnownLen s, KnownPeano n) => Tensor s t -> Tensor (Take n s ++ (1 ': Drop n s)) t
+expandDim' (T x) = (T (funcall "tf.expand_dims" [x, text "axis=" <> integer (shapeLen @s - peanoInt @n)]))
+
+expandDim0 :: ∀ s t. KnownLen s => Tensor s t -> Tensor (1 ': s) t
 expandDim0 = expandDim' @Dim0
 
 expandDim1 :: ∀ n s t. KnownShape s => Tensor (n ': s) t -> Tensor (n ': 1 ': s) t
 expandDim1 = expandDim' @Dim1
+
+tile :: forall m n s t. (KnownNat m) => Tensor (n ': s) t -> Tensor ((m * n) ': s) t
+tile (T x) = T (funcall "tf.tile" [x, integer (natVal (Proxy @m))])
+
+replicateT :: ∀ n s t. (KnownNat n, KnownLen s) => T s t -> T (n ': s) t
+replicateT = tile @n . expandDim0
 
 squeeze :: ∀ s0 s1 t. KnownLen s1 => Tensor (s0 ++ (1 ': s1)) t -> Tensor (s0 ++ s1) t
 squeeze (T x) = T (funcall "tf.squeeze" [x, text "axis=" <> integer (shapeLen @ s1)])
@@ -143,14 +158,14 @@ arrange2 (T t) = T (funcall "tf.reshape" [t, showShapeMinus @(m ': n ': s)])
 arrange3 :: ∀ m n o s t. (KnownNat m, KnownNat n, KnownNat o, KnownShape s) => Tensor (m*n*o ': s) t -> Tensor (m ': n ': o ': s) t
 arrange3 (T t) = T (funcall "tf.reshape" [t, showShapeMinus @(m ': n ': o ': s)])
 
-unstack :: ∀ s (n::Nat) t. (KnownShape s, KnownNat n) => Tensor (n ': s) t -> Gen (V n (T s t))
+unstack :: ∀ s (n::Nat) t. (KnownLen s, KnownNat n) => Tensor (n ': s) t -> Gen (V n (T s t))
 unstack (T x) = do
   v <- newVar
   v <-- T (funcall "tf.unstack" [x, text "axis=" <> integer (shapeLen @ s)])
   return $ V $ [ T $ v <> brackets (integer i)| i <- [0..n Prelude.- 1] ]
         where n = natVal (Proxy @ n)
 
-stack :: ∀ s (n::Nat) t. (KnownShape s) => V n (T s t) -> Tensor (n ': s) t
+stack :: ∀ s (n::Nat) t. (KnownLen s) => V n (T s t) -> Tensor (n ': s) t
 stack (V xs) = T (funcall "tf.stack" [(list [x | T x <- xs]), text "axis=" <> integer (shapeLen @ s)])
 
 transpose :: ∀ s t. T (Reverse s) t -> T s t

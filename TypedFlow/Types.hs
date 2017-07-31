@@ -76,6 +76,11 @@ data Peano = Zero | Succ Peano
 type Dim0 = 'Zero
 type Dim1 = 'Succ Dim0
 type Dim2 = 'Succ Dim1
+type Dim3 = 'Succ Dim2
+
+class KnownPeano n where peanoInt :: Integer
+instance KnownPeano 'Zero where peanoInt = 0
+instance KnownPeano n => KnownPeano ('Succ n) where peanoInt = 1 + (peanoInt @n)
 
 data SPeano n where
   SZero :: SPeano zero
@@ -89,9 +94,9 @@ vecToList :: Vec n a -> [a]
 vecToList VNil = []
 vecToList (VCons x xs) = x : vecToList xs
 
-type family App n (xs :: Vec n a) ys where
-   App 'Zero 'VNil  xs            =  xs
-   App ('Succ n) ('VCons x xs) ys =  x ': App n xs ys
+-- type family App n (xs :: Vec n a) ys where
+--    App 'Zero 'VNil  xs            =  xs
+--    App ('Succ n) ('VCons x xs) ys =  x ': App n xs ys
 
 type family Take n xs where
    Take 'Zero xs            =  '[]
@@ -100,6 +105,10 @@ type family Take n xs where
 type family Drop n xs where
    Drop 'Zero xs            =  xs
    Drop ('Succ n) (x ': xs) =  Drop n xs
+
+type family At n xs where
+  At 'Zero (x ': xs) = x
+  At ('Succ n) (x ': xs) = At n xs
 
 data Kind = Float | Int | Bool deriving Show
 data NBits = B32 | B64 | B1 deriving Show
@@ -180,6 +189,7 @@ shapeToList = shapeToList' (getShape @ s)
 showShape :: ∀ (s :: Shape). KnownShape s => DOC
 showShape = list (map (showDim' "None") (reverse (shapeToList @ s)))
 
+-- | Show a shape, but "None" is replaced by "-1"
 showShapeMinus :: ∀ (s :: Shape). KnownShape s => DOC
 showShapeMinus = list (map (showDim' "-1") (reverse (shapeToList @ s)))
 
@@ -274,6 +284,3 @@ generate s = renderWith (Options 92 (const id)) (genText (execState (fromGen s) 
 
 named :: String -> DOC -> DOC
 named fname x = text (fname <> "=") <> x
--- Local Variables:
--- dante-project-root: ".."
--- End:
