@@ -28,22 +28,22 @@ import Data.Proxy
 import TypedFlow.Types
 
 zeros :: ∀ t (shape :: Shape). KnownShape shape => (T shape t)
-zeros = T (funcall "tf.zeros" [(showShape @ shape)])
+zeros = T (funcall "tf.zeros" [showShape @shape])
 
 ones :: ∀ t (shape :: Shape). KnownShape shape => (T shape t)
-ones = T (funcall "tf.ones" [(showShape @ shape)])
+ones = T (funcall "tf.ones" [showShape @shape])
 
 -- | Declare a parameter to optimize.
 parameter' :: ∀ (shape :: Shape) t. String -> T shape t -> Gen (T shape t)
 parameter' name (T initial) = do
   v <- newVar
-  v <-- T (funcall "tf.Variable" [initial, text "name=" <> string (show (name))])
+  v <-- T (funcall "tf.Variable" [initial, named "name" (string (show (name)))])
   return (T v)
 
 placeholder :: ∀t s. (KnownShape s, KnownTyp t) => String -> Gen (T s t)
 placeholder n = do
   let name = text n
-  name <-- T (funcall "tf.placeholder" [showTyp @t, text "shape=" <> showShape @ s])
+  name <-- T (funcall "tf.placeholder" [showTyp @t, named "shape" (showShape @s)])
   return (T name)
 
 reduceAll :: String -> Tensor s t -> Tensor '[] t

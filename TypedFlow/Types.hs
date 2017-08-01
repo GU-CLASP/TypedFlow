@@ -47,6 +47,7 @@ type family Init xs where
 -- initLast' k = unsafeCoerce# k -- why not?
 
 initLast' :: forall s k. SShape s -> ((Init s ++ '[Last s]) ~ s => k) -> k
+initLast' Nil _ = error "initLast': does not hold on empty lists"
 initLast' (Cons _ Nil) k = k
 initLast' (Cons _ (Cons y ys)) k = initLast' (Cons y ys) (k)
 
