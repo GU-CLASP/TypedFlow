@@ -25,7 +25,7 @@ agreement input gold = do
           .--.
           timeDistribute (sigmoid . squeeze0 . dense  w))
         (() |> (zeros,zeros) |> (zeros,zeros) |> (),input)
-  binary (last0 prediction) gold
+  binary (last0 predictions) gold
 
 
 main :: IO ()
@@ -36,4 +36,12 @@ main = do
 (|>) :: ∀ a b. a -> b -> (a, b)
 (|>) = (,)
 infixr |>
+
+
+{-> main
+
+done!
+-}
+
+
 
