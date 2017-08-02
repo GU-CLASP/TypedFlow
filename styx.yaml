@@ -1,10 +1,11 @@
 local-packages:
-  typedflow: # package name
+  typedflow:       # package name
     location: .    # location on your disk
 
 source-deps:
   pretty-compact:
-    location: ~/repo/prettiest
-    # revision: da6210fb4e8fbc60dafd807820cb1a792759c4ab
+    location: git@github.com:jyp/prettiest.git
+    revision: 006fa0e807d0ebd08a184bf76ca8922057f0639c
+    # location: ~/repo/prettiest
 
 
