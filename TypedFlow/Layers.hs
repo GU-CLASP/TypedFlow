@@ -28,7 +28,7 @@ import TypedFlow.Types
 
 ----------------
 -- Helpers
-matvecmulBatch :: ∀ s cols rows t. (KnownNat cols, KnownShape s) =>  Tensor (cols ': rows ': s) t -> Tensor (cols ': s) t -> Tensor (rows ': s) t
+matvecmulBatch :: ∀ s cols rows t. (KnownLen s) =>  Tensor (cols ': rows ': s) t -> Tensor (cols ': s) t -> Tensor (rows ': s) t
 matvecmulBatch m v = squeeze0 (matmul m (expandDim0 v))
 
 matvecmul :: Tensor (cols ': rows ': '[]) t -> Tensor (cols ': batchSize ': '[]) t -> Tensor (rows ': batchSize ': '[]) t
