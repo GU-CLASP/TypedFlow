@@ -108,7 +108,7 @@ split0 (T x) = do
 concatT :: ∀ n d1 d2 s t.
     (KnownPeano n, KnownLen s, (d1+d2) ~ At n s) =>
     T (Take n s ++ (d1 ': Drop (Succ n) s)) t -> T (Take n s ++ (d2 ': Drop ('Succ n) s)) t -> T s t
-concatT (T x) (T y) = T (funcall "tf.concat" [list [x,y], text "axis=" <> integer (shapeLen @s - peanoInt @n - 1)])
+concatT (T x) (T y) = T (funcall "tf.concat" [list [x,y], named "axis" (integer (shapeLen @s - peanoInt @n - 1))])
 
 concat0 :: ∀ ys d1 d2 t. (KnownShape ys) =>  T (d1 ': ys) t -> T (d2 ': ys) t -> T ((d1 + d2) ': ys) t
 concat0 = concatT @Dim0
@@ -137,6 +137,7 @@ tile (T x) = T (funcall "tf.tile" [x, integer (natVal (Proxy @m))])
 replicateT :: ∀ n s t. (KnownNat n, KnownLen s) => T s t -> T (n ': s) t
 replicateT = tile @n . expandDim0
 
+-- TODO: same trick as expandDim0
 squeeze :: ∀ s0 s1 t. KnownLen s1 => Tensor (s0 ++ (1 ': s1)) t -> Tensor (s0 ++ s1) t
 squeeze (T x) = T (funcall "tf.squeeze" [x, text "axis=" <> integer (shapeLen @ s1)])
 
@@ -146,9 +147,11 @@ squeeze0 = squeeze @ '[]
 squeeze1 :: ∀ n s t. KnownLen s => Tensor (n ': 1 ': s) t -> Tensor (n ': s) t
 squeeze1 = squeeze @ '[n]
 
+-- | Reshape a tensor so that the first two dimensions are collapsed
 linearize2 :: ∀ m n s t. (KnownNat m, KnownNat n, KnownShape s) => Tensor (m ': n ': s) t -> Tensor (m*n ': s) t
 linearize2 (T t) = T (funcall "tf.reshape" [t, showShapeMinus @(m*n ': s)])
 
+-- | Reshape a tensor so that the first three dimensions are collapsed
 linearize3 :: ∀ m n o s t. (KnownNat m, KnownNat n, KnownNat o, KnownShape s) => Tensor (m ': n ': o ': s) t -> Tensor (m*n*o ': s) t
 linearize3 (T t) = T (funcall "tf.reshape" [t, showShapeMinus @(m*n*o ': s)])
 
@@ -157,6 +160,10 @@ arrange2 (T t) = T (funcall "tf.reshape" [t, showShapeMinus @(m ': n ': s)])
 
 arrange3 :: ∀ m n o s t. (KnownNat m, KnownNat n, KnownNat o, KnownShape s) => Tensor (m*n*o ': s) t -> Tensor (m ': n ': o ': s) t
 arrange3 (T t) = T (funcall "tf.reshape" [t, showShapeMinus @(m ': n ': o ': s)])
+
+-- | Access the last element in a tensor (in the 0th dimension)
+last0 :: ∀ n s t. KnownNat n => KnownLen s => T (n ': s) t -> Tensor s t
+last0 (T x) = T (x <> list (replicate (fromIntegral (shapeLen @s)) (text ":") ++ [integer (natVal (Proxy @n) - 1)]))
 
 unstack :: ∀ s (n::Nat) t. (KnownLen s, KnownNat n) => Tensor (n ': s) t -> Gen (V n (T s t))
 unstack (T x) = do
