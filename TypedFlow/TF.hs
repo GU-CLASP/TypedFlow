@@ -245,8 +245,8 @@ randomUniform low high = T (funcall "tf.random_uniform" [showShape @s
                                                         ,named "dtype" (showTyp @t)])
 
 randomOrthogonal :: forall n s t. (KnownBits t, KnownNat n, KnownShape s) => T (n ':s) ('Typ 'Float t)
-randomOrthogonal = T (funcall "tf.orthogonal_initializer" [named "shape" (showShape @(n ': s))
-                                                          ,named "dtype" (showTyp @('Typ 'Float t))])
+randomOrthogonal = T (funcall' (funcall "tf.orthogonal_initializer" [named "shape" (showShape @(n ': s))])
+                               [named "dtype" (showTyp @('Typ 'Float t))])
 
 constant :: forall s w. KnownShape s => Float -> T s ('Typ 'Float w)
 constant c = T (funcall "tf.constant" [float c, named "shape" (showShape @s)])
