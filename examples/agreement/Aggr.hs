@@ -10,23 +10,28 @@ module Aggr where
 
 import TypedFlow
 
-
-agreement :: KnownNat batchSize => Tensor '[20,batchSize] Int32 -> Gen (Tensor '[20,batchSize] Float32)
-agreement input = do
+agreement :: KnownNat batchSize => Model '[20,batchSize] Int32 '[batchSize] Int32
+agreement input gold = do
   embs <- parameter "embs" embeddingInitializer
   lstm1 <- parameter "w1" lstmInitializer
   lstm2 <- parameter "w2" lstmInitializer
   w <- parameter "dense" denseInitialiser
-  (_sFi,out) <- rnn (timeDistribute (embedding @50 @100000 embs)
-                     .--.
-                     (lstm @150 lstm1)
-                     .--.
-                     (lstm @150 lstm2)
-                     .--.
-                     timeDistribute (sigmoid . squeeze0 . dense  w))
-                (() |> (zeros,zeros) |> (zeros,zeros) |> (),input)
-  return out
+  (_sFi,predictions) <-
+    rnn (timeDistribute (embedding @50 @100000 embs)
+          .--.
+          (lstm @150 lstm1)
+          .--.
+          (lstm @150 lstm2)
+          .--.
+          timeDistribute (sigmoid . squeeze0 . dense  w))
+        (() |> (zeros,zeros) |> (zeros,zeros) |> (),input)
+  binary (last0 prediction) gold
 
+
+main :: IO ()
+main = do
+  writeFile "aggr_model.py" (generate $ compile (agreement @None))
+  putStrLn "done!"
 
 (|>) :: ∀ a b. a -> b -> (a, b)
 (|>) = (,)
