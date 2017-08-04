@@ -106,7 +106,7 @@ maxPool2D (T value) = T (funcall "tf.nn.max_pool" [value
 -------------------------------
 -- RNN layers and combinators
 
-type RnnCell state input output = (state , input) -> Gen (state , output)
+type RnnCell  state input output = (state , input) -> Gen (state , output)
 
 
 -- | Any pure function (feed-forward layer) can be transformed into a
@@ -146,15 +146,15 @@ lstm (wf,wi,wc,wo) ((ht1 , ct1) , input) = do
   return ((c , h) , h)
 
 -- | Stack two RNN cells
-stackRnnLayers :: RnnCell s0 a b -> RnnCell s1 b c -> RnnCell (s0,s1) a c
-stackRnnLayers l1 l2 ((s0,s1),x) = do
+stackRnnCells :: RnnCell s0 a b -> RnnCell s1 b c -> RnnCell (s0,s1) a c
+stackRnnCells l1 l2 ((s0,s1),x) = do
   (s0',y) <- l1 (s0,x)
   (s1',z) <- l2 (s1,y)
   return ((s0',s1'),z)
 
 infixr .--.
 (.--.) :: forall s0 a b s1 c. RnnCell s0 a b -> RnnCell s1 b c -> RnnCell (s0, s1) a c
-(.--.) = stackRnnLayers
+(.--.) = stackRnnCells
 
 -- | @addAttention attn l@ adds the attention function @attn@ to the
 -- rnn cell @l@.  Note that @attn@ can depend in particular on a
@@ -187,24 +187,52 @@ attnExample1 w h st = do
 -- attnExample' θ1 θ2 h  = addAttention (attnExample1 θ1 h . snd) (lstm θ2)
 
 
+-- | A layer in an rnn.
+type RnnLayer n state input t output u = (state , Tensor (n ': input) t) -> Gen (state , Tensor (n ': output) u)
+
 -- | Build a RNN by repeating a cell @n@ times.
 rnn :: ∀ n state input output t u.
        (KnownNat n, KnownShape input, KnownShape output) =>
-       RnnCell state (T input t) (T output u) ->
-       (state , Tensor (n ': input) t) -> Gen (state , Tensor (n ': output) u)
+       RnnCell state (T input t) (T output u) -> RnnLayer n state input t output u
 rnn cell (s0, t) = do
   xs <- unstack t
-  (sFin,us) <- chain cell (s0,xs)
+  (sFin,us) <- chainForward cell (s0,xs)
   return (sFin,stack us)
 
--- TODO: attempt to do this with
--- tf.foldl
+-- | Build a RNN by repeating a cell @n@ times. However the state is
+-- propagated in the right-to-left direction (decreasing indices in
+-- the time dimension of the input and output tensors)
+rnnBackwards :: ∀ n state input output t u.
+       (KnownNat n, KnownShape input, KnownShape output) =>
+       RnnCell state (T input t) (T output u) -> RnnLayer n state input t output u
+
+rnnBackwards cell (s0,t) = do
+  xs <- unstack t
+  (sFin,us) <- chainBackward cell (s0,xs)
+  return (sFin,stack us)
+
+-- | Compose two rnn layers. This is useful for example to combine
+-- forward and backward layers.
+stackRnnLayers :: RnnLayer n s0 a t b u -> RnnLayer n s1 b u c v -> RnnLayer n (s0,s1) a t c v
+stackRnnLayers f g ((s0,s1),x) = do
+  (s0',y) <- f (s0,x)
+  (s1',z) <- g (s1,y)
+  return ((s0',s1'),z)
 
 -- | RNN helper
-chain :: ∀ state a b n. ((state , a) -> Gen (state , b)) → (state , V n a) -> Gen (state , V n b)
-chain _ (s0 , V []) = return (s0 , V [])
-chain f (s0 , V (x:xs)) = do
+chainForward :: ∀ state a b n. ((state , a) -> Gen (state , b)) → (state , V n a) -> Gen (state , V n b)
+chainForward _ (s0 , V []) = return (s0 , V [])
+chainForward f (s0 , V (x:xs)) = do
   (s1,x') <- f (s0 , x)
-  (sFin,V xs') <- chain f (s1 , V xs)
+  (sFin,V xs') <- chainForward f (s1 , V xs)
+  return (sFin,V (x':xs'))
+-- TODO: attempt to do the above with
+-- tf.foldl
+
+chainBackward :: ∀ state a b n. ((state , a) -> Gen (state , b)) → (state , V n a) -> Gen (state , V n b)
+chainBackward _ (s0 , V []) = return (s0 , V [])
+chainBackward f (s0 , V (x:xs)) = do
+  (s1,V xs') <- chainBackward f (s0,V xs)
+  (sFin, x') <- f (s1,x)
   return (sFin,V (x':xs'))
 
