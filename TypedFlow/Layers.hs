@@ -78,8 +78,10 @@ denseInitialiser = (glorotUniform,truncatedNormal 0.1)
 dense :: ∀m n batchSize. (n ⊸ m) -> Tensor '[n, batchSize] Float32 -> (Tensor '[m, batchSize] Float32)
 dense lf t = (lf # t)
 
-dropout :: Float -> Tensor s t -> Tensor s t
-dropout keepProb (T x) = T (funcall "tf.nn.dropout" [x, float keepProb])
+data KeepProb = KeepProb Float
+
+dropout :: KeepProb -> Tensor s t -> Tensor s t
+dropout (KeepProb p) (T x) = T (funcall "tf.nn.dropout" [x, float p])
 
 ------------------------
 -- Convolutional layers
@@ -171,6 +173,18 @@ addAttention attn l (s,a) = do
   focus <- attn s
   l (s,concat0 a focus)
 
+-- | Add some attention, but feed back the attention vector back to
+-- the next iteration in the rnn. (This follows the diagram at
+-- https://github.com/tensorflow/nmt#background-on-the-attention-mechanism
+-- commit 75aa22dfb159f10a1a5b4557777d9ff547c1975a)
+addAttentionWithFeedback ::KnownShape s => 
+                ((T (b ': s) t) -> Gen (T (x ': s) t)) ->
+                RnnCell state                    (T ((a+x) ': s) t) (T (b ': s) t) ->
+                RnnCell (state,(T (x ': s) t))   (T ( a    ': s) t) (T (x ': s) t)
+addAttentionWithFeedback attn l ((s,prevAttnVector),a) = do
+  (s',y) <- l (s,concat0 a prevAttnVector)
+  focus <- attn y
+  return ((s',focus),focus)
 
 -- | @attnExample1 θ h st@ combines each element of the vector h with
 -- s, and applies a dense layer with parameters θ. The "winning"
@@ -186,6 +200,23 @@ attnExample1 w h st = do
         ct = squeeze0 (matmul h (expandDim0 αt))
   return ct
 
+-- | Luong attention model (following
+-- https://github.com/tensorflow/nmt#background-on-the-attention-mechanism
+-- commit 75aa22dfb159f10a1a5b4557777d9ff547c1975a)
+luongAttention :: ∀ x d m e batchSize. (KnownNat m, KnownNat batchSize) =>
+               (Tensor '[e+d,batchSize] Float32 -> Tensor '[1,batchSize] Float32) ->
+               Tensor '[d+e,x] Float32 ->
+               T '[m,d,batchSize] Float32 -> T '[e,batchSize] Float32 -> Gen (T '[x,batchSize] Float32)
+luongAttention score w hs_ ht = do
+  xx <- mapT score (concat1 (replicateT ht) hs_) -- TODO: what is the "score function"?
+  let   αt :: T '[m,batchSize] Float32
+        αt = softmax0 (squeeze1 xx)
+        ct :: T '[d,batchSize] Float32
+        ct = squeeze0 (matmul hs_ (expandDim0 αt))
+        at = tanh (w ∙ concat0 ct ht)
+  return at
+
+luongWrapper score w θ hs = addAttentionWithFeedback (luongAttention score w hs) (lstm θ)
 -- attnExample' θ1 θ2 h  = addAttention (attnExample1 θ1 h . snd) (lstm θ2)
 
 
