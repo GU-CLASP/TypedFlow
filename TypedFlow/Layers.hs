@@ -22,7 +22,7 @@ module TypedFlow.Layers where
 import Prelude hiding (tanh,Num(..),Floating(..))
 import qualified Prelude ()
 import GHC.TypeLits
-
+import Text.PrettyPrint.Compact (float)
 import TypedFlow.TF
 import TypedFlow.Types
 
@@ -78,6 +78,8 @@ denseInitialiser = (glorotUniform,truncatedNormal 0.1)
 dense :: ∀m n batchSize. (n ⊸ m) -> Tensor '[n, batchSize] Float32 -> (Tensor '[m, batchSize] Float32)
 dense lf t = (lf # t)
 
+dropout :: Float -> Tensor s t -> Tensor s t
+dropout keepProb (T x) = T (funcall "tf.nn.dropout" [x, float keepProb])
 
 ------------------------
 -- Convolutional layers
