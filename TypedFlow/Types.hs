@@ -259,10 +259,10 @@ funcall :: String -> [DOC] -> DOC
 funcall = funcall' . text
 
 funcall' :: DOC -> [DOC] -> DOC
-funcall' f args = do
+funcall' f args =
   let as = sep (punctuate comma args)
-  -- (text f <> parens as)
-  (f <> parens as) <|> ((f <> "(") $$ (text "  " <> as <> ")"))
+      open = f <> "("
+  in (open <|> (flush open <> text "  ")) <> as <> ")"
 
 binOp :: ∀ s1 s2 s3 t1 t2 t3. String -> Tensor s1 t1 -> Tensor s2 t2 -> Tensor s3 t3
 binOp op (T x) (T y) = T (funcall op [ x , y])
