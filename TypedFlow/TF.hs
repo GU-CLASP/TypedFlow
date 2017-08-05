@@ -89,9 +89,7 @@ equal = binOp "tf.equal"
 matmul :: Tensor (o ': n ': s) t -> Tensor (m ': o ': s) t -> Tensor (m ': n ': s) t
 matmul = binOp "tf.matmul"
 
-
-
-sigmoid, tanh, log, relu :: ∀ s. Tensor s Float32 -> Tensor s Float32
+sigmoid, tanh, log, relu :: ∀ s t. Tensor s ('Typ 'Float t) -> Tensor s ('Typ 'Float t)
 sigmoid = unOp "tf.sigmoid"
 tanh = unOp "tf.tanh"
 log = unOp "tf.log"
@@ -245,8 +243,8 @@ randomUniform low high = T (funcall "tf.random_uniform" [showShape @s
                                                         ,named "dtype" (showTyp @t)])
 
 randomOrthogonal :: forall n s t. (KnownBits t, KnownNat n, KnownShape s) => T (n ':s) ('Typ 'Float t)
-randomOrthogonal = T (funcall' (funcall "tf.orthogonal_initializer" [named "shape" (showShape @(n ': s))])
-                               [named "dtype" (showTyp @('Typ 'Float t))])
+randomOrthogonal = T (funcall' (funcall "tf.orthogonal_initializer" [named "dtype" (showTyp @('Typ 'Float t))])
+                               [named "shape" (showShape @(n ': s))])
 
 constant :: forall s w. KnownShape s => Float -> T s ('Typ 'Float w)
 constant c = T (funcall "tf.constant" [float c, named "shape" (showShape @s)])
