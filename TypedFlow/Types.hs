@@ -167,7 +167,6 @@ instance KnownKind 'Float where
 instance KnownKind 'Int where
   kindVal = Int
 
-
 class KnownLen s where
   shapeLen :: Integer
 
@@ -258,10 +257,13 @@ tuple :: [DOC] -> DOC
 tuple = parens . sep . punctuate comma
 
 funcall :: String -> [DOC] -> DOC
-funcall f args = do
+funcall = funcall' . text
+
+funcall' :: DOC -> [DOC] -> DOC
+funcall' f args =
   let as = sep (punctuate comma args)
-  -- (text f <> parens as)
-  (text f <> parens as) <|> ((text f <> "(") $$ (text "  " <> as <> ")"))
+      open = f <> "("
+  in (open <|> (flush open <> text "  ")) <> as <> ")"
 
 binOp :: ∀ s1 s2 s3 t1 t2 t3. String -> Tensor s1 t1 -> Tensor s2 t2 -> Tensor s3 t3
 binOp op (T x) (T y) = T (funcall op [ x , y])

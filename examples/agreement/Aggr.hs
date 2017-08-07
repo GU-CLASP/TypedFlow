@@ -30,7 +30,7 @@ agreement input gold = do
 
 main :: IO ()
 main = do
-  writeFile "aggr_model.py" (generate $ compile (agreement @None))
+  writeFile "aggr_model.py" (generate $ compile (agreement @1024))
   putStrLn "done!"
 
 (|>) :: ∀ a b. a -> b -> (a, b)
