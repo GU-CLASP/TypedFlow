@@ -3,8 +3,10 @@ import tensorflow as tf
 
 # optimize is one of tf.train.GradientDescentOptimizer(0.05), etc.
 def train (sess, model, optimizer, train_generator, valid_generator, epochs):
-    (x,y,y_,accuracy,loss) = model
-    train = optimizer.minimize(loss) # must come before the initializer (this line creates variables!)
+    (x,y,y_,accuracy,loss,params,gradients) = model
+    # must come before the initializer (this line creates variables!)
+    train = optimizer.apply_gradients(zip(gradients, params))
+    # train = optimizer.minimize(loss)
     sess.run(tf.local_variables_initializer())
     sess.run(tf.global_variables_initializer())
     for e in range(epochs):
@@ -33,7 +35,7 @@ def train (sess, model, optimizer, train_generator, valid_generator, epochs):
 
 
 def predict (sess, model, x_generator):
-    (x,y,y_,accuracy,loss) = model
+    (x,y,y_,accuracy,loss,params,gradients) = model
     sess.run(init)
     for (n,i) in enumerate(x_generator()):
         sess.run(y, feed_dict={x:x_generator})

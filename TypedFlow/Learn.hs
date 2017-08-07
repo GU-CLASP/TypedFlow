@@ -23,8 +23,8 @@ module TypedFlow.Learn where
 
 import TypedFlow.Types
 import TypedFlow.TF
-import qualified Prelude ()
-import Prelude (($),return)
+import qualified Prelude (Float)
+import Prelude (($),return,Maybe(..),id)
 import Text.PrettyPrint.Compact (text)
 import Data.Monoid hiding (Last)
 import GHC.TypeLits (KnownNat)
@@ -54,54 +54,67 @@ categorical :: forall n bs. KnownNat n => Model '[n,bs] Float32 '[bs] Int64
 categorical logits' y = do
   logits <- assign logits'
   let y_ = argmax0 logits
+      modelY = y_
   correctPrediction <- assign (equal y_ y)
-  accuracy <- assign (reduceMeanAll (cast @Float32 correctPrediction))
-  loss <- assign (reduceMeanAll (softmaxCrossEntropyWithLogits (oneHot y) logits))
-  return (y_,accuracy,loss)
+  modelAccuracy <- assign (reduceMeanAll (cast @Float32 correctPrediction))
+  modelLoss <- assign (reduceMeanAll (softmaxCrossEntropyWithLogits (oneHot y) logits))
+  return ModelOutput{..}
 
 -- | First type argument is the number of classes.
 -- @categoricalDistribution logits gold@
 -- return (prediction, accuraccy, loss)
 -- accuracy and prediction are averaged over the batch.
-categoricalDistribution :: forall n bs. KnownNat n => Model '[n,bs] Float32 '[n,bs] Float32
+categoricalDistribution :: forall n bs. Model '[n,bs] Float32 '[n,bs] Float32
 categoricalDistribution logits' y = do
   logits <- assign logits'
   let y_ = softmax0 logits
+      modelY = y_
   correctPrediction <- assign (equal (argmax0 logits) (argmax0 y))
-  accuracy <- assign (reduceMeanAll (cast @Float32 correctPrediction))
-  loss <- assign (reduceMeanAll (softmaxCrossEntropyWithLogits y logits))
-  return (y_,accuracy,loss)
+  modelAccuracy <- assign (reduceMeanAll (cast @Float32 correctPrediction))
+  modelLoss <- assign (reduceMeanAll (softmaxCrossEntropyWithLogits y logits))
+  return ModelOutput{..}
 
 
 type Scalar t = T '[] t
 
-
+data ModelOutput s t = ModelOutput {modelY :: T s t
+                                   ,modelLoss :: Scalar Float32
+                                   ,modelAccuracy :: Scalar Float32}
 -- | (input value, gold value) ↦ (prediction, accuracy, loss)
-type Model input tIn output tOut = T input tIn -> T output tOut -> Gen (T output tOut, Scalar Float32, Scalar Float32)
+type Model input tIn output tOut = T input tIn -> T output tOut -> Gen (ModelOutput output tOut)
 
 
 binary :: forall bs. (KnownNat bs) => Model '[bs] Float32 '[bs] Int32
 binary score y = do
   sigy_ <- assign (sigmoid score)
   let y_ = cast @Int32 (round sigy_)
+      modelY = y_
   correctPrediction <- assign (equal y_ y)
-  accuracy <- assign (reduceMeanAll (cast @Float32 correctPrediction))
-  loss <- assign (reduceMeanAll (binaryCrossEntropy (cast @Float32 y) sigy_))
-  return (y_,accuracy,loss)
+  modelAccuracy <- assign (reduceMeanAll (cast @Float32 correctPrediction))
+  modelLoss <- assign (reduceMeanAll (binaryCrossEntropy (cast @Float32 y) sigy_))
+  return ModelOutput{..}
 
+data Options = Options {maxGradientNorm :: Maybe Prelude.Float}
+
+defaultOptions :: Options
+defaultOptions = Options {maxGradientNorm = Nothing}
 
 compile :: (KnownShape input, KnownTyp tIn, KnownShape output, KnownTyp tOut) =>
+           Options ->
            Model input tIn output tOut  -> Gen ()
-compile model = do
+compile Options{..} model = do
   gen (text "import tensorflow as tf")
   genFun "mkModel" [] $ do
     x <- placeholder "x"
     y <- placeholder "y"
-    (prediction,accuracy,loss) <- model x y
-    y_ <- assign prediction
-    gen (text "return " <> tuple [fromTensor x,fromTensor y,fromTensor y_,fromTensor accuracy,fromTensor loss])
-
-
--- Local Variables:
--- dante-project-root: ".."
--- End:
+    ModelOutput{..} <- model x y
+    y_ <- assign modelY
+    loss <- assign modelLoss
+    accuracy <- assign modelAccuracy
+    params <- getParameters
+    gradients <- newVar
+    let clipping = case maxGradientNorm of
+                     Nothing -> id
+                     Just clip -> clipByGlobalNorm clip
+    gradients <-- clipping (grad modelLoss params)
+    gen (text "return " <> tuple [fromTensor x,fromTensor y,fromTensor y_,fromTensor accuracy,fromTensor loss,params,gradients])

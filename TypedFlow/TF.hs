@@ -40,11 +40,18 @@ parameter' name (T initial) = do
   v <-- funcall "tf.Variable" [initial, named "name" (string (show (name)))]
   return (T v)
 
+-- TODO: gather the parameters in Haskell
 getParameters :: Gen UntypedExpression
 getParameters = do
   v <- newVar
   v <-- text "tf.trainable_variables()"
   return v
+
+grad :: T s Float32 -> UntypedExpression -> UntypedExpression
+grad (T y) vars = funcall "tf.gradients" [y, vars]
+
+clipByGlobalNorm :: Float -> UntypedExpression -> UntypedExpression
+clipByGlobalNorm maxNorm x = funcall "tf.clip_by_global_norm" [x,float maxNorm]
 
 placeholder :: ∀t s. (KnownShape s, KnownTyp t) => String -> Gen (T s t)
 placeholder n = do
