@@ -72,6 +72,11 @@ data V' (n::Nat) a where
   VZ :: V' 0 a
   VS :: a -> V' n a -> V' (1+n) a
 
+-- | Heterogeneous tensor vector.
+data H (n::Peano) where
+  HZ :: H 'Zero
+  HS :: T s Float32 -> H n -> H ('Succ n)
+
 data Peano = Zero | Succ Peano
 
 type Dim0 = 'Zero

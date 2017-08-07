@@ -40,7 +40,7 @@ x ∙ y = matvecmul x y
 (·) :: ∀ cols batchSize t. Tensor '[cols,batchSize] t -> Tensor '[cols,batchSize] t -> Tensor '[batchSize] t
 x · y = reduceSum0 (x ⊙ y)
 
-mapT :: KnownNat n => (T '[x,batchSize] t -> T '[y,batchSize] u) ->  T '[n,x,batchSize] t -> Gen (T '[n,y,batchSize] u)
+mapT :: (KnownNat n, KnownLen s, KnownLen r) => (T s t -> T r u) ->  T (n ': s) t -> Gen (T (n ': r) u)
 mapT f t = do
   xs <- unstack t
   return (stack (fmap f xs))
@@ -173,50 +173,56 @@ addAttention attn l (s,a) = do
   focus <- attn s
   l (s,concat0 a focus)
 
+-- | @attnExample1 θ h st@ combines each element of the vector h with
+-- s, and applies a dense layer with parameters θ. The "winning"
+-- element of h (using softmax) is returned.
+uniformAttn :: ∀ d m e batchSize. (KnownNat m) =>
+               AttentionScoring batchSize e d ->
+               T '[m,d,batchSize] Float32 -> T '[e,batchSize] Float32 -> Gen (T '[d,batchSize] Float32)
+uniformAttn score hs_ ht = do
+  xx <- mapT (score ht) hs_
+  let   αt :: T '[m,batchSize] Float32
+        αt = softmax0 xx
+        ct :: T '[d,batchSize] Float32
+        ct = squeeze0 (matmul hs_ (expandDim0 αt))
+  return ct
+
+
 -- | Add some attention, but feed back the attention vector back to
 -- the next iteration in the rnn. (This follows the diagram at
 -- https://github.com/tensorflow/nmt#background-on-the-attention-mechanism
--- commit 75aa22dfb159f10a1a5b4557777d9ff547c1975a)
+-- commit 75aa22dfb159f10a1a5b4557777d9ff547c1975a).  The main
+-- difference with 'addAttention' above is that the attn function is
+-- that the final result depends on the attention vector rather than the output of the underlying cell.
 addAttentionWithFeedback ::KnownShape s => 
                 ((T (b ': s) t) -> Gen (T (x ': s) t)) ->
                 RnnCell state                    (T ((a+x) ': s) t) (T (b ': s) t) ->
                 RnnCell (state,(T (x ': s) t))   (T ( a    ': s) t) (T (x ': s) t)
-addAttentionWithFeedback attn l ((s,prevAttnVector),a) = do
-  (s',y) <- l (s,concat0 a prevAttnVector)
+addAttentionWithFeedback attn cell ((s,prevAttnVector),a) = do
+  (s',y) <- cell (s,concat0 a prevAttnVector)
   focus <- attn y
   return ((s',focus),focus)
-
--- | @attnExample1 θ h st@ combines each element of the vector h with
--- s, and applies a dense layer with parameters θ. The "winning"
--- element of h (using softmax) is returned.
-attnExample1 :: ∀ d m e batchSize. (KnownNat m, KnownNat batchSize) =>
-               ((e+d) ⊸ 1) ->
-               T '[m,d,batchSize] Float32 -> T '[e,batchSize] Float32 -> Gen (T '[d,batchSize] Float32)
-attnExample1 w h st = do
-  xx <- mapT (dense w) (concat1 (replicateT st) h)
-  let   αt :: T '[m,batchSize] Float32
-        αt = softmax0 (squeeze1 xx)
-        ct :: T '[d,batchSize] Float32
-        ct = squeeze0 (matmul h (expandDim0 αt))
-  return ct
 
 -- | Luong attention model (following
 -- https://github.com/tensorflow/nmt#background-on-the-attention-mechanism
 -- commit 75aa22dfb159f10a1a5b4557777d9ff547c1975a)
 luongAttention :: ∀ x d m e batchSize. (KnownNat m, KnownNat batchSize) =>
-               (Tensor '[e+d,batchSize] Float32 -> Tensor '[1,batchSize] Float32) ->
+               AttentionScoring batchSize e d ->
                Tensor '[d+e,x] Float32 ->
                T '[m,d,batchSize] Float32 -> T '[e,batchSize] Float32 -> Gen (T '[x,batchSize] Float32)
 luongAttention score w hs_ ht = do
-  xx <- mapT score (concat1 (replicateT ht) hs_) -- TODO: what is the "score function"?
-  let   αt :: T '[m,batchSize] Float32
-        αt = softmax0 (squeeze1 xx)
-        ct :: T '[d,batchSize] Float32
-        ct = squeeze0 (matmul hs_ (expandDim0 αt))
-        at = tanh (w ∙ concat0 ct ht)
+  ct <- uniformAttn score hs_ ht
+  let at = tanh (w ∙ concat0 ct ht)
   return at
 
-luongWrapper score w θ hs = addAttentionWithFeedback (luongAttention score w hs) (lstm θ)
+type AttentionScoring batchSize e d = Tensor '[e,batchSize] Float32 -> Tensor '[d,batchSize] Float32 -> Tensor '[batchSize] Float32
+
+luongMultiplicativeScoring :: forall e d batchSize. T [e,d] Float32 ->  AttentionScoring batchSize e d
+luongMultiplicativeScoring w ht hs = hs · ir
+  where ir :: T '[d,batchSize] Float32
+        ir = w ∙ ht
+
+luongWrapper score w1 w2 θ hs = addAttentionWithFeedback (luongAttention (luongMultiplicativeScoring w1) w2 hs) (lstm θ)
 -- attnExample' θ1 θ2 h  = addAttention (attnExample1 θ1 h . snd) (lstm θ2)
 
 
