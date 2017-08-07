@@ -38,7 +38,7 @@ mnist input gold = do
 
 main :: IO ()
 main = do
-  writeFile "mnist_model.py" (generate $ compile (mnist @None))
+  writeFile "mnist_model.py" (generate $ compile defaultOptions (mnist @None))
   putStrLn "done!"
 
 {-> main
