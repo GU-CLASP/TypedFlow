@@ -129,7 +129,8 @@ showTyp = text (show (typVal @t))
 
 type Shape = [Nat]
 
-data T (shape :: Shape) (t :: Typ) = T {fromTensor :: DOC}
+type UntypedExpression = DOC
+data T (shape :: Shape) (t :: Typ) = T {fromTensor :: UntypedExpression}
 
 data SNat (n :: Nat) where
   SNat :: KnownNat n => Proxy n -> SNat n
@@ -250,8 +251,8 @@ type Tensor shape = T shape
 -- Generation helpers
 
 
-(<--) :: ∀ (s :: Shape) t. DOC -> T s t -> Gen ()
-x <-- T y = gen (x <> text "=" <>  y)
+(<--) :: DOC -> UntypedExpression -> Gen ()
+x <-- y = gen (x <> text "=" <>  y)
 
 tuple :: [DOC] -> DOC
 tuple = parens . sep . punctuate comma
@@ -269,7 +270,7 @@ unOp :: ∀ s1 s2 t1 t2. String -> Tensor s1 t1 -> Tensor s2 t2
 unOp op (T x) = T (funcall op [x])
 
 assign :: ∀s t. (T s t) -> Gen (T s t)
-assign x = do
+assign (T x) = do
   v <- newVar
   v <-- x
   return (T v)

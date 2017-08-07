@@ -37,13 +37,19 @@ ones = T (funcall "tf.ones" [showShape @shape])
 parameter' :: ∀ (shape :: Shape) t. String -> T shape t -> Gen (T shape t)
 parameter' name (T initial) = do
   v <- newVar
-  v <-- T (funcall "tf.Variable" [initial, named "name" (string (show (name)))])
+  v <-- funcall "tf.Variable" [initial, named "name" (string (show (name)))]
   return (T v)
+
+getParameters :: Gen UntypedExpression
+getParameters = do
+  v <- newVar
+  v <-- text "tf.trainable_variables()"
+  return v
 
 placeholder :: ∀t s. (KnownShape s, KnownTyp t) => String -> Gen (T s t)
 placeholder n = do
   let name = text n
-  name <-- T (funcall "tf.placeholder" [showTyp @t, named "shape" (showShape @s)])
+  name <-- funcall "tf.placeholder" [showTyp @t, named "shape" (showShape @s)]
   return (T name)
 
 reduceAll :: String -> Tensor s t -> Tensor '[] t
@@ -168,7 +174,7 @@ last0 (T x) = T (x <> list (replicate (fromIntegral (shapeLen @s)) (text ":") ++
 unstack :: ∀ s (n::Nat) t. (KnownLen s, KnownNat n) => Tensor (n ': s) t -> Gen (V n (T s t))
 unstack (T x) = do
   v <- newVar
-  v <-- T (funcall "tf.unstack" [x, text "axis=" <> integer (shapeLen @ s)])
+  v <-- funcall "tf.unstack" [x, text "axis=" <> integer (shapeLen @ s)]
   return $ V $ [ T $ v <> brackets (integer i)| i <- [0..n Prelude.- 1] ]
         where n = natVal (Proxy @ n)
 
