@@ -50,7 +50,7 @@ type Batch s batchSize = Tensor (s++'[batchSize])
 -- @categorical logits gold@
 -- return (prediction, accuraccy, loss)
 -- accuracy and prediction are averaged over the batch.
-categorical :: forall n bs. KnownNat n => Model '[n,bs] Float32 '[bs] Int64
+categorical :: forall n bs. KnownNat n => Model '[nCat,bs] Float32 '[bs] Int64
 categorical logits' y = do
   logits <- assign logits'
   let y_ = argmax0 logits
@@ -64,7 +64,7 @@ categorical logits' y = do
 -- @categoricalDistribution logits gold@
 -- return (prediction, accuraccy, loss)
 -- accuracy and prediction are averaged over the batch.
-categoricalDistribution :: forall n bs. Model '[n,bs] Float32 '[n,bs] Float32
+categoricalDistribution :: forall nCat bs. Model '[nCat,bs] Float32 '[nCat,bs] Float32
 categoricalDistribution logits' y = do
   logits <- assign logits'
   let y_ = softmax0 logits
@@ -74,10 +74,13 @@ categoricalDistribution logits' y = do
   modelLoss <- assign (reduceMeanAll (softmaxCrossEntropyWithLogits y logits))
   return ModelOutput{..}
 
+-- timedCategoricatDistribution :: forall len nCat bs. Model '[len,nCat,bs] Float32 '[len,nCat,bs] Float32
+-- todo. Also: do a beam search.
+
 
 type Scalar t = T '[] t
 
-data ModelOutput s t = ModelOutput {modelY :: T s t
+data ModelOutput s t = ModelOutput {modelY :: T s t -- ^ prediction
                                    ,modelLoss :: Scalar Float32
                                    ,modelAccuracy :: Scalar Float32}
 -- | (input value, gold value) ↦ (prediction, accuracy, loss)
