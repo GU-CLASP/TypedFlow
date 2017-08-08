@@ -19,20 +19,35 @@ infixr >--
   (s2,y) <- l2 x
   return ((s1,s2),y)
   
+encoder :: forall (n :: Nat) (bs :: Nat).
+                 (KnownNat bs, KnownNat n) =>
+                 [Char]
+                 -> Tensor '[n, bs] Int32
+                 -> Gen
+                      (HList '[(), (T '[512, bs] Float32, T '[512, bs] Float32), (T '[512, bs] Float32, T '[512, bs] Float32)])
 encoder prefix input = do
   embs <- parameter (prefix++"embs") embeddingInitializer
   lstm1 <- parameter (prefix++"w1") lstmInitializer
   lstm2 <- parameter (prefix++"w2") lstmInitializer
   -- todo: what to do about sentence length?
   (sFinal,_) <-
-    (rnn (timeDistribute (embedding @50 @100000 embs)) ()
-      >--
-     rnn (lstm @512 lstm1) (zeros,zeros)
-      >--
-     rnnBackwards (lstm @512 lstm2) (zeros,zeros)
-     ) input
+    (rnn (timeDistribute (embedding @50 @100000 embs))
+      .--.
+     rnn (lstm @512 lstm1)
+      .--.
+     rnnBackwards (lstm @512 lstm2)
+      .--.
+      idLayer
+     ) (I () :* I (zeros,zeros) :* I (zeros,zeros) :* Unit) input
   return sFinal
 
+-- attention: the backwards state will arrive here too!
+decoder :: forall (n :: Nat) (outVocabSize :: Nat) (bs :: Nat).
+                 (KnownNat bs, KnownNat outVocabSize, KnownNat n) =>
+                 [Char]
+                 -> (HList '[(), (T '[512, bs] Float32, T '[512, bs] Float32), (T '[512, bs] Float32, T '[512, bs] Float32)])
+                 -> Tensor '[n, bs] Int32
+                 -> Gen (Tensor '[n, outVocabSize, bs] Float32)
 decoder prefix thoughtVectors target = do
   embs <- parameter (prefix++"embs") embeddingInitializer
   projs <- parameter (prefix++"proj") denseInitialiser
@@ -40,15 +55,26 @@ decoder prefix thoughtVectors target = do
   lstm1 <- parameter (prefix++"w1") lstmInitializer
   lstm2 <- parameter (prefix++"w2") lstmInitializer
   (_sFinal,outFinal) <-
-    (rnn (timeDistribute (embedding @50 @100000 embs))
+    (rnn (timeDistribute (embedding @50 @outVocabSize embs))
       .--.
      rnn (lstm @512 lstm1)
       .--.
      rnnBackwards (lstm @512 lstm2)
       .--.
-      rnn (timeDistribute (dense projs))
-     ) thoughtVectors target
+     rnn (timeDistribute (dense projs))
+      .--.
+     idLayer)
+     (thoughtVectors `hsnoc` I ())
+     target
   return outFinal
+
+seq2seq :: forall (n :: Nat) (bs :: Nat) (inVocSize :: Nat) (outVocSize :: Nat).
+                 (KnownNat bs, KnownNat n) =>
+                 Tensor '[n, bs] Int32
+                 -> Gen (Tensor '[n, outVocSize, bs] Float32)
+seq2seq input gold = do
+  thought <- encoder "enc" input
+  decoder "dec" thought gold
 
 -- TODO: one also needs to turn the embedding into a projection layer to get
 -- TODO: beam search
