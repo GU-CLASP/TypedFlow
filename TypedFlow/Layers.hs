@@ -12,7 +12,6 @@
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
-{-# LANGUAGE TypeInType #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE UnicodeSyntax #-}
@@ -157,8 +156,14 @@ stackRnnCells l1 l2 ((s0,s1),x) = do
   return ((s0',s1'),z)
 
 infixr .--.
-(.--.) ::  RnnLayer n s0 a t b u -> RnnLayer n s1 b u c v -> RnnLayer n (s0, s1) a t c v
+(.--.) :: forall (n :: Nat) s (a :: [Nat]) (t :: Typ) (b :: [Nat]) (u :: Typ) (ss :: [*]) (c :: [Nat]) (v :: Typ).
+                RnnLayer n s a t b u
+                -> RnnLayer n (HList ss) b u c v
+                -> RnnLayer n (HList (s : ss)) a t c v
 (.--.) = stackRnnLayers
+
+idLayer :: RnnLayer n (HList '[]) a t a t
+idLayer st x = return (st,x)
 
 (.|.) :: forall s0 a b s1 c. RnnCell s0 a b -> RnnCell s1 b c -> RnnCell (s0, s1) a c
 (.|.) = stackRnnCells
@@ -229,7 +234,7 @@ luongMultiplicativeScoring w ht hs = hs · ir
 -- attnExample' θ1 θ2 h  = addAttention (attnExample1 θ1 h . snd) (lstm θ2)
 
 
--- | A layer in an rnn.
+-- | A layer in an rnn. @n@ is the length of the time sequence. @state@ is state propagated through time.
 type RnnLayer n state input t output u = state -> Tensor (n ': input) t -> Gen (state , Tensor (n ': output) u)
 
 -- | Build a RNN by repeating a cell @n@ times.
@@ -255,11 +260,11 @@ rnnBackwards cell s0 t = do
 
 -- | Compose two rnn layers. This is useful for example to combine
 -- forward and backward layers.
-stackRnnLayers :: RnnLayer n s0 a t b u -> RnnLayer n s1 b u c v -> RnnLayer n (s0,s1) a t c v
-stackRnnLayers f g (s0,s1) x = do
+stackRnnLayers :: RnnLayer n s a t b u -> RnnLayer n (HList ss) b u c v -> RnnLayer n (HList (s:ss)) a t c v
+stackRnnLayers f g (I s0 :* s1) x = do
   (s0',y) <- f s0 x
   (s1',z) <- g s1 y
-  return ((s0',s1'),z)
+  return (I s0' :* s1',z)
 
 -- | RNN helper
 chainForward :: ∀ state a b n. ((state , a) -> Gen (state , b)) → (state , V n a) -> Gen (state , V n b)

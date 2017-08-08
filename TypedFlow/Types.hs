@@ -72,10 +72,26 @@ data V' (n::Nat) a where
   VZ :: V' 0 a
   VS :: a -> V' n a -> V' (1+n) a
 
--- | Heterogeneous tensor vector.
-data H (n::Peano) where
-  HZ :: H 'Zero
-  HS :: T s Float32 -> H n -> H ('Succ n)
+-- -- | Heterogeneous tensor vector.
+-- data H (n::Peano) where
+--   HZ :: H 'Zero
+--   HS :: T s Float32 -> H n -> H ('Succ n)
+
+-- From: https://www.cs.ox.ac.uk/projects/utgp/school/andres.pdf
+data NP f (xs :: [k]) where
+  Unit :: NP f '[]
+  (:*) :: f x -> NP f xs -> NP f (x ': xs)
+newtype I a = I a
+type HList = NP I
+
+happ :: NP f xs -> NP f ys -> NP f (xs ++ ys)
+happ Unit xs = xs
+happ (x :* xs) ys = x :* (happ xs ys)
+
+hsnoc :: NP f xs -> f x -> NP f (xs ++ '[x])
+hsnoc xs x = happ xs (x :* Unit)
+
+infixr 5 :*
 
 data Peano = Zero | Succ Peano
 
