@@ -102,11 +102,12 @@ equal = binOp "tf.equal"
 matmul :: Tensor (o ': n ': s) t -> Tensor (m ': o ': s) t -> Tensor (m ': n ': s) t
 matmul = binOp "tf.matmul"
 
-sigmoid, tanh, log, relu :: ∀ s t. Tensor s ('Typ 'Float t) -> Tensor s ('Typ 'Float t)
+round, sigmoid, tanh, log, relu :: ∀ s t. Tensor s ('Typ 'Float t) -> Tensor s ('Typ 'Float t)
 sigmoid = unOp "tf.sigmoid"
 tanh = unOp "tf.tanh"
 log = unOp "tf.log"
 relu = unOp "tf.nn.relu"
+round = unOp "tf.round"
 
 split0 :: ∀ m n batchShape t. (KnownNat n, KnownNat m, KnownLen batchShape) =>
           Tensor ((n + m) ': batchShape) t -> Gen (Tensor (n ': batchShape) t, Tensor (m ': batchShape) t)
@@ -225,13 +226,14 @@ convolution (T input) (T filters) = T (funcall "tf.nn.convolution" [input,filter
 softmax0 :: T (n ': s) ('Typ 'Float w) -> T (n ': s) ('Typ 'Float w)
 softmax0 = unOp "tf.nn.softmax"
 
-round :: T s ('Typ 'Float w) -> T s ('Typ 'Float w)
-round = unOp "tf.round"
-
+softmax1 :: forall n m s w. KnownLen s => T (m ': n ': s) ('Typ 'Float w) -> T (m ': n ': s) ('Typ 'Float w)
+softmax1 (T x) = T (funcall "tf.nn.softmax" [x, named "dim" (showShapeLen @s)])
 
 argmax0 :: forall n s. KnownLen s => T (n ': s) Float32 -> T s Int64
 argmax0 (T t) = T (funcall "tf.argmax" [t, showShapeLen @ s])
 
+argmax1 :: forall m n s. KnownLen s => T (m ': n ': s) Float32 -> T (m ': s) Int64
+argmax1 (T t) = T (funcall "tf.argmax" [t, showShapeLen @ s])
 
 cast :: forall u s t. KnownTyp u => T s t -> T s u
 cast (T t) = T (funcall "tf.cast" [t, showTyp @ u])
@@ -275,6 +277,37 @@ glorotUniform = randomUniform low high
     high = 4.0 Prelude.* Prelude.sqrt(6.0/(fan_in Prelude.+ fan_out))
     fan_in = fromIntegral (natVal (Proxy @ a))
     fan_out = fromIntegral (natVal (Proxy @ b))
+
+----------------
+-- Helpers
+matvecmulBatch :: ∀ s cols rows t. (KnownLen s) =>  Tensor (cols ': rows ': s) t -> Tensor (cols ': s) t -> Tensor (rows ': s) t
+matvecmulBatch m v = squeeze0 (matmul m (expandDim0 v))
+
+matvecmul :: Tensor (cols ': rows ': '[]) t -> Tensor (cols ': batchSize ': '[]) t -> Tensor (rows ': batchSize ': '[]) t
+matvecmul m v = matmul v (transpose m)
+
+(∙) :: Tensor '[cols, rows] t -> Tensor '[cols,batchSize] t -> Tensor '[rows,batchSize] t
+x ∙ y = matvecmul x y
+
+(·) :: ∀ cols batchSize t. Tensor '[cols,batchSize] t -> Tensor '[cols,batchSize] t -> Tensor '[batchSize] t
+x · y = reduceSum0 (x ⊙ y)
+
+mapT :: (KnownNat n, KnownLen s, KnownLen r) => (T s t -> T r u) ->  T (n ': s) t -> Gen (T (n ': r) u)
+mapT f t = do
+  xs <- unstack t
+  return (stack (fmap f xs))
+
+zipWithT :: forall (s :: [Nat]) (t :: Typ) (s1 :: [Nat]) (t1 :: Typ) (s2 :: Shape) (n :: Nat) (t2 :: Typ).
+                  (KnownLen s2, KnownLen s1, KnownLen s, KnownNat n) =>
+                  (T s t -> T s1 t1 -> T s2 t2)
+                  -> Tensor (n : s) t
+                  -> Tensor (n : s1) t1
+                  -> Gen (Tensor (n : s2) t2)
+zipWithT f t u =  do
+  xs <- unstack t
+  ys <- unstack u
+  return (stack (f <$> xs <*> ys))
+
 
 
 -------------------------

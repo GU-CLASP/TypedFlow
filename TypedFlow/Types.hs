@@ -65,8 +65,12 @@ type family Reverse' xs ys where
 type family Reverse xs where
   Reverse xs = Reverse' xs '[]
 
-data V (n::Nat) a = V [a]
+newtype V (n::Nat) a = V [a]
   deriving (Functor, Foldable, Traversable)
+
+instance KnownNat n => Applicative (V n) where
+  pure = V . replicate (fromIntegral (natVal (Proxy @n)))
+  V fs <*> V xs = V (zipWith ($) fs xs)
 
 data V' (n::Nat) a where
   VZ :: V' 0 a

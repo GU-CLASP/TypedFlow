@@ -1,3 +1,4 @@
+{-# LANGUAGE TypeInType #-}
 {-# OPTIONS_GHC -fplugin GHC.TypeLits.KnownNat.Solver #-}
 {-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE DataKinds #-}
@@ -24,26 +25,7 @@ import GHC.TypeLits
 import Text.PrettyPrint.Compact (float)
 import TypedFlow.TF
 import TypedFlow.Types
-
-----------------
--- Helpers
-matvecmulBatch :: ∀ s cols rows t. (KnownLen s) =>  Tensor (cols ': rows ': s) t -> Tensor (cols ': s) t -> Tensor (rows ': s) t
-matvecmulBatch m v = squeeze0 (matmul m (expandDim0 v))
-
-matvecmul :: Tensor (cols ': rows ': '[]) t -> Tensor (cols ': batchSize ': '[]) t -> Tensor (rows ': batchSize ': '[]) t
-matvecmul m v = matmul v (transpose m)
-
-(∙) :: Tensor '[cols, rows] t -> Tensor '[cols,batchSize] t -> Tensor '[rows,batchSize] t
-x ∙ y = matvecmul x y
-
-(·) :: ∀ cols batchSize t. Tensor '[cols,batchSize] t -> Tensor '[cols,batchSize] t -> Tensor '[batchSize] t
-x · y = reduceSum0 (x ⊙ y)
-
-mapT :: (KnownNat n, KnownLen s, KnownLen r) => (T s t -> T r u) ->  T (n ': s) t -> Gen (T (n ': r) u)
-mapT f t = do
-  xs <- unstack t
-  return (stack (fmap f xs))
-
+import Data.Kind (Type)
 
 ---------------------
 -- Linear functions
@@ -156,7 +138,7 @@ stackRnnCells l1 l2 ((s0,s1),x) = do
   return ((s0',s1'),z)
 
 infixr .--.
-(.--.) :: forall (n :: Nat) s (a :: [Nat]) (t :: Typ) (b :: [Nat]) (u :: Typ) (ss :: [*]) (c :: [Nat]) (v :: Typ).
+(.--.) :: forall (n :: Nat) s (a :: [Nat]) (t :: Typ) (b :: [Nat]) (u :: Typ) (ss :: [Type]) (c :: [Nat]) (v :: Typ).
                 RnnLayer n s a t b u
                 -> RnnLayer n (HList ss) b u c v
                 -> RnnLayer n (HList (s : ss)) a t c v
