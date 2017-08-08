@@ -18,11 +18,11 @@ agreement input gold = do
   w <- parameter "dense" denseInitialiser
   (_sFi,predictions) <-
     rnn (timeDistribute (embedding @50 @100000 embs)
-          .--.
+          .|.
           (lstm @150 lstm1)
-          .--.
+          .|.
           (lstm @150 lstm2)
-          .--.
+          .|.
           timeDistribute (sigmoid . squeeze0 . dense  w))
         (() |> (zeros,zeros) |> (zeros,zeros) |> (),input)
   binary (last0 predictions) gold

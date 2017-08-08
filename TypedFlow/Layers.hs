@@ -157,8 +157,11 @@ stackRnnCells l1 l2 ((s0,s1),x) = do
   return ((s0',s1'),z)
 
 infixr .--.
-(.--.) :: forall s0 a b s1 c. RnnCell s0 a b -> RnnCell s1 b c -> RnnCell (s0, s1) a c
-(.--.) = stackRnnCells
+(.--.) ::  RnnLayer n s0 a t b u -> RnnLayer n s1 b u c v -> RnnLayer n (s0, s1) a t c v
+(.--.) = stackRnnLayers
+
+(.|.) :: forall s0 a b s1 c. RnnCell s0 a b -> RnnCell s1 b c -> RnnCell (s0, s1) a c
+(.|.) = stackRnnCells
 
 -- | @addAttention attn l@ adds the attention function @attn@ to the
 -- rnn cell @l@.  Note that @attn@ can depend in particular on a
@@ -222,18 +225,18 @@ luongMultiplicativeScoring w ht hs = hs · ir
   where ir :: T '[d,batchSize] Float32
         ir = w ∙ ht
 
-luongWrapper score w1 w2 θ hs = addAttentionWithFeedback (luongAttention (luongMultiplicativeScoring w1) w2 hs) (lstm θ)
+-- luongWrapper score w1 w2 θ hs = addAttentionWithFeedback (luongAttention (luongMultiplicativeScoring w1) w2 hs) (lstm θ)
 -- attnExample' θ1 θ2 h  = addAttention (attnExample1 θ1 h . snd) (lstm θ2)
 
 
 -- | A layer in an rnn.
-type RnnLayer n state input t output u = (state , Tensor (n ': input) t) -> Gen (state , Tensor (n ': output) u)
+type RnnLayer n state input t output u = state -> Tensor (n ': input) t -> Gen (state , Tensor (n ': output) u)
 
 -- | Build a RNN by repeating a cell @n@ times.
 rnn :: ∀ n state input output t u.
        (KnownNat n, KnownShape input, KnownShape output) =>
        RnnCell state (T input t) (T output u) -> RnnLayer n state input t output u
-rnn cell (s0, t) = do
+rnn cell s0 t = do
   xs <- unstack t
   (sFin,us) <- chainForward cell (s0,xs)
   return (sFin,stack us)
@@ -245,7 +248,7 @@ rnnBackwards :: ∀ n state input output t u.
        (KnownNat n, KnownShape input, KnownShape output) =>
        RnnCell state (T input t) (T output u) -> RnnLayer n state input t output u
 
-rnnBackwards cell (s0,t) = do
+rnnBackwards cell s0 t = do
   xs <- unstack t
   (sFin,us) <- chainBackward cell (s0,xs)
   return (sFin,stack us)
@@ -253,9 +256,9 @@ rnnBackwards cell (s0,t) = do
 -- | Compose two rnn layers. This is useful for example to combine
 -- forward and backward layers.
 stackRnnLayers :: RnnLayer n s0 a t b u -> RnnLayer n s1 b u c v -> RnnLayer n (s0,s1) a t c v
-stackRnnLayers f g ((s0,s1),x) = do
-  (s0',y) <- f (s0,x)
-  (s1',z) <- g (s1,y)
+stackRnnLayers f g (s0,s1) x = do
+  (s0',y) <- f s0 x
+  (s1',z) <- g s1 y
   return ((s0',s1'),z)
 
 -- | RNN helper
