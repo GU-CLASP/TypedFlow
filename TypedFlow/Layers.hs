@@ -161,18 +161,14 @@ recurrentDropout :: All TravTensor xs => KeepProb -> RnnCell xs a b -> RnnCell x
 recurrentDropout p cell (h,x) = do
   cell (travAllTensors (dropout p) h,x)
 
--- -- | Stack two RNN cells
--- stackRnnCells :: RnnCell s0 a b -> RnnCell s1 b c -> RnnCell (s0,s1) a c
--- stackRnnCells l1 l2 ((s0,s1),x) = do
---   (s0',y) <- l1 (s0,x)
---   (s1',z) <- l2 (s1,y)
---   return ((s0',s1'),z)
+-- | Stack two RNN cells
+stackRnnCells, (.-.) :: forall s0 s1 a b c. KnownLen s0 => RnnCell s0 a b -> RnnCell s1 b c -> RnnCell (s0 ++ s1) a c
+stackRnnCells l1 l2 (hsplit @s0 -> (s0,s1),x) = do
+  (s0',y) <- l1 (s0,x)
+  (s1',z) <- l2 (s1,y)
+  return ((happ s0' s1'),z)
 
--- idLayer :: RnnLayer n (HList '[]) a t a t
--- idLayer st x = return (st,x)
-
--- (.|.) :: forall s0 a b s1 c. RnnCell s0 a b -> RnnCell s1 b c -> RnnCell (s0, s1) a c
--- (.|.) = stackRnnCells
+(.-.) = stackRnnCells
 
 -- | @addAttention attn l@ adds the attention function @attn@ to the
 -- rnn cell @l@.  Note that @attn@ can depend in particular on a
@@ -190,7 +186,7 @@ addAttention attn l (s,a) = do
 -- | @attnExample1 θ h st@ combines each element of the vector h with
 -- s, and applies a dense layer with parameters θ. The "winning"
 -- element of h (using softmax) is returned.
-uniformAttn :: ∀ d m e batchSize. (KnownNat m) =>
+uniformAttn :: ∀ d m e batchSize. 
                AttentionScoring batchSize e d ->
                T '[m,d,batchSize] Float32 -> T '[e,batchSize] Float32 -> Gen (T '[d,batchSize] Float32)
 uniformAttn score hs_ ht = do
@@ -211,7 +207,7 @@ uniformAttn score hs_ ht = do
 addAttentionWithFeedback ::KnownShape s => 
                 ((T (b ': s) t) -> Gen (T (x ': s) t)) ->
                 RnnCell state                    (T ((a+x) ': s) t) (T (b ': s) t) ->
-                RnnCell (T (x ': s) t ': state)   (T ( a    ': s) t) (T (x ': s) t)
+                RnnCell (T (x ': s) t ': state)  (T ( a    ': s) t) (T (x ': s) t)
 addAttentionWithFeedback attn cell ((I prevAttnVector :* s),a) = do
   (s',y) <- cell (s,concat0 a prevAttnVector)
   focus <- attn y
@@ -220,10 +216,10 @@ addAttentionWithFeedback attn cell ((I prevAttnVector :* s),a) = do
 -- | Luong attention model (following
 -- https://github.com/tensorflow/nmt#background-on-the-attention-mechanism
 -- commit 75aa22dfb159f10a1a5b4557777d9ff547c1975a)
-luongAttention :: ∀ x d m e batchSize. (KnownNat m, KnownNat batchSize) =>
+luongAttention :: ∀ attnSize d m e batchSize. ( KnownNat batchSize) =>
                AttentionScoring batchSize e d ->
-               Tensor '[d+e,x] Float32 ->
-               T '[m,d,batchSize] Float32 -> T '[e,batchSize] Float32 -> Gen (T '[x,batchSize] Float32)
+               Tensor '[d+e,attnSize] Float32 ->
+               T '[m,d,batchSize] Float32 -> T '[e,batchSize] Float32 -> Gen (T '[attnSize,batchSize] Float32)
 luongAttention score w hs_ ht = do
   ct <- uniformAttn score hs_ ht
   let at = tanh (w ∙ concat0 ct ht)
