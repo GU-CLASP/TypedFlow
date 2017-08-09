@@ -84,6 +84,7 @@ timedCategoricatDistribution logits' y = do
   crossEntropies <- zipWithT softmaxCrossEntropyWithLogits y logits
   modelLoss <- assign (reduceMeanAll crossEntropies)
   return ModelOutput{..}
+  -- TODO: use sentence length to mask "useless" loss?
 
 type Scalar t = T '[] t
 

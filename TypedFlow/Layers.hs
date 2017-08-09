@@ -1,3 +1,4 @@
+{-# LANGUAGE ViewPatterns #-}
 {-# LANGUAGE TypeInType #-}
 {-# OPTIONS_GHC -fplugin GHC.TypeLits.KnownNat.Solver #-}
 {-# LANGUAGE AllowAmbiguousTypes #-}
@@ -25,7 +26,7 @@ import GHC.TypeLits
 import Text.PrettyPrint.Compact (float)
 import TypedFlow.TF
 import TypedFlow.Types
-import Data.Kind (Type)
+-- import Data.Kind (Type)
 
 ---------------------
 -- Linear functions
@@ -91,14 +92,14 @@ maxPool2D (T value) = T (funcall "tf.nn.max_pool" [value
 -------------------------------
 -- RNN layers and combinators
 
-type RnnCell  state input output = (state , input) -> Gen (state , output)
+type RnnCell states input output = (HList states , input) -> Gen (HList states , output)
 
 
 -- | Any pure function (feed-forward layer) can be transformed into a
 -- cell by ignoring the RNN state.
 
-timeDistribute :: (a -> b) -> RnnCell () a b
-timeDistribute pureLayer ((),a) = return ((), pureLayer a)
+timeDistribute :: (a -> b) -> RnnCell '[] a b
+timeDistribute pureLayer (Unit,a) = return (Unit, pureLayer a)
 
 cellInitializerBit :: ∀ n x. (KnownNat n, KnownNat x) => (n + x) ⊸ n
 cellInitializerBit = (concat0 recurrentInitializer kernelInitializer,biasInitializer)
@@ -119,8 +120,8 @@ lstmInitializer = (cellInitializerBit, cellInitializerBit, cellInitializerBit,ce
 
 
 lstm :: ∀ n x bs. (KnownNat bs) => LSTMP n x ->
-        RnnCell (T '[n,bs] Float32, T '[n,bs] Float32) (Tensor '[x,bs] Float32) (Tensor '[n,bs] Float32)
-lstm (wf,wi,wc,wo) ((ht1 , ct1) , input) = do
+        RnnCell '[(T '[n,bs] Float32, T '[n,bs] Float32)] (Tensor '[x,bs] Float32) (Tensor '[n,bs] Float32)
+lstm (wf,wi,wc,wo) ((I (ht1, ct1) :* Unit) , input) = do
   hx <- assign (concat0 ht1 input)
   let f = sigmoid (wf # hx)
       i = sigmoid (wi # hx)
@@ -128,27 +129,28 @@ lstm (wf,wi,wc,wo) ((ht1 , ct1) , input) = do
       o = sigmoid (wo # hx)
   c <- assign ((f ⊙ ct1) + (i ⊙ cTilda))
   h <- assign (o + tanh c)
-  return ((c , h) , h)
+  return (I (c,h) :* Unit , h)
 
--- | Stack two RNN cells
-stackRnnCells :: RnnCell s0 a b -> RnnCell s1 b c -> RnnCell (s0,s1) a c
-stackRnnCells l1 l2 ((s0,s1),x) = do
-  (s0',y) <- l1 (s0,x)
-  (s1',z) <- l2 (s1,y)
-  return ((s0',s1'),z)
+-- type GRUP n x =
+  
+-- gru :: ∀ n x bs. (KnownNat bs) => GRUP n x ->
+--         RnnCell (T '[n,bs] Float32) (Tensor '[x,bs] Float32) (Tensor '[n,bs] Float32)
 
-infixr .--.
-(.--.) :: forall (n :: Nat) s (a :: [Nat]) (t :: Typ) (b :: [Nat]) (u :: Typ) (ss :: [Type]) (c :: [Nat]) (v :: Typ).
-                RnnLayer n s a t b u
-                -> RnnLayer n (HList ss) b u c v
-                -> RnnLayer n (HList (s : ss)) a t c v
-(.--.) = stackRnnLayers
 
-idLayer :: RnnLayer n (HList '[]) a t a t
-idLayer st x = return (st,x)
+-- recurrentDropout 
 
-(.|.) :: forall s0 a b s1 c. RnnCell s0 a b -> RnnCell s1 b c -> RnnCell (s0, s1) a c
-(.|.) = stackRnnCells
+-- -- | Stack two RNN cells
+-- stackRnnCells :: RnnCell s0 a b -> RnnCell s1 b c -> RnnCell (s0,s1) a c
+-- stackRnnCells l1 l2 ((s0,s1),x) = do
+--   (s0',y) <- l1 (s0,x)
+--   (s1',z) <- l2 (s1,y)
+--   return ((s0',s1'),z)
+
+-- idLayer :: RnnLayer n (HList '[]) a t a t
+-- idLayer st x = return (st,x)
+
+-- (.|.) :: forall s0 a b s1 c. RnnCell s0 a b -> RnnCell s1 b c -> RnnCell (s0, s1) a c
+-- (.|.) = stackRnnCells
 
 -- | @addAttention attn l@ adds the attention function @attn@ to the
 -- rnn cell @l@.  Note that @attn@ can depend in particular on a
@@ -156,9 +158,9 @@ idLayer st x = return (st,x)
 -- attention to.  The type parameter @x@ is the size of the portion of
 -- @h@ that the cell @l@ will observe.
 addAttention :: KnownShape s =>
-                (state -> Gen (T (x ': s) t)) ->
-                RnnCell state (T ((a+x) ': s) t) (T (b ': s) t) ->
-                RnnCell state (T ( a    ': s) t) (T (b ': s) t)
+                (HList states -> Gen (T (x ': s) t)) ->
+                RnnCell states (T ((a+x) ': s) t) (T (b ': s) t) ->
+                RnnCell states (T ( a    ': s) t) (T (b ': s) t)
 addAttention attn l (s,a) = do
   focus <- attn s
   l (s,concat0 a focus)
@@ -187,11 +189,11 @@ uniformAttn score hs_ ht = do
 addAttentionWithFeedback ::KnownShape s => 
                 ((T (b ': s) t) -> Gen (T (x ': s) t)) ->
                 RnnCell state                    (T ((a+x) ': s) t) (T (b ': s) t) ->
-                RnnCell (state,(T (x ': s) t))   (T ( a    ': s) t) (T (x ': s) t)
-addAttentionWithFeedback attn cell ((s,prevAttnVector),a) = do
+                RnnCell (T (x ': s) t ': state)   (T ( a    ': s) t) (T (x ': s) t)
+addAttentionWithFeedback attn cell ((I prevAttnVector :* s),a) = do
   (s',y) <- cell (s,concat0 a prevAttnVector)
   focus <- attn y
-  return ((s',focus),focus)
+  return ((I focus :* s'),focus)
 
 -- | Luong attention model (following
 -- https://github.com/tensorflow/nmt#background-on-the-attention-mechanism
@@ -217,7 +219,7 @@ luongMultiplicativeScoring w ht hs = hs · ir
 
 
 -- | A layer in an rnn. @n@ is the length of the time sequence. @state@ is state propagated through time.
-type RnnLayer n state input t output u = state -> Tensor (n ': input) t -> Gen (state , Tensor (n ': output) u)
+type RnnLayer n state input t output u = HList state -> Tensor (n ': input) t -> Gen (HList state , Tensor (n ': output) u)
 
 -- | Build a RNN by repeating a cell @n@ times.
 rnn :: ∀ n state input output t u.
@@ -242,11 +244,16 @@ rnnBackwards cell s0 t = do
 
 -- | Compose two rnn layers. This is useful for example to combine
 -- forward and backward layers.
-stackRnnLayers :: RnnLayer n s a t b u -> RnnLayer n (HList ss) b u c v -> RnnLayer n (HList (s:ss)) a t c v
-stackRnnLayers f g (I s0 :* s1) x = do
+(.--.),stackRnnLayers :: forall s1 s2 a t b u c v n. KnownLen s1 =>
+                  RnnLayer n s1 a t b u -> RnnLayer n s2 b u c v -> RnnLayer n (s1 ++ s2) a t c v
+stackRnnLayers f g (hsplit @s1 -> (s0,s1)) x = do
   (s0',y) <- f s0 x
   (s1',z) <- g s1 y
-  return (I s0' :* s1',z)
+  return (happ s0' s1',z)
+
+
+infixr .--.
+(.--.) = stackRnnLayers
 
 -- | RNN helper
 chainForward :: ∀ state a b n. ((state , a) -> Gen (state , b)) → (state , V n a) -> Gen (state , V n b)

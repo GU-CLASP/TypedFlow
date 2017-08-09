@@ -43,6 +43,8 @@ type family Init xs where
   Init '[x] = '[]
   Init (x ': xs) = x ': Init xs
 
+-- Some proofs.
+
 -- initLast' :: forall s k. ((Init s ++ '[Last s]) ~ s => k) -> k
 -- initLast' k = unsafeCoerce# k -- why not?
 
@@ -53,6 +55,16 @@ initLast' (Cons _ (Cons y ys)) k = initLast' (Cons y ys) (k)
 
 initLast :: forall s k. KnownShape s => ((Init s ++ '[Last s]) ~ s => k) -> k
 initLast = initLast' @s shapeSing
+
+
+splitApp' :: forall ys xs k. PeanoLen xs -> ((Take (PeanoLength xs) (xs ++ ys) ~ xs,
+                                              Drop (PeanoLength xs) (xs ++ ys) ~ ys) => k) -> k
+splitApp' LZ k = k
+splitApp' (LS n) k = splitApp' @ys n k
+
+splitApp :: forall xs ys k. KnownLen xs => ((Take (PeanoLength xs) (xs ++ ys) ~ xs,
+                                             Drop (PeanoLength xs) (xs ++ ys) ~ ys) => k) -> k
+splitApp = splitApp' @ys (shapePeanoLen @xs)
 
 type family Length xs where
   Length '[] = 0
@@ -92,6 +104,15 @@ happ :: NP f xs -> NP f ys -> NP f (xs ++ ys)
 happ Unit xs = xs
 happ (x :* xs) ys = x :* (happ xs ys)
 
+hsplit' :: SPeano n -> NP f xs -> (NP f (Take n xs), NP f (Drop n xs))
+hsplit' SZero xs = (Unit,xs)
+hsplit' (SSucc _n) Unit = (Unit,Unit)
+hsplit' (SSucc n) (x :* xs) = case hsplit' n xs of
+  (l,r) -> (x :* l,r)
+
+hsplit :: forall xs ys f. KnownLen xs => NP f (xs++ys) -> (NP f xs, NP f ys)
+hsplit xys = splitApp @xs @ys (hsplit' (shapePeano @xs) xys)
+
 hsnoc :: NP f xs -> f x -> NP f (xs ++ '[x])
 hsnoc xs x = happ xs (x :* Unit)
 
@@ -109,7 +130,7 @@ instance KnownPeano 'Zero where peanoInt = 0
 instance KnownPeano n => KnownPeano ('Succ n) where peanoInt = 1 + (peanoInt @n)
 
 data SPeano n where
-  SZero :: SPeano zero
+  SZero :: SPeano 'Zero
   SSucc :: SPeano n -> SPeano ('Succ n)
 
 data Vec (n::Peano) a where
@@ -126,10 +147,12 @@ vecToList (VCons x xs) = x : vecToList xs
 
 type family Take n xs where
    Take 'Zero xs            =  '[]
+   Take ('Succ n) '[] =  '[]
    Take ('Succ n) (x ': xs) =  x ': Take n xs
 
 type family Drop n xs where
    Drop 'Zero xs            =  xs
+   Drop ('Succ n) '[]            =  '[]
    Drop ('Succ n) (x ': xs) =  Drop n xs
 
 type family At n xs where
@@ -192,14 +215,28 @@ instance KnownKind 'Float where
 instance KnownKind 'Int where
   kindVal = Int
 
+data PeanoLen s where
+  LZ :: PeanoLen '[]
+  LS :: forall x xs. PeanoLen xs -> PeanoLen (x ': xs)
+
+type family PeanoLength xs :: Peano where
+  PeanoLength '[] = 'Zero
+  PeanoLength (x ': xs) = 'Succ (PeanoLength xs)
+
 class KnownLen s where
   shapeLen :: Integer
+  shapePeano :: SPeano (PeanoLength s)
+  shapePeanoLen :: PeanoLen s
 
 instance KnownLen '[] where
   shapeLen = 0
-
+  shapePeano = SZero
+  shapePeanoLen = LZ
+  
 instance KnownLen xs => KnownLen (x ': xs) where
   shapeLen = 1 Prelude.+ shapeLen @ xs
+  shapePeano = SSucc (shapePeano @xs)
+  shapePeanoLen = LS (shapePeanoLen @xs)
 
 
 getShape :: ∀s. KnownShape s=> SShape s
