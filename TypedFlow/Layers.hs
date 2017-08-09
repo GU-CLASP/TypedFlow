@@ -26,7 +26,7 @@ import GHC.TypeLits
 import Text.PrettyPrint.Compact (float)
 import TypedFlow.TF
 import TypedFlow.Types
--- import Data.Kind (Type)
+import Data.Kind (Type,Constraint)
 
 ---------------------
 -- Linear functions
@@ -145,7 +145,21 @@ gru (wz,wr,w) ((I ht1 :* Unit) , xt) = do
   ht <- assign ((ones ⊝ zt) ⊙ ht1 + zt ⊙ hTilda)
   return (I ht :* Unit, ht)
 
--- recurrentDropout TODO
+class TravTensor tt
+   where travTensor :: (forall s t. T s t -> T s t) -> tt -> tt
+
+instance TravTensor (T s t) where
+  travTensor f x = f x
+
+instance (TravTensor a, TravTensor b) => TravTensor (a,b) where
+  travTensor f (a,b) = (travTensor f a, travTensor f b)
+
+travAllTensors :: All TravTensor xs => (forall s t. T s t -> T s t) -> HList xs -> HList xs
+travAllTensors f (I x :* xs) = I (travTensor f x) :* travAllTensors f xs
+
+recurrentDropout :: All TravTensor xs => KeepProb -> RnnCell xs a b -> RnnCell xs a b
+recurrentDropout p cell (h,x) = do
+  cell (travAllTensors (dropout p) h,x)
 
 -- -- | Stack two RNN cells
 -- stackRnnCells :: RnnCell s0 a b -> RnnCell s1 b c -> RnnCell (s0,s1) a c
@@ -237,6 +251,9 @@ rnn cell s0 t = do
   xs <- unstack t
   (sFin,us) <- chainForward cell (s0,xs)
   return (sFin,stack us)
+-- There will be lots of stacking and unstacking at each layer for no
+-- reason; we should change the in/out from tensors to vectors of
+-- tensors.
 
 -- | Build a RNN by repeating a cell @n@ times. However the state is
 -- propagated in the right-to-left direction (decreasing indices in
@@ -249,6 +266,12 @@ rnnBackwards cell s0 t = do
   xs <- unstack t
   (sFin,us) <- chainBackward cell (s0,xs)
   return (sFin,stack us)
+  
+-- note: an alternative design would be to reverse the input and
+-- output tensors instead. (thus we could make 'backwards' a
+-- completely separate function that does not do any chaining.)
+-- Reversing the tensors in TF may be slow though, so we should change
+-- the in/out from tensors to vectors of tensors.
 
 -- | Compose two rnn layers. This is useful for example to combine
 -- forward and backward layers.

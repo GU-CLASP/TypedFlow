@@ -23,12 +23,13 @@
 
 module TypedFlow.Types where
 
-import Text.PrettyPrint.Compact hiding (Last)
+import Text.PrettyPrint.Compact hiding (All,Last)
 import GHC.TypeLits
 import Data.Proxy
 import Control.Monad.State
 import Data.Char (toLower)
 -- import GHC.Prim (unsafeCoerce#)
+import Data.Kind (Type,Constraint)
 type DOC = Doc ()
 
 type family (++) xs ys where
@@ -88,17 +89,28 @@ data V' (n::Nat) a where
   VZ :: V' 0 a
   VS :: a -> V' n a -> V' (1+n) a
 
--- -- | Heterogeneous tensor vector.
--- data H (n::Peano) where
---   HZ :: H 'Zero
---   HS :: T s Float32 -> H n -> H ('Succ n)
-
 -- From: https://www.cs.ox.ac.uk/projects/utgp/school/andres.pdf
 data NP f (xs :: [k]) where
   Unit :: NP f '[]
   (:*) :: f x -> NP f xs -> NP f (x ': xs)
 newtype I a = I a
 type HList = NP I
+
+
+type family All (c :: k -> Constraint) (xs :: [k]) :: Constraint where
+  All c '[] = ()
+  All c (x ': xs) = (c x, All c xs)
+
+-- | Flip at type level
+newtype F g t s = F (g s t)
+
+-- | Heterogeneous tensor vector with the same kind of elements
+type HTV t = NP (F T t)
+
+hmap :: (forall x. f x -> g x) -> NP f xs -> NP g xs
+hmap _ Unit = Unit
+hmap f (x :* xs) = f x :* hmap f xs
+
 
 happ :: NP f xs -> NP f ys -> NP f (xs ++ ys)
 happ Unit xs = xs

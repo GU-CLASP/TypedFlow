@@ -55,15 +55,16 @@ decoder prefix thoughtVectors target = do
   (_sFinal,outFinal) <-
     (rnn (timeDistribute (embedding @50 @outVocabSize embs))
       .--.
-     rnn (lstm @512 lstm1)
+     rnn (timeDistribute (dropout (KeepProb 0.8)))
+      .--.
+     rnn (recurrentDropout (KeepProb 0.8) (lstm @512 lstm1))
       .--.
      rnnBackwards (lstm @512 lstm2)
       .--.
      rnn (timeDistribute (dense projs))
-     )
-     (thoughtVectors)
+     ) thoughtVectors target
+
      -- TODO: should we send the states for all layers? Or just the top one?
-     target
   return outFinal
 
 seq2seq :: forall (inVocSize :: Nat) (outVocSize :: Nat) (n :: Nat) (bs :: Nat).
