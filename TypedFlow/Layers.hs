@@ -131,13 +131,21 @@ lstm (wf,wi,wc,wo) ((I (ht1, ct1) :* Unit) , input) = do
   h <- assign (o + tanh c)
   return (I (c,h) :* Unit , h)
 
--- type GRUP n x =
-  
--- gru :: ∀ n x bs. (KnownNat bs) => GRUP n x ->
---         RnnCell (T '[n,bs] Float32) (Tensor '[x,bs] Float32) (Tensor '[n,bs] Float32)
+type GRUP n x = (((n + x) ⊸ n),
+                 ((n + x) ⊸ n),
+                 ((n + x) ⊸ n))
 
+gru :: ∀ n x bs. (KnownNat bs, KnownNat n) => GRUP n x ->
+        RnnCell '[T '[n,bs] Float32] (Tensor '[x,bs] Float32) (Tensor '[n,bs] Float32)
+gru (wz,wr,w) ((I ht1 :* Unit) , xt) = do
+  hx <- assign (concat0 ht1 xt)
+  let zt = sigmoid (wz # hx)
+      rt = sigmoid (wr # hx)
+      hTilda = tanh (w # (concat0 (rt ⊙ ht1) xt))
+  ht <- assign ((ones ⊝ zt) ⊙ ht1 + zt ⊙ hTilda)
+  return (I ht :* Unit, ht)
 
--- recurrentDropout 
+-- recurrentDropout TODO
 
 -- -- | Stack two RNN cells
 -- stackRnnCells :: RnnCell s0 a b -> RnnCell s1 b c -> RnnCell (s0,s1) a c
