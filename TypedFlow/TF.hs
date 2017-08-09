@@ -292,22 +292,36 @@ x ∙ y = matvecmul x y
 (·) :: ∀ cols batchSize t. Tensor '[cols,batchSize] t -> Tensor '[cols,batchSize] t -> Tensor '[batchSize] t
 x · y = reduceSum0 (x ⊙ y)
 
-mapT :: (KnownNat n, KnownLen s, KnownLen r) => (T s t -> T r u) ->  T (n ': s) t -> Gen (T (n ': r) u)
-mapT f t = do
-  xs <- unstack t
-  return (stack (fmap f xs))
+mapT :: forall s t r u n. KnownTyp u => (T s t -> T r u) ->  T (n ': s) t -> Gen (T (n ': r) u)
+mapT f (T t) = do
+  -- xs <- unstack t
+  -- return (stack (fmap f xs))
+  fn <- lambda f
+  return (T (funcall "tf.map_fn" [fn, t, named "dtype" (showTyp @u)]))
+  -- TODO: separate harmless and harmful effects. (the big question: are assignments harmful?)
+
 
 zipWithT :: forall (s :: [Nat]) (t :: Typ) (s1 :: [Nat]) (t1 :: Typ) (s2 :: Shape) (n :: Nat) (t2 :: Typ).
-                  (KnownLen s2, KnownLen s1, KnownLen s, KnownNat n) =>
+            KnownTyp t2 =>
                   (T s t -> T s1 t1 -> T s2 t2)
                   -> Tensor (n : s) t
                   -> Tensor (n : s1) t1
                   -> Gen (Tensor (n : s2) t2)
-zipWithT f t u =  do
-  xs <- unstack t
-  ys <- unstack u
-  return (stack (f <$> xs <*> ys))
+zipWithT f (T t) (T u) =  do
+  -- xs <- unstack t
+  -- ys <- unstack u
+  -- return (stack (f <$> xs <*> ys))
+  fn <- lambda2 f
+  return (T (funcall "tf.map_fn" [fn, tuple [t,u], named "dtype" (showTyp @t2)]))
 
+
+-- apparently tensorflow (python?) is not aware of 2-argument
+-- functions; so we do this... thing.
+lambda2 :: (T s t -> T s1 t1 -> T s' t') -> Gen UntypedExpression
+lambda2 f = do
+  v <- newVar
+  let T body = f (T (v <> brackets (int 0))) (T (v <> brackets (int 1)))
+  return (text "lambda " <> v <> text ": " <> body)
 
 
 -------------------------

@@ -344,6 +344,11 @@ genFun name args body = do
   gen (text "def " <> text name <> tuple args <> text ":")
   withDOC (\b -> text "  " <> b) body
 
+lambda :: (T s t -> T s' t') -> Gen UntypedExpression
+lambda f = do
+  v <- newVar
+  let T body = f (T v)
+  return (text "lambda " <> v <> ": " <> body)
 
 generate :: Gen () -> String
 generate s = renderWith (Options 92 (const id)) (genText (execState (fromGen s) (GState {nextVar = 0, genText = mempty})))
