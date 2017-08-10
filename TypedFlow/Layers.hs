@@ -188,7 +188,7 @@ addAttention attn l (s,a) = do
 -- s, and applies a dense layer with parameters θ. The "winning"
 -- element of h (using softmax) is returned.
 uniformAttn :: ∀ d m e batchSize. 
-               AttentionScoring batchSize e d ->
+               KnownNat m => AttentionScoring batchSize e d ->
                T '[m,d,batchSize] Float32 -> T '[e,batchSize] Float32 -> Gen (T '[d,batchSize] Float32)
 uniformAttn score hs_ ht = do
   xx <- mapT (score ht) hs_
@@ -217,7 +217,7 @@ addAttentionWithFeedback attn cell ((I prevAttnVector :* s),a) = do
 -- | Luong attention model (following
 -- https://github.com/tensorflow/nmt#background-on-the-attention-mechanism
 -- commit 75aa22dfb159f10a1a5b4557777d9ff547c1975a)
-luongAttention :: ∀ attnSize d m e batchSize. ( KnownNat batchSize) =>
+luongAttention :: ∀ attnSize d m e batchSize. KnownNat m => ( KnownNat batchSize) =>
                AttentionScoring batchSize e d ->
                Tensor '[d+e,attnSize] Float32 ->
                T '[m,d,batchSize] Float32 -> T '[e,batchSize] Float32 -> Gen (T '[attnSize,batchSize] Float32)

@@ -41,7 +41,8 @@ encoder prefix input = do
       .--.
      rnnBackwards (lstm @512 lstm2)
      ) (I (zeros,zeros) :* I (zeros,zeros) :* Unit) input
-  return (sFinal,h)
+  h' <- assign h  -- will be used many times as input to attention model
+  return (sFinal,h')
 
 decoder :: forall (n :: Nat) (outVocabSize :: Nat) (bs :: Nat) (d::Nat).
                  KnownNat d => (KnownNat bs, KnownNat outVocabSize, KnownNat n) =>
@@ -61,14 +62,15 @@ decoder prefix hs thoughtVectors target = do
   let attn = (luongAttention @64 (luongMultiplicativeScoring w1) w2 hs)
       initAttn = zeros
   (_sFinal,outFinal) <-
-    (rnn (timeDistribute (embedding @50 @outVocabSize embs))
-      .--.
-     rnn (addAttentionWithFeedback attn ((lstm @512 lstm1)
-                                          .-.
-                                          (lstm @512 lstm2)))
-      .--.
-     rnn (timeDistribute (dense projs))
-     ) (I initAttn :* thoughtVectors) target
+    (rnn (timeDistribute (embedding @50 @outVocabSize embs)
+          .-.
+          addAttentionWithFeedback attn
+           ((lstm @512 lstm1)
+             .-.
+             (lstm @512 lstm2))
+          .-.
+          (timeDistribute (dense projs))
+         )) (I initAttn :* thoughtVectors) target
 
      -- TODO: should we use the states for all layers as
      -- thoughtVectors? Or just the top one?
@@ -86,15 +88,21 @@ seq2seq input gold = do
 
 -- TODO: beam search decoder. Perhaps best implemented outside of tensorflow?
 
+trainModel :: Tensor '[20, 128] Int32
+                    -> Tensor '[20, 128] Int32 -> Gen (ModelOutput '[20, 128] Int32)
+trainModel input gold = do
+  y_ <- seq2seq @10000 @10000 @20 @128 input gold
+  timedCategorical y_ gold
 
--- main :: IO ()
--- main = do
---   writeFile "s2s_model.py" (generate $ compile defaultOptions (mnist @None))
---   putStrLn "done!"
+main :: IO ()
+main = do
+  writeFile "s2s_model.py" (generate $ compile (defaultOptions {maxGradientNorm = Just 1})
+                             trainModel)
+  putStrLn "done!"
 
 {-> main
 
-
+done!
 -}
 
 

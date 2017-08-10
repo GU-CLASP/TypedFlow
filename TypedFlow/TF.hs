@@ -185,10 +185,20 @@ unstack (T x) = do
         where n = natVal (Proxy @ n)
 
 stack :: ∀ s (n::Nat) t. (KnownLen s) => V n (T s t) -> Tensor (n ': s) t
-stack (V xs) = T (funcall "tf.stack" [(list [x | T x <- xs]), text "axis=" <> integer (shapeLen @ s)])
+stack (V xs) = T (funcall "tf.stack" [list [x | T x <- xs], text "axis=" <> integer (shapeLen @ s)])
+
+stackN :: ∀ s (n::Nat) t. V n (T s t) -> Tensor (s ++ '[n]) t
+stackN (V xs) = T (funcall "tf.stack" [list [x | T x <- xs], text "axis=0"])
 
 transpose :: ∀ s t. T (Reverse s) t -> T s t
 transpose = unOp "tf.transpose"
+
+transposeN :: ∀ s n t. KnownLen s => T (n ': s) t -> T (s ++ '[n]) t
+transposeN (T x) = T (funcall "tf.transpose" [x, named "perm" (list (map integer (shapeLen @s:[0.. shapeLen @s-1])))])
+
+transposeN' :: ∀ s n t. KnownLen s => T (s ++ '[n]) t -> T (n ': s) t
+transposeN' (T x) = T (funcall "tf.transpose" [x, named "perm" (list (map integer ([1.. shapeLen @s]++[0])))])
+
 
 gather :: ∀s n indexShape t. T (s ++ '[n]) t -> T indexShape Int32 -> T (s ++ indexShape) t
 gather = binOp "tf.gather"
@@ -296,22 +306,40 @@ x ∙ y = matvecmul x y
 (·) :: ∀ cols batchSize t. Tensor '[cols,batchSize] t -> Tensor '[cols,batchSize] t -> Tensor '[batchSize] t
 x · y = reduceSum0 (x ⊙ y)
 
-mapT :: forall s t r u n. KnownTyp u => (T s t -> T r u) ->  T (n ': s) t -> Gen (T (n ': r) u)
-mapT f (T t) = do
-  -- xs <- unstack t
-  -- return (stack (fmap f xs))
-  fn <- lambda f
-  return (T (funcall "tf.map_fn" [fn, t, named "dtype" (showTyp @u)]))
-  -- TODO: separate harmless and harmful effects. (the big question: are assignments harmful?)
+mapT' :: forall s t r u n. KnownLen r => KnownLen s => KnownNat n => (T s t -> T r u) ->  T (n ': s) t -> Gen (T (n ': r) u)
+mapT' f t = do
+  xs <- unstack t
+  return (stack (fmap f xs))
 
+mapT :: forall s t r u n. KnownTyp u => KnownLen r => KnownLen s => (T s t -> T r u) ->  T (n ': s) t -> Gen (T (n ': r) u)
+mapT f x = do
+  x' <- mapTN @n f (transposeN @s @n x)
+  return (transposeN' @r x')
+
+mapTN :: forall n s t r u. KnownTyp u => (T s t -> T r u) ->  T (s ++ '[n]) t -> Gen(T (r ++ '[n]) u)
+mapTN f t = do
+  fn <- lambda f
+  return (T (funcall "tf.map_fn" [fn, fromTensor t, named "dtype" (showTyp @u)]))
+
+-- TODO: separate harmless and harmful effects. (the big question: are assignments harmful?)
 
 zipWithT :: forall (s :: [Nat]) (t :: Typ) (s1 :: [Nat]) (t1 :: Typ) (s2 :: Shape) (n :: Nat) (t2 :: Typ).
+            (KnownLen s, KnownLen s2, KnownLen s1) => KnownTyp t2 =>
+                  (T s t -> T s1 t1 -> T s2 t2)
+                  -> Tensor (n ': s) t
+                  -> Tensor (n ': s1) t1
+                  -> Gen (Tensor (n ': s2) t2)
+zipWithT f x y = do
+  x' <- zipWithTN @n f (transposeN @s @n x) (transposeN @s1 @n y)
+  return (transposeN' @s2 x')
+
+zipWithTN :: forall (n :: Nat) (s :: [Nat]) (t :: Typ) (s1 :: [Nat]) (t1 :: Typ) (s2 :: Shape) (t2 :: Typ).
             KnownTyp t2 =>
                   (T s t -> T s1 t1 -> T s2 t2)
-                  -> Tensor (n : s) t
-                  -> Tensor (n : s1) t1
-                  -> Gen (Tensor (n : s2) t2)
-zipWithT f (T t) (T u) =  do
+                  -> Tensor (s ++ '[n]) t
+                  -> Tensor (s1 ++ '[n]) t1
+                  -> Gen (Tensor (s2 ++ '[n]) t2)
+zipWithTN f (T t) (T u) =  do
   -- xs <- unstack t
   -- ys <- unstack u
   -- return (stack (f <$> xs <*> ys))
