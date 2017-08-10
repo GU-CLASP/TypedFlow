@@ -57,7 +57,7 @@ categorical logits' y = do
       modelY = y_
   correctPrediction <- assign (equal y_ y)
   modelAccuracy <- assign (reduceMeanAll (cast @Float32 correctPrediction))
-  modelLoss <- assign (reduceMeanAll (softmaxCrossEntropyWithLogits (oneHot y) logits))
+  modelLoss <- assign (reduceMeanAll (softmaxCrossEntropyWithLogits (oneHot0 y) logits))
   return ModelOutput{..}
 
 -- | First type argument is the number of classes.
@@ -74,14 +74,14 @@ categoricalDistribution logits' y = do
   modelLoss <- assign (reduceMeanAll (softmaxCrossEntropyWithLogits y logits))
   return ModelOutput{..}
 
-timedCategoricatDistribution :: forall len nCat bs. KnownNat bs => KnownNat len => Model '[len,nCat,bs] Float32 '[len,nCat,bs] Float32
-timedCategoricatDistribution logits' y = do
+timedCategorical :: forall len nCat bs. KnownNat nCat => KnownNat bs => KnownNat len => Model '[len,nCat,bs] Float32 '[len,bs] Int32
+timedCategorical logits' y = do
   logits <- assign logits'
-  let y_ = softmax1 logits
+  let y_ = cast (argmax1 logits)
       modelY = y_
-  correctPrediction <- assign (equal (argmax1 logits) (argmax1 y))
+  correctPrediction <- assign (equal (argmax1 logits) (cast y))
   modelAccuracy <- assign (reduceMeanAll (linearize2 (cast @Float32 correctPrediction)))
-  crossEntropies <- zipWithT softmaxCrossEntropyWithLogits y logits
+  crossEntropies <- zipWithT softmaxCrossEntropyWithLogits (oneHot1 y) logits
   modelLoss <- assign (reduceMeanAll crossEntropies)
   return ModelOutput{..}
   -- TODO: use sentence length to mask "useless" loss?

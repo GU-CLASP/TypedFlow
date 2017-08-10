@@ -134,14 +134,14 @@ concat1 = concatT @Dim1
 -- expandDim :: ∀ s0 s t. KnownLen s => Tensor (s0 ++ s) t -> Tensor (s0 ++ (1 ': s)) t
 -- expandDim (T x) = (T (funcall "tf.expand_dims" [x, text "axis=" <> integer (shapeLen @ s)]))
 
-expandDim' :: forall n s t. (KnownLen s, KnownPeano n) => Tensor s t -> Tensor (Take n s ++ (1 ': Drop n s)) t
-expandDim' (T x) = (T (funcall "tf.expand_dims" [x, text "axis=" <> integer (shapeLen @s - peanoInt @n)]))
+expandDim :: forall n s t. (KnownLen s, KnownPeano n) => Tensor s t -> Tensor (Take n s ++ (1 ': Drop n s)) t
+expandDim (T x) = (T (funcall "tf.expand_dims" [x, named "axis" (integer (shapeLen @s - peanoInt @n))]))
 
 expandDim0 :: ∀ s t. KnownLen s => Tensor s t -> Tensor (1 ': s) t
-expandDim0 = expandDim' @Dim0
+expandDim0 = expandDim @Dim0
 
 expandDim1 :: ∀ n s t. KnownShape s => Tensor (n ': s) t -> Tensor (n ': 1 ': s) t
-expandDim1 = expandDim' @Dim1
+expandDim1 = expandDim @Dim1
 
 tile :: forall m n s t. (KnownNat m) => Tensor (n ': s) t -> Tensor ((m * n) ': s) t
 tile (T x) = T (funcall "tf.tile" [x, integer (natVal (Proxy @m))])
@@ -243,10 +243,14 @@ softmaxCrossEntropyWithLogits :: Tensor '[numClasses,batchSize] Float32 -> Tenso
 softmaxCrossEntropyWithLogits (T labels) (T logits) =
   T (funcall "tf.nn.softmax_cross_entropy_with_logits" [named "labels" labels,named "logits" logits])
 
+oneHot :: forall n numClasses s w. KnownNat numClasses => (KnownLen s, KnownPeano n) => Tensor s ('Typ 'Int w) -> Tensor (Take n s ++ (numClasses ': Drop n s)) Float32
+oneHot (T x) = T (funcall "tf.one_hot" [x, named "depth" (showDim @numClasses), named "axis" (integer (shapeLen @s - peanoInt @n))])
 
-oneHot :: forall numClasses w batchSize. KnownNat numClasses =>
-          Tensor '[batchSize] ('Typ 'Int w) -> Tensor '[numClasses,batchSize] Float32
-oneHot (T indices) = T (funcall "tf.one_hot" [indices, named "depth" (showDim @numClasses), named "axis" (int 0)])
+oneHot0 :: forall numClasses w batchSize. KnownNat numClasses => Tensor '[batchSize] ('Typ 'Int w) -> Tensor '[numClasses,batchSize] Float32
+oneHot0 = oneHot @Dim0
+
+oneHot1 :: forall numClasses w batchSize m. KnownNat numClasses => Tensor '[m,batchSize] ('Typ 'Int w) -> Tensor '[m,numClasses,batchSize] Float32
+oneHot1 = oneHot @Dim1
 
 truncatedNormal :: forall s w. KnownShape s => Float -> T s ('Typ 'Float w)
 truncatedNormal stddev = T (funcall "tf.truncated_normal" [showShape @s, named "stddev" (float stddev)])

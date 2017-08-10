@@ -26,7 +26,7 @@ import GHC.TypeLits
 import Text.PrettyPrint.Compact (float)
 import TypedFlow.TF
 import TypedFlow.Types
-import Data.Kind (Type,Constraint)
+-- import Data.Kind (Type,Constraint)
 
 ---------------------
 -- Linear functions
@@ -156,6 +156,7 @@ instance (TravTensor a, TravTensor b) => TravTensor (a,b) where
 
 travAllTensors :: All TravTensor xs => (forall s t. T s t -> T s t) -> HList xs -> HList xs
 travAllTensors f (I x :* xs) = I (travTensor f x) :* travAllTensors f xs
+travAllTensors _f Unit = Unit
 
 recurrentDropout :: All TravTensor xs => KeepProb -> RnnCell xs a b -> RnnCell xs a b
 recurrentDropout p cell (h,x) = do
