@@ -1,0 +1,41 @@
+* What is TypedFlow?
+
+- An typed, higher-order frontend to tensorflow (basic tensor operations)
+- A library to construct neural networks
+- Generates python
+
+* Why TypedFlow?
+
+- Some NN building blocks are naturally higher-order. Taking an
+  example (and simplifying) a recurrent neural network turns a tensor
+  function into a function between lists (vectorslists) of tensors.
+
+- Functional programming is ideally suited to program complicated
+  applications from building blocks.
+
+  Example: an "Attention-model" is a thing where every step in a RNN adds
+  a computation which depends on an external input. We can compose
+  usual RNN cells with attention models in several ways. The state of
+  the art is to reprogram all combinations by hand.
+
+- Typed APIs.
+
+  Types can be used to check the tensor dimensions. Types catch a lof
+  of errors, but they can also be used to *guide* the programming.
+
+  Types are pretty much a necessity in the presence of HO
+  functions.
+
+- TypedFlow is typically much closer to mathematical notation than
+  python. Programs are short to write and easier to read. Standard
+  building blocks can be swapped for custom versions quite easily.
+
+  Examples
+    - rnn stacking using "residual connections" instead of just
+      stacking.
+    - make it easy to share parameters between different components
+      (example: if we do a style translation we may want to share the
+      embedding layers between encoder and decoders parts)
+
+- Long game: integrate cutting edge ideas as they arrive with moderate
+  effort.
