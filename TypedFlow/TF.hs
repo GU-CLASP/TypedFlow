@@ -162,18 +162,18 @@ squeeze1 :: ∀ n s t. KnownLen s => Tensor (n ': 1 ': s) t -> Tensor (n ': s) t
 squeeze1 = squeeze @ '[n]
 
 -- | Reshape a tensor so that the first two dimensions are collapsed
-linearize2 :: ∀ m n s t. (KnownNat m, KnownNat n, KnownShape s) => Tensor (m ': n ': s) t -> Tensor (m*n ': s) t
-linearize2 (T t) = T (funcall "tf.reshape" [t, showShapeMinus @(m*n ': s)])
+flatten2 :: ∀ m n s t. (KnownNat m, KnownNat n, KnownShape s) => Tensor (m ': n ': s) t -> Tensor (m*n ': s) t
+flatten2 (T t) = T (funcall "tf.reshape" [t, showShapeMinus @(m*n ': s)])
 
 -- | Reshape a tensor so that the first three dimensions are collapsed
-linearize3 :: ∀ m n o s t. (KnownNat m, KnownNat n, KnownNat o, KnownShape s) => Tensor (m ': n ': o ': s) t -> Tensor (m*n*o ': s) t
-linearize3 (T t) = T (funcall "tf.reshape" [t, showShapeMinus @(m*n*o ': s)])
+flatten3 :: ∀ m n o s t. (KnownNat m, KnownNat n, KnownNat o, KnownShape s) => Tensor (m ': n ': o ': s) t -> Tensor (m*n*o ': s) t
+flatten3 (T t) = T (funcall "tf.reshape" [t, showShapeMinus @(m*n*o ': s)])
 
-arrange2 :: ∀ m n s t. (KnownNat m, KnownNat n, KnownShape s) => Tensor (m*n ': s) t -> Tensor (m ': n ': s) t
-arrange2 (T t) = T (funcall "tf.reshape" [t, showShapeMinus @(m ': n ': s)])
+inflate2 :: ∀ m n s t. (KnownNat m, KnownNat n, KnownShape s) => Tensor (m*n ': s) t -> Tensor (m ': n ': s) t
+inflate2 (T t) = T (funcall "tf.reshape" [t, showShapeMinus @(m ': n ': s)])
 
-arrange3 :: ∀ m n o s t. (KnownNat m, KnownNat n, KnownNat o, KnownShape s) => Tensor (m*n*o ': s) t -> Tensor (m ': n ': o ': s) t
-arrange3 (T t) = T (funcall "tf.reshape" [t, showShapeMinus @(m ': n ': o ': s)])
+inflate3 :: ∀ m n o s t. (KnownNat m, KnownNat n, KnownNat o, KnownShape s) => Tensor (m*n*o ': s) t -> Tensor (m ': n ': o ': s) t
+inflate3 (T t) = T (funcall "tf.reshape" [t, showShapeMinus @(m ': n ': o ': s)])
 
 -- | Access the last element in a tensor (in the 0th dimension)
 last0 :: ∀ n s t. KnownNat n => KnownLen s => T (n ': s) t -> Tensor s t
