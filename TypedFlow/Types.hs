@@ -32,6 +32,9 @@ import Data.Char (toLower)
 import Data.Kind (Type,Constraint)
 type DOC = Doc ()
 
+type i < j = CmpNat i j ~ 'LT
+-- type i <= j = (i <=? j) ~ 'True
+
 type family (++) xs ys where
    '[] ++  xs       = xs
    (x ': xs) ++ ys       = x ': (xs ++ ys)

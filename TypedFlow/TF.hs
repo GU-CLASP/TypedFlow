@@ -1,3 +1,4 @@
+{-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# OPTIONS_GHC -fplugin GHC.TypeLits.KnownNat.Solver #-}
 {-# LANGUAGE AllowAmbiguousTypes #-}
@@ -178,6 +179,15 @@ inflate3 (T t) = T (funcall "tf.reshape" [t, showShapeMinus @(m ': n ': o ': s)]
 -- | Access the last element in a tensor (in the 0th dimension)
 last0 :: ∀ n s t. KnownNat n => KnownLen s => T (n ': s) t -> Tensor s t
 last0 (T x) = T (x <> list (replicate (fromIntegral (shapeLen @s)) (text ":") ++ [integer (natVal (Proxy @n) - 1)]))
+
+-- | Take a slice at dimension n from i to j.
+slice :: forall n i j s t. KnownNat j => KnownNat i => (i < j, j <= At n s, KnownPeano n, KnownLen s) =>
+         Tensor s t -> Tensor (Take n s ++ ((j-i) ': Drop ('Succ n) s)) t
+slice (T x) = T (x <> list (replicate (fromIntegral (shapeLen @s - peanoInt @n - 1)) (text ":") ++ [integer (natVal (Proxy @i)) <> text ".." <> integer (natVal (Proxy @j))]))
+
+slice1 :: forall i j m n s t. KnownNat j => KnownNat i => (i < j, j <= m, KnownLen s) =>
+         Tensor (n ': m ': s) t -> Tensor (n ': (j-i) ': s) t
+slice1 = slice @Dim1 @i @j
 
 unstack :: ∀ s (n::Nat) t. (KnownLen s, KnownNat n) => Tensor (n ': s) t -> Gen (V n (T s t))
 unstack (T x) = do
