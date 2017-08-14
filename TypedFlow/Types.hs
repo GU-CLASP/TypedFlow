@@ -376,9 +376,9 @@ generate :: Gen () -> (String,[ParamInfo])
 generate s = (renderWith (Options 92 (const id)) genText,genParams)
   where GState{..} =  execState (fromGen s) (GState {nextVar = 0, genText = mempty, genParams=[]})
 
-generateFile :: Gen () -> String -> IO ()
-generateFile g fname = do
-  putStrLn "Parameters:"
+generateFile :: String -> Gen () -> IO ()
+generateFile fname g = do
+  putStrLn ("Parameters (total " ++ show (sum [product paramShape | ParamInfo{..} <- params]) ++ "):")
   forM_ params printParam
   writeFile fname output
   where (output,params) = generate g

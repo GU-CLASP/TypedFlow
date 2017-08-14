@@ -69,7 +69,7 @@ decoder prefix hs thoughtVectors target = do
              .-.
              (lstm @512 lstm2))
           .-.
-          (timeDistribute (softmax . dense projs)) -- TODO: add a softmax?
+          (timeDistribute (softmax0 . dense projs)) -- TODO: add a softmax?
          )) (I initAttn :* thoughtVectors) target
 
      -- TODO: should we use the states for all layers as
@@ -95,14 +95,50 @@ trainModel input gold = do
   timedCategorical y_ gold
 
 main :: IO ()
-main = do
-  writeFile "s2s_model.py" (generate $ compile (defaultOptions {maxGradientNorm = Just 1})
-                             trainModel)
-  putStrLn "done!"
+main = generateFile "s2s_model.py" (compile (defaultOptions {maxGradientNorm = Just 1})
+                                    trainModel)
 
 {-> main
 
-done!
+Parameters:
+decatt2: T [64, 1024] tf.float32
+decatt1: T [512, 512] tf.float32
+decw2_4_snd: T [512] tf.float32
+decw2_4_fst: T [512, 1024] tf.float32
+decw2_3_snd: T [512] tf.float32
+decw2_3_fst: T [512, 1024] tf.float32
+decw2_2_snd: T [512] tf.float32
+decw2_2_fst: T [512, 1024] tf.float32
+decw2_1_snd: T [512] tf.float32
+decw2_1_fst: T [512, 1024] tf.float32
+decw1_4_snd: T [512] tf.float32
+decw1_4_fst: T [512, 626] tf.float32
+decw1_3_snd: T [512] tf.float32
+decw1_3_fst: T [512, 626] tf.float32
+decw1_2_snd: T [512] tf.float32
+decw1_2_fst: T [512, 626] tf.float32
+decw1_1_snd: T [512] tf.float32
+decw1_1_fst: T [512, 626] tf.float32
+decproj_snd: T [10000] tf.float32
+decproj_fst: T [10000, 64] tf.float32
+decembs: T [50, 10000] tf.float32
+encw2_4_snd: T [512] tf.float32
+encw2_4_fst: T [512, 1024] tf.float32
+encw2_3_snd: T [512] tf.float32
+encw2_3_fst: T [512, 1024] tf.float32
+encw2_2_snd: T [512] tf.float32
+encw2_2_fst: T [512, 1024] tf.float32
+encw2_1_snd: T [512] tf.float32
+encw2_1_fst: T [512, 1024] tf.float32
+encw1_4_snd: T [512] tf.float32
+encw1_4_fst: T [512, 562] tf.float32
+encw1_3_snd: T [512] tf.float32
+encw1_3_fst: T [512, 562] tf.float32
+encw1_2_snd: T [512] tf.float32
+encw1_2_fst: T [512, 562] tf.float32
+encw1_1_snd: T [512] tf.float32
+encw1_1_fst: T [512, 562] tf.float32
+encembs: T [50, 10000] tf.float32
 -}
 
 
