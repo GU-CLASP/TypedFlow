@@ -69,7 +69,7 @@ decoder prefix hs thoughtVectors target = do
              .-.
              (lstm @512 lstm2))
           .-.
-          (timeDistribute (dense projs))
+          (timeDistribute (softmax . dense projs)) -- TODO: add a softmax?
          )) (I initAttn :* thoughtVectors) target
 
      -- TODO: should we use the states for all layers as
