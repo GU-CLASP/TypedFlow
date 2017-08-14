@@ -293,9 +293,15 @@ str = text . show
 --------------------------------
 -- Generation Effects
 
+data ParamInfo = ParamInfo {paramName :: String
+                           ,paramShape :: [Integer]
+                           ,paramDType :: Typ} deriving Show
 data GState = GState {nextVar :: Integer,
-                      genText :: DOC}
+                      genText :: DOC,
+                      genParams :: [ParamInfo]}
 newtype Gen x = Gen {fromGen :: State GState x} deriving (Monad, MonadState GState, Functor, Applicative)
+
+newParameter p =   modify $ \GState{..} -> GState{genParams = p:genParams,..}
 
 newVar :: Gen DOC
 newVar = do
@@ -362,8 +368,17 @@ lambda f = do
   let T body = f (T v)
   return (text "lambda " <> v <> ": " <> body)
 
-generate :: Gen () -> String
-generate s = renderWith (Options 92 (const id)) (genText (execState (fromGen s) (GState {nextVar = 0, genText = mempty})))
+generate :: Gen () -> (String,[ParamInfo])
+generate s = (renderWith (Options 92 (const id)) genText,genParams)
+  where GState{..} =  execState (fromGen s) (GState {nextVar = 0, genText = mempty, genParams=[]})
+
+generateFile :: Gen () -> String -> IO ()
+generateFile g fname = do
+  putStrLn "Parameters:"
+  forM_ params print
+  writeFile fname output
+  where (output,params) = generate g
+  
 
 named :: String -> DOC -> DOC
 named fname x = text (fname <> "=") <> x

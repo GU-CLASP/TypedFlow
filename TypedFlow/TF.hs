@@ -1,3 +1,4 @@
+{-# LANGUAGE RecordWildCards #-}
 {-# OPTIONS_GHC -fplugin GHC.TypeLits.KnownNat.Solver #-}
 {-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE DataKinds #-}
@@ -34,8 +35,9 @@ ones :: ∀ t (shape :: Shape). KnownShape shape => (T shape t)
 ones = T (funcall "tf.ones" [showShape @shape])
 
 -- | Declare a parameter to optimize.
-parameter' :: ∀ (shape :: Shape) t. String -> T shape t -> Gen (T shape t)
+parameter' :: ∀ (shape :: Shape) t. (KnownTyp t,KnownShape shape) => String -> T shape t -> Gen (T shape t)
 parameter' name (T initial) = do
+  newParameter (ParamInfo name (shapeToList @shape) (typVal @t))
   v <- newVar
   v <-- funcall "tf.Variable" [initial, named "name" (string (show (name)))]
   return (T v)
@@ -362,7 +364,7 @@ lambda2 f = do
 class Parameter p where
   parameter :: String -> p -> Gen p
 
-instance Parameter (T shape t) where
+instance (KnownTyp t, KnownShape shape) => Parameter (T shape t) where
   parameter = parameter'
 
 instance (Parameter p, Parameter q) => Parameter (p,q) where
