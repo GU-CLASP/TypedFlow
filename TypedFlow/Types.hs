@@ -261,8 +261,11 @@ shapeToList' (Cons (SNat x) xs) = natVal x : shapeToList' xs
 shapeToList :: ∀(s::Shape). KnownShape s => [Integer]
 shapeToList = shapeToList' (getShape @ s)
 
+showShape' ::  [Integer] -> DOC
+showShape' s = list (map (showDim' "None") (reverse s))
+
 showShape :: ∀ (s :: Shape). KnownShape s => DOC
-showShape = list (map (showDim' "None") (reverse (shapeToList @ s)))
+showShape = showShape' (shapeToList @s)
 
 -- | Show a shape, but "None" is replaced by "-1"
 showShapeMinus :: ∀ (s :: Shape). KnownShape s => DOC
@@ -295,7 +298,8 @@ str = text . show
 
 data ParamInfo = ParamInfo {paramName :: String
                            ,paramShape :: [Integer]
-                           ,paramDType :: Typ} deriving Show
+                           ,paramDType :: Typ -- TODO: uses proxies?
+                           ,paramVar   :: forall s t. Tensor s t}
 data GState = GState {nextVar :: Integer,
                       genText :: DOC,
                       genParams :: [ParamInfo]}
@@ -375,10 +379,10 @@ generate s = (renderWith (Options 92 (const id)) genText,genParams)
 generateFile :: Gen () -> String -> IO ()
 generateFile g fname = do
   putStrLn "Parameters:"
-  forM_ params print
+  forM_ params printParam
   writeFile fname output
   where (output,params) = generate g
-  
+        printParam ParamInfo{..} = putStrLn (paramName ++ ": " ++ "T " ++ render (showShape' paramShape)  ++ " " ++ show paramDType)
 
 named :: String -> DOC -> DOC
 named fname x = text (fname <> "=") <> x

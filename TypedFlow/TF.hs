@@ -37,8 +37,8 @@ ones = T (funcall "tf.ones" [showShape @shape])
 -- | Declare a parameter to optimize.
 parameter' :: ∀ (shape :: Shape) t. (KnownTyp t,KnownShape shape) => String -> T shape t -> Gen (T shape t)
 parameter' name (T initial) = do
-  newParameter (ParamInfo name (shapeToList @shape) (typVal @t))
   v <- newVar
+  newParameter (ParamInfo name (shapeToList @shape) (typVal @t) (T v))
   v <-- funcall "tf.Variable" [initial, named "name" (string (show (name)))]
   return (T v)
 
