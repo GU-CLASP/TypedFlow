@@ -62,6 +62,7 @@ dense lf t = (lf # t)
 
 data KeepProb = KeepProb Float
 
+-- TODO: disable when predicting/validating/testing!
 dropout :: KeepProb -> Tensor s t -> Tensor s t
 dropout (KeepProb p) (T x) = T (funcall "tf.nn.dropout" [x, float p])
 
@@ -158,9 +159,9 @@ travAllTensors :: All TravTensor xs => (forall s t. T s t -> T s t) -> HList xs 
 travAllTensors f (I x :* xs) = I (travTensor f x) :* travAllTensors f xs
 travAllTensors _f Unit = Unit
 
-recurrentDropout :: All TravTensor xs => KeepProb -> RnnCell xs a b -> RnnCell xs a b
-recurrentDropout p cell (h,x) = do
-  cell (travAllTensors (dropout p) h,x)
+onState :: (forall s t. T s t -> T s t) -> All TravTensor xs => RnnCell xs a b -> RnnCell xs a b
+onState f cell (h,x) = do
+  cell (travAllTensors f h,x)
 
 -- | Stack two RNN cells
 stackRnnCells, (.-.) :: forall s0 s1 a b c. KnownLen s0 => RnnCell s0 a b -> RnnCell s1 b c -> RnnCell (s0 ++ s1) a c

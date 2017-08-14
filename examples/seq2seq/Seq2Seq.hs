@@ -31,15 +31,18 @@ encoder prefix input = do
   embs <- parameter (prefix++"embs") embeddingInitializer
   lstm1 <- parameter (prefix++"w1") lstmInitializer
   lstm2 <- parameter (prefix++"w2") lstmInitializer
+  let drp = dropout (KeepProb 0.8)
   -- todo: what to do about sentence length?
   (sFinal,h) <-
     (rnn (timeDistribute (embedding @50 @vocSize embs))
       .--.
-     rnn (timeDistribute (dropout (KeepProb 0.8)))
+     rnn (timeDistribute drp)
       .--.
-     rnn (recurrentDropout (KeepProb 0.8) (lstm @512 lstm1))
+     rnn (onState drp (lstm @512 lstm1))
       .--.
-     rnnBackwards (lstm @512 lstm2)
+     rnn (timeDistribute drp)
+      .--.
+     rnnBackwards (onState drp (lstm @512 lstm2))
      ) (I (zeros,zeros) :* I (zeros,zeros) :* Unit) input
   h' <- assign h  -- will be used many times as input to attention model
   return (sFinal,h')
@@ -61,11 +64,16 @@ decoder prefix hs thoughtVectors target = do
   w2 <- parameter (prefix++"att2") glorotUniform
   let attn = (luongAttention @64 (luongMultiplicativeScoring w1) w2 hs)
       initAttn = zeros
+  let drp = dropout (KeepProb 0.8)
   (_sFinal,outFinal) <-
     (rnn (timeDistribute (embedding @50 @outVocabSize embs)
           .-.
+          timeDistribute drp
+          .-.
           addAttentionWithFeedback attn
            ((lstm @512 lstm1)
+             .-.
+             timeDistribute drp
              .-.
              (lstm @512 lstm2))
           .-.
