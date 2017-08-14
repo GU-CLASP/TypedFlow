@@ -80,7 +80,7 @@ timedCategorical logits' y = do
   let y_ = cast (argmax1 logits)
       modelY = y_
   correctPrediction <- assign (equal (argmax1 logits) (cast y))
-  modelAccuracy <- assign (reduceMeanAll (linearize2 (cast @Float32 correctPrediction)))
+  modelAccuracy <- assign (reduceMeanAll (flatten2 (cast @Float32 correctPrediction)))
   crossEntropies <- zipWithT softmaxCrossEntropyWithLogits (oneHot1 y) logits
   modelLoss <- assign (reduceMeanAll crossEntropies)
   return ModelOutput{..}
