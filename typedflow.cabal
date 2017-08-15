@@ -20,3 +20,9 @@ library
 
   exposed-modules:
        TypedFlow
+
+  other-modules:
+       TypedFlow.Layers
+       TypedFlow.Learn
+       TypedFlow.TF
+       TypedFlow.Types
