@@ -39,3 +39,37 @@ def predict (sess, model, x_generator):
     sess.run(init)
     for (n,i) in enumerate(x_generator()):
         sess.run(y, feed_dict={x:x_generator})
+
+
+
+    # k-Beam search at index i in a sequence.
+    # work with k-size batch.
+    # keep for every j < k a sum of the log probs, r(j).
+    # for every possible output work w at the i-th step in the sequence, compute r'(j,w) = r(j) * logit(i,w)
+    # compute the k pairs (j,w) which minimize r'(j,w). Let M this set.
+    # r(l) = r'(j,w) for (l,(j,w)),in enumarate(M)
+    
+    
+    # # beam search
+    # def translate(src_sent, k=1):
+    #     # (log(1), initialize_of_zeros)
+    #     k_beam = [(0, [0]*(sequence_max_len+1))]
+    
+    #     # l : point on target sentence to predict
+    #     for l in range(sequence_max_len):
+    #         all_k_beams = []
+    #         for prob, trg_sent_predict in k_beam:
+    #             predicted       = encoder_decoder.predict([np.array([src_sent]), np.array([trg_sent_predict])])[0]
+    #             # top k!
+    #             possible_k_trgs = predicted[l].argsort()[-k:][::-1]
+    
+    #             # add to all possible candidates for k-beams
+    #             all_k_beams += [
+    #                 (
+    #                     sum(np.log(predicted[i][trg_sent_predict[i+1]]) for i in range(l)) + np.log(predicted[l][next_wid]),
+    #                     list(trg_sent_predict[:l+1])+[next_wid]+[0]*(sequence_max_len-l-1)
+    #                 )
+    #                 for next_wid in possible_k_trgs
+    #             ]
+    #         # top k
+    #         k_beam = sorted(all_k_beams)[-k:]
