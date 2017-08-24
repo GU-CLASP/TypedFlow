@@ -250,14 +250,15 @@ softmax0 = unOp "tf.nn.softmax"
 softmax1 :: forall n m s w. KnownLen s => T (m ': n ': s) ('Typ 'Float w) -> T (m ': n ': s) ('Typ 'Float w)
 softmax1 (T x) = T (funcall "tf.nn.softmax" [x, named "dim" (showShapeLen @s)])
 
-argmax :: forall s0 u n s t. (KnownLen s,KnownBits u) => T (s0 ++ (n ': s)) ('Typ 'Float t) -> T (s0 ++ s) ('Typ 'Int u)
+argmax :: forall n u m s t. (KnownLen s, KnownPeano n,KnownBits u) => Tensor (Take n s ++ (m ': Drop n s)) t -> Tensor s ('Typ 'Int u)
+-- argmax :: forall s0 u n s t. (KnownLen s,KnownBits u) => T (s0 ++ (n ': s)) ('Typ 'Float t) -> T (s0 ++ s) ('Typ 'Int u)
 argmax (T t) = T (funcall "tf.argmax" [t, named "axis" (showShapeLen @ s), named "output_type" (showTyp @('Typ 'Int u))])
 
-argmax0 :: forall u n s. (KnownLen s, KnownBits u) => T (n ': s) Float32 -> T s ('Typ 'Int u)
-argmax0 = argmax @'[]
+argmax0 :: forall u n s t. (KnownLen s, KnownBits u) => T (n ': s) t -> T s ('Typ 'Int u)
+argmax0 = argmax @Dim0
 
-argmax1 :: forall u m n s. (KnownLen s, KnownBits u) => T (m ': n ': s) Float32 -> T (m ': s) ('Typ 'Int u)
-argmax1 = argmax @'[m]
+argmax1 :: forall u m n s t. (KnownLen s, KnownBits u) => T (m ': n ': s) t -> T (m ': s) ('Typ 'Int u)
+argmax1 = argmax @Dim1
 
 cast :: forall u s t. KnownTyp u => T s t -> T s u
 cast (T t) = T (funcall "tf.cast" [t, showTyp @ u])
