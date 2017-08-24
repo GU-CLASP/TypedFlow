@@ -50,7 +50,7 @@ type Batch s batchSize = Tensor (s++'[batchSize])
 -- @categorical logits gold@
 -- return (prediction, accuraccy, loss)
 -- accuracy and prediction are averaged over the batch.
-categorical :: forall nCat bs. KnownNat nCat => Model '[nCat,bs] Float32 '[bs] Int64
+categorical :: forall nCat bs. KnownNat nCat => Model '[nCat,bs] Float32 '[bs] Int32
 categorical logits' y = do
   logits <- assign logits'
   let y_ = argmax0 logits
@@ -69,7 +69,7 @@ categoricalDistribution logits' y = do
   logits <- assign logits'
   let y_ = softmax0 logits
       modelY = y_
-  correctPrediction <- assign (equal (argmax0 logits) (argmax0 y))
+  correctPrediction <- assign (equal (argmax0 @'B32 logits) (argmax0 y))
   modelAccuracy <- assign (reduceMeanAll (cast @Float32 correctPrediction))
   modelLoss <- assign (reduceMeanAll (softmaxCrossEntropyWithLogits y logits))
   return ModelOutput{..}
@@ -77,9 +77,9 @@ categoricalDistribution logits' y = do
 timedCategorical :: forall len nCat bs. KnownNat nCat => KnownNat bs => KnownNat len => Model '[len,nCat,bs] Float32 '[len,bs] Int32
 timedCategorical logits' y = do
   logits <- assign logits'
-  let y_ = cast (argmax1 logits)
+  let y_ = (argmax1 logits)
       modelY = y_
-  correctPrediction <- assign (equal (argmax1 logits) (cast y))
+  correctPrediction <- assign (equal (argmax1 logits) y)
   modelAccuracy <- assign (reduceMeanAll (flatten2 (cast @Float32 correctPrediction)))
   crossEntropies <- zipWithT softmaxCrossEntropyWithLogits (oneHot1 y) logits
   modelLoss <- assign (reduceMeanAll crossEntropies)

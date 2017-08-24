@@ -1,6 +1,6 @@
+{-# OPTIONS_GHC -fplugin GHC.TypeLits.KnownNat.Solver #-}
 {-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE RecordWildCards #-}
-{-# OPTIONS_GHC -fplugin GHC.TypeLits.KnownNat.Solver #-}
 {-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DeriveFoldable #-}
@@ -152,7 +152,6 @@ tile (T x) = T (funcall "tf.tile" [x, integer (natVal (Proxy @m))])
 replicateT :: ∀ n s t. (KnownNat n, KnownLen s) => T s t -> T (n ': s) t
 replicateT = tile @n . expandDim0
 
--- TODO: same trick as expandDim0
 squeeze :: ∀ s0 s1 t. KnownLen s1 => Tensor (s0 ++ (1 ': s1)) t -> Tensor (s0 ++ s1) t
 squeeze (T x) = T (funcall "tf.squeeze" [x, text "axis=" <> integer (shapeLen @ s1)])
 
@@ -251,11 +250,14 @@ softmax0 = unOp "tf.nn.softmax"
 softmax1 :: forall n m s w. KnownLen s => T (m ': n ': s) ('Typ 'Float w) -> T (m ': n ': s) ('Typ 'Float w)
 softmax1 (T x) = T (funcall "tf.nn.softmax" [x, named "dim" (showShapeLen @s)])
 
-argmax0 :: forall n s. KnownLen s => T (n ': s) Float32 -> T s Int64
-argmax0 (T t) = T (funcall "tf.argmax" [t, showShapeLen @ s])
+argmax :: forall s0 u n s t. (KnownLen s,KnownBits u) => T (s0 ++ (n ': s)) ('Typ 'Float t) -> T (s0 ++ s) ('Typ 'Int u)
+argmax (T t) = T (funcall "tf.argmax" [t, named "axis" (showShapeLen @ s), named "output_type" (showTyp @('Typ 'Int u))])
 
-argmax1 :: forall m n s. KnownLen s => T (m ': n ': s) Float32 -> T (m ': s) Int64
-argmax1 (T t) = T (funcall "tf.argmax" [t, showShapeLen @ s])
+argmax0 :: forall u n s. (KnownLen s, KnownBits u) => T (n ': s) Float32 -> T s ('Typ 'Int u)
+argmax0 = argmax @'[]
+
+argmax1 :: forall u m n s. (KnownLen s, KnownBits u) => T (m ': n ': s) Float32 -> T (m ': s) ('Typ 'Int u)
+argmax1 = argmax @'[m]
 
 cast :: forall u s t. KnownTyp u => T s t -> T s u
 cast (T t) = T (funcall "tf.cast" [t, showTyp @ u])
