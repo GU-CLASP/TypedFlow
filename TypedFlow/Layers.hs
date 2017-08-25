@@ -136,6 +136,9 @@ type GRUP n x = (((n + x) ⊸ n),
                  ((n + x) ⊸ n),
                  ((n + x) ⊸ n))
 
+gruInitializer :: (KnownNat n, KnownNat x) => GRUP n x
+gruInitializer = (cellInitializerBit, cellInitializerBit, cellInitializerBit)
+
 gru :: ∀ n x bs. (KnownNat bs, KnownNat n) => GRUP n x ->
         RnnCell '[T '[n,bs] Float32] (Tensor '[x,bs] Float32) (Tensor '[n,bs] Float32)
 gru (wz,wr,w) ((I ht1 :* Unit) , xt) = do
