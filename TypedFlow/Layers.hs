@@ -117,7 +117,8 @@ type LSTMP n x = (((n + x) ⊸ n),
                   ((n + x) ⊸ n))
 
 lstmInitializer :: (KnownNat n, KnownNat x) => LSTMP n x
-lstmInitializer = (cellInitializerBit, cellInitializerBit, cellInitializerBit,cellInitializerBit)
+lstmInitializer = (forgetInit, cellInitializerBit, cellInitializerBit,cellInitializerBit)
+  where forgetInit = (fst cellInitializerBit, ones)
 
 
 lstm :: ∀ n x bs. (KnownNat bs) => LSTMP n x ->
