@@ -129,7 +129,7 @@ lstm (wf,wi,wc,wo) ((I (ht1, ct1) :* Unit) , input) = do
       cTilda = tanh (wc # hx)
       o = sigmoid (wo # hx)
   c <- assign ((f ⊙ ct1) + (i ⊙ cTilda))
-  h <- assign (o + tanh c)
+  h <- assign (o ⊙ tanh c)
   return (I (h,c) :* Unit , h)
 
 type GRUP n x = (((n + x) ⊸ n),
