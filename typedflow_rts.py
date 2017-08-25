@@ -14,20 +14,24 @@ def train (sess, model, optimizer, train_generator, valid_generator, epochs):
         totalLoss = 0
         n = 0
         for (x_train,y_train) in train_generator():
+            print(".",end="")
             _,lossAcc,accur = sess.run([train,loss,accuracy], feed_dict={x:x_train, y:y_train})
             n+=1
             totalLoss += lossAcc
             totalAccur += accur
+        print(".")
         print ("Training Loss = ", totalLoss / float(n), " Training accuracy = ", totalAccur / float(n))
 
         totalLoss = 0
         totalAccur = 0
         n = 0
         for (x_train,y_train) in valid_generator():
+            print(".",end="")
             lossAcc,accur = sess.run([loss,accuracy], feed_dict={x:x_train, y:y_train})
             totalLoss += lossAcc
-            totalAccur += totalAccur
+            totalAccur += accur
             n+=1
+        print(".")
         if n > 0:
             print ("Validation Loss = ", totalLoss / float(n), " Validation accuracy = ", totalAccur / float(n))
         else:
