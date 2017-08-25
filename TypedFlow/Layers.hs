@@ -47,7 +47,7 @@ type (a ⊸ b) = (Tensor '[a,b] Float32, Tensor '[b] Float32)
 type EmbbeddingP numObjects embeddingSize t = Tensor '[numObjects, embeddingSize] ('Typ 'Float t)
 
 embeddingInitializer :: (KnownNat numObjects, KnownBits b, KnownNat embeddingSize) => EmbbeddingP numObjects embeddingSize b
-embeddingInitializer = randomUniform (-1) 1
+embeddingInitializer = randomUniform (-0.05) 0.05 -- TODO: scale better?
 
 embedding :: ∀ embeddingSize numObjects batchSize t.
              EmbbeddingP numObjects embeddingSize t -> Tensor '[batchSize] Int32 -> Tensor '[embeddingSize,batchSize] ('Typ 'Float t)
@@ -119,7 +119,6 @@ type LSTMP n x = (((n + x) ⊸ n),
 lstmInitializer :: (KnownNat n, KnownNat x) => LSTMP n x
 lstmInitializer = (forgetInit, cellInitializerBit, cellInitializerBit,cellInitializerBit)
   where forgetInit = (fst cellInitializerBit, ones)
-
 
 lstm :: ∀ n x bs. (KnownNat bs) => LSTMP n x ->
         RnnCell '[(T '[n,bs] Float32, T '[n,bs] Float32)] (Tensor '[x,bs] Float32) (Tensor '[n,bs] Float32)
@@ -304,4 +303,3 @@ chainBackward f (s0 , V (x:xs)) = do
   (s1,V xs') <- chainBackward f (s0,V xs)
   (sFin, x') <- f (s1,x)
   return (sFin,V (x':xs'))
-
