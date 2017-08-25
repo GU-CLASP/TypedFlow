@@ -1,5 +1,5 @@
 import tensorflow as tf
-
+import sys
 
 # optimize is one of tf.train.GradientDescentOptimizer(0.05), etc.
 def train (sess, model, optimizer, train_generator, valid_generator, epochs):
@@ -15,6 +15,7 @@ def train (sess, model, optimizer, train_generator, valid_generator, epochs):
         n = 0
         for (x_train,y_train) in train_generator():
             print(".",end="")
+            sys.stdout.flush()
             _,lossAcc,accur = sess.run([train,loss,accuracy], feed_dict={x:x_train, y:y_train})
             n+=1
             totalLoss += lossAcc
@@ -27,6 +28,7 @@ def train (sess, model, optimizer, train_generator, valid_generator, epochs):
         n = 0
         for (x_train,y_train) in valid_generator():
             print(".",end="")
+            sys.stdout.flush()
             lossAcc,accur = sess.run([loss,accuracy], feed_dict={x:x_train, y:y_train})
             totalLoss += lossAcc
             totalAccur += accur
