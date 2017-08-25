@@ -44,8 +44,6 @@ binaryCrossEntropy t y = negate (t ⊙ log y) ⊝ (ones ⊝ t) ⊙ log (ones ⊝
 
 type Batch s batchSize = Tensor (s++'[batchSize])
 
--- data ModelOutput {x , y,  loss :: , accuracy, y_, }
-
 -- | First type argument is the number of classes.
 -- @categorical logits gold@
 -- return (prediction, accuraccy, loss)
