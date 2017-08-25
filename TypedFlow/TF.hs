@@ -293,19 +293,30 @@ randomOrthogonal = T (funcall' (funcall "tf.orthogonal_initializer" [named "dtyp
 constant :: forall s w. KnownShape s => Float -> T s ('Typ 'Float w)
 constant c = T (funcall "tf.constant" [float c, named "shape" (showShape @s)])
 
-
 ---------------------------
 -- Contrib
+data VarianceScaleMode = VSFanIn | VSFanOut | VSAvg
+data Distrib = NormalDistr | UniformDistr
 
 
-glorotUniform :: forall a b t. (KnownNat a, KnownNat b, KnownTyp t) => Tensor '[a,b] t
-glorotUniform = randomUniform low high
+varianceScaling :: forall inDim outDim t. KnownNat inDim => (KnownNat outDim, KnownBits t) => Float -> VarianceScaleMode -> Distrib -> Tensor '[inDim,outDim] ('Typ 'Float t)
+varianceScaling sc0 mode distr = case distr of
+                                   UniformDistr -> randomUniform (-p) p
+                                   NormalDistr -> truncatedNormal p
   where
-    low, high, fan_in, fan_out :: Float
-    low = -4.0 Prelude.* Prelude.sqrt(6.0/(fan_in Prelude.+ fan_out)) -- use 4 for sigmoid, 1 for tanh activation 
-    high = 4.0 Prelude.* Prelude.sqrt(6.0/(fan_in Prelude.+ fan_out))
-    fan_in = fromIntegral (natVal (Proxy @ a))
-    fan_out = fromIntegral (natVal (Proxy @ b))
+    fan_in = fromIntegral (natVal (Proxy @inDim))
+    fan_out = fromIntegral (natVal (Proxy @outDim))
+    sc = sc0 / max 1 (case mode of
+                         VSFanIn -> fan_in
+                         VSFanOut -> fan_out
+                         VSAvg -> (fan_in Prelude.+ fan_out) / 2)
+    p = Prelude.sqrt $ (/ sc) $ case distr of
+                                  NormalDistr -> 1
+                                  UniformDistr -> 3
+
+
+glorotUniform :: forall inDim outDim t. KnownNat inDim => (KnownNat outDim, KnownBits t) => Tensor '[inDim,outDim] ('Typ 'Float t)
+glorotUniform = varianceScaling 1 VSAvg UniformDistr
 
 ----------------
 -- Helpers
