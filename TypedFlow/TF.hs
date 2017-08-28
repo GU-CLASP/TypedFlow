@@ -88,30 +88,26 @@ add = binOp "tf.add"
 (+) :: ∀ (d :: Shape) (s :: Shape) t. Tensor (d ++ s) t -> Tensor d t -> Tensor (d ++ s) t
 (+) = add @s @d
 
-(⊕) :: ∀  (s :: Shape) t. Tensor s t -> Tensor s t -> Tensor s t
-(⊕) = binOp "tf.add"
-
-(⊝) :: ∀ (s :: Shape) t. Tensor s t -> Tensor s t -> Tensor s t
-(⊝) = binOp "tf.subtract"
-
-multiply :: Tensor d t -> Tensor d t -> Tensor d t
-multiply = binOp "tf.multiply"
 
 equal :: Tensor d t -> Tensor d t -> Tensor d TFBool
 equal = binOp "tf.equal"
 
-(⊙) :: ∀ (d :: Shape) t. Tensor d t -> Tensor d t -> Tensor d t
-(⊙) = multiply
-
+(⊕), (⊝), (⊙), (⊘) :: ∀ (s :: Shape) t. Tensor s t -> Tensor s t -> Tensor s t
+(⊝) = binOp "tf.subtract"
+(⊙) = binOp "tf.multiply"
+(⊘) = binOp "tf.divide"
+(⊕) = binOp "tf.add"
+  
 matmul :: Tensor (o ': n ': s) t -> Tensor (m ': o ': s) t -> Tensor (m ': n ': s) t
 matmul = binOp "tf.matmul"
 
-round, sigmoid, tanh, log, relu :: ∀ s t. Tensor s ('Typ 'Float t) -> Tensor s ('Typ 'Float t)
+round, sigmoid, tanh, log, relu, floor :: ∀ s t. Tensor s ('Typ 'Float t) -> Tensor s ('Typ 'Float t)
 sigmoid = unOp "tf.sigmoid"
 tanh = unOp "tf.tanh"
 log = unOp "tf.log"
 relu = unOp "tf.nn.relu"
 round = unOp "tf.round"
+floor = unOp "tf.floor"
 
 split0 :: ∀ m n batchShape t. (KnownNat n, KnownNat m, KnownLen batchShape) =>
           Tensor ((n + m) ': batchShape) t -> Gen (Tensor (n ': batchShape) t, Tensor (m ': batchShape) t)
