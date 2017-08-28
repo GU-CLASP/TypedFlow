@@ -14,12 +14,11 @@ def bilist_generator(l,bs):
         yield (l0[i:i+bs],l1[i:i+bs])
     return gen
 
-
 # optimizer is one of tf.train.GradientDescentOptimizer(0.05), tf.train.AdamOptimizer() etc.
 def train (session, model, train_generator, valid_generator=bilist_generator(([],[]),1), optimizer=tf.train.AdamOptimizer(), epochs=100, callbacks=[]):
     (training_phase,x,y,y_,accuracy,loss,params,gradients) = model
     # must come before the initializer (this line creates variables!)
-    train = optimizer.apply_gradients(zip(gradients, params))
+    train = optimizer.apply_gradients(zip(model["gradients"], model["params"]))
     # train = optimizer.minimize(loss)
     session.run(tf.local_variables_initializer())
     session.run(tf.global_variables_initializer())
@@ -32,7 +31,7 @@ def train (session, model, train_generator, valid_generator=bilist_generator(([]
         for (x_train,y_train) in train_generator() if isTraining else valid_generator():
             print(".",end="")
             sys.stdout.flush()
-            _,lossAcc,accur = session.run([train,loss,accuracy], feed_dict={x:x_train, y:y_train, training_phase:isTraining})
+            _,lossAcc,accur = session.run([model["train"],model["loss"],model["accuracy"]], feed_dict={model["x"]:x_train, model["y"]:y_train, model["training_phase"]:isTraining})
             n+=1
             totalLoss += lossAcc
             totalAccur += accur
@@ -77,9 +76,15 @@ def StopWhenGoodAccuracy(accur = .99):
     return callback
 
 
-def predict (session, model, x_generator):
-    (training_phase,x,y,y_,accuracy,loss,params,gradients) = model
-    return np.concatenate([session.run(y, feed_dict={x:x_train, training_phase:False}) (x_train,i) in enumerate(x_generator())])
+def predict (session, model, xs):
+    bs = model["batch_size"]
+    zeros = np.zeros_like(xs[0])
+    for i in range(0, bs*(len(xs)//bs), bs):
+        chunk = xs[i:i+bs]
+        yield (chunk + [zeros] * bs-len(chunk))
+
+
+    return np.concatenate([session.run(model["y"], feed_dict={model["x"]:x_train, model["training_phase"]:False}) (x_train,i) in gen])
 
     # k-Beam search at index i in a sequence.
     # work with k-size batch.

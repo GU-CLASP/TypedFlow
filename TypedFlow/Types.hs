@@ -351,6 +351,9 @@ x <-- y = gen (x <> text "=" <>  y)
 tuple :: [DOC] -> DOC
 tuple = parens . sep . punctuate comma
 
+dict :: [(String,DOC)] -> DOC
+dict xs = encloseSep "{" "," "}" [text (show k) <> ":" <> v | (k,v) <- xs]
+
 funcall :: String -> [DOC] -> DOC
 funcall = funcall' . text
 

@@ -128,6 +128,11 @@ compile Options{..} model = do
                      Nothing -> id
                      Just clip -> clipByGlobalNorm clip
     gradients <-- clipping (grad modelLoss params)
-    gen (text "return " <> tuple [fromTensor trainingPhasePlaceholder,
-                                  fromTensor x,fromTensor y,fromTensor y_,
-                                  fromTensor accuracy,fromTensor loss,params,gradients])
+    gen (text "return " <> dict [("training_phase", fromTensor trainingPhasePlaceholder)
+                                ,("x",fromTensor x)
+                                ,("y",fromTensor y)
+                                ,("y_",fromTensor y_)
+                                ,("accuracy",fromTensor accuracy)
+                                ,("loss",fromTensor loss)
+                                ,("params",params)
+                                ,("gradients",gradients)])
