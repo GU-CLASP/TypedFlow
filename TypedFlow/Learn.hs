@@ -28,6 +28,7 @@ import Prelude (($),return,Maybe(..),id)
 import Text.PrettyPrint.Compact (text)
 import Data.Monoid hiding (Last)
 import GHC.TypeLits (KnownNat)
+import Control.Monad.State (modify)
 
 
 
@@ -84,11 +85,10 @@ timedCategorical logits' y = do
   return ModelOutput{..}
   -- TODO: use sentence length to mask "useless" loss?
 
-type Scalar t = T '[] t
-
 data ModelOutput s t = ModelOutput {modelY :: T s t -- ^ prediction
                                    ,modelLoss :: Scalar Float32
-                                   ,modelAccuracy :: Scalar Float32}
+                                   ,modelAccuracy :: Scalar Float32
+                                   }
 -- | (input value, gold value) ↦ (prediction, accuracy, loss)
 type Model input tIn output tOut = T input tIn -> T output tOut -> Gen (ModelOutput output tOut)
 
@@ -116,6 +116,8 @@ compile Options{..} model = do
   genFun "mkModel" [] $ do
     x <- placeholder "x"
     y <- placeholder "y"
+    trainingPhasePlaceholder <- placeholder "training_phase"
+    modify $ \GState{..} -> GState{genTrainingPlaceholder = trainingPhasePlaceholder,..}
     ModelOutput{..} <- model x y
     y_ <- assign modelY
     loss <- assign modelLoss
@@ -126,4 +128,6 @@ compile Options{..} model = do
                      Nothing -> id
                      Just clip -> clipByGlobalNorm clip
     gradients <-- clipping (grad modelLoss params)
-    gen (text "return " <> tuple [fromTensor x,fromTensor y,fromTensor y_,fromTensor accuracy,fromTensor loss,params,gradients])
+    gen (text "return " <> tuple [fromTensor trainingPhasePlaceholder,
+                                  fromTensor x,fromTensor y,fromTensor y_,
+                                  fromTensor accuracy,fromTensor loss,params,gradients])

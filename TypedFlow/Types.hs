@@ -188,6 +188,7 @@ type Float32 = 'Typ 'Float 'B32
 type Int32 = 'Typ 'Int 'B32
 type Int64 = 'Typ 'Int 'B64
 type TFBool = 'Typ 'Bool 'B1
+type Scalar t = T '[] t
 
 instance Show Typ where
   show (Typ Bool _)= "tf.bool"
@@ -222,6 +223,7 @@ class KnownTyp t where
 class KnownBits t where
   bitsVal :: NBits
 
+instance KnownBits 'B1 where bitsVal = B1
 instance KnownBits 'B32 where bitsVal = B32
 instance KnownBits 'B64 where bitsVal = B64
 instance (KnownBits l, KnownKind k) => KnownTyp ('Typ k l) where
@@ -230,11 +232,9 @@ instance (KnownBits l, KnownKind k) => KnownTyp ('Typ k l) where
 class KnownKind t where
   kindVal :: Kind
 
-instance KnownKind 'Float where
-  kindVal = Float
-
-instance KnownKind 'Int where
-  kindVal = Int
+instance KnownKind 'Bool where kindVal = Bool
+instance KnownKind 'Float where kindVal = Float
+instance KnownKind 'Int where kindVal = Int
 
 data PeanoLen s where
   LZ :: PeanoLen '[]
@@ -307,13 +307,15 @@ str = text . show
 
 data ParamInfo = ParamInfo {paramName :: String
                            ,paramShape :: [Integer]
-                           ,paramDType :: Typ -- TODO: uses proxies?
+                           ,paramDType :: Typ
                            ,paramVar   :: forall s t. Tensor s t}
 data GState = GState {nextVar :: Integer,
                       genText :: DOC,
-                      genParams :: [ParamInfo]}
+                      genParams :: [ParamInfo],
+                      genTrainingPlaceholder :: Scalar TFBool}
 newtype Gen x = Gen {fromGen :: State GState x} deriving (Monad, MonadState GState, Functor, Applicative)
 
+newParameter :: MonadState GState m => ParamInfo -> m ()
 newParameter p =   modify $ \GState{..} -> GState{genParams = p:genParams,..}
 
 newVar :: Gen DOC
@@ -381,7 +383,7 @@ lambda f = do
 
 generate :: Gen () -> (String,[ParamInfo])
 generate s = (renderWith (Options 92 (const id)) genText,genParams)
-  where GState{..} =  execState (fromGen s) (GState {nextVar = 0, genText = mempty, genParams=[]})
+  where GState{..} =  execState (fromGen s) (GState {nextVar = 0, genText = mempty, genParams=[], genTrainingPlaceholder= T "NO TRAINING PLACEHOLDER!"})
 
 generateFile :: String -> Gen () -> IO ()
 generateFile fname g = do

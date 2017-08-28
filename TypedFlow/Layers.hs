@@ -23,10 +23,11 @@ module TypedFlow.Layers where
 import Prelude hiding (tanh,Num(..),Floating(..),floor)
 import qualified Prelude
 import GHC.TypeLits
-import Text.PrettyPrint.Compact (float)
+-- import Text.PrettyPrint.Compact (float)
 import TypedFlow.TF
 import TypedFlow.Types
 import Data.Monoid (Endo(..))
+import Control.Monad.State (gets)
 -- import Data.Kind (Type,Constraint)
 
 ---------------------
@@ -71,9 +72,11 @@ data DropProb = DropProb Float
 mkDropout :: forall s t. KnownShape s => KnownBits t => DropProb -> Gen (Tensor s ('Typ 'Float t) -> Tensor s ('Typ 'Float t))
 mkDropout (DropProb dropProb) = do
   let keepProb = 1.0 Prelude.- dropProb
-  -- isVal <- isValidation
+  isTraining <- gets genTrainingPlaceholder
   -- if isVal then return id else do
-  mask <- assign (floor (randomUniform keepProb (1 Prelude.+ keepProb)) ⊘ constant keepProb)
+  mask <- assign (if_ isTraining
+                   (floor (randomUniform keepProb (1 Prelude.+ keepProb)) ⊘ constant keepProb)
+                   ones)
   return (mask ⊙)
 
 ------------------------
@@ -158,24 +161,6 @@ gru (wz,wr,w) ((I ht1 :* Unit) , xt) = do
       hTilda = tanh (w # (concat0 (rt ⊙ ht1) xt))
   ht <- assign ((ones ⊝ zt) ⊙ ht1 + zt ⊙ hTilda)
   return (I ht :* Unit, ht)
-
--- class TravTensor tt
---    where travTensor :: (forall s t. T s t -> T s t) -> tt -> tt
-
--- instance TravTensor (T s t) where
---   travTensor f x = f x
-
--- instance (TravTensor a, TravTensor b) => TravTensor (a,b) where
---   travTensor f (a,b) = (travTensor f a, travTensor f b)
-
--- travAllTensors :: All TravTensor xs => (forall s t. T s t -> T s t) -> HList xs -> HList xs
--- travAllTensors f (I x :* xs) = I (travTensor f x) :* travAllTensors f xs
--- travAllTensors _f Unit = Unit
-
-
--- onState' :: (forall s t. T s t -> T s t) -> All TravTensor xs => RnnCell xs a b -> RnnCell xs a b
--- onState' f cell (h,x) = do
---   cell (travAllTensors f h,x)
 
 onState ::   (x -> x) -> RnnCell '[x] a b -> RnnCell '[x] a b
 onState f = onStates (hendo (Endo f :* Unit))

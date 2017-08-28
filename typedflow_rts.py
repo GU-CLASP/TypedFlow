@@ -3,7 +3,7 @@ import sys
 
 # optimize is one of tf.train.GradientDescentOptimizer(0.05), etc.
 def train (sess, model, optimizer, train_generator, valid_generator, epochs):
-    (x,y,y_,accuracy,loss,params,gradients) = model
+    (training_phase,x,y,y_,accuracy,loss,params,gradients) = model
     # must come before the initializer (this line creates variables!)
     train = optimizer.apply_gradients(zip(gradients, params))
     # train = optimizer.minimize(loss)
@@ -16,7 +16,7 @@ def train (sess, model, optimizer, train_generator, valid_generator, epochs):
         for (x_train,y_train) in train_generator():
             print(".",end="")
             sys.stdout.flush()
-            _,lossAcc,accur = sess.run([train,loss,accuracy], feed_dict={x:x_train, y:y_train})
+            _,lossAcc,accur = sess.run([train,loss,accuracy], feed_dict={x:x_train, y:y_train, training_phase:True})
             n+=1
             totalLoss += lossAcc
             totalAccur += accur
@@ -29,7 +29,7 @@ def train (sess, model, optimizer, train_generator, valid_generator, epochs):
         for (x_train,y_train) in valid_generator():
             print(".",end="")
             sys.stdout.flush()
-            lossAcc,accur = sess.run([loss,accuracy], feed_dict={x:x_train, y:y_train})
+            lossAcc,accur = sess.run([loss,accuracy], feed_dict={x:x_train, y:y_train, training_phase:False})
             totalLoss += lossAcc
             totalAccur += accur
             n+=1
@@ -41,12 +41,20 @@ def train (sess, model, optimizer, train_generator, valid_generator, epochs):
 
 
 def predict (sess, model, x_generator):
-    (x,y,y_,accuracy,loss,params,gradients) = model
-    sess.run(init)
-    for (n,i) in enumerate(x_generator()):
-        sess.run(y, feed_dict={x:x_generator})
+    (training_phase,x,y,y_,accuracy,loss,params,gradients) = model
+    return [sess.run(y, feed_dict={x:x_train, training_phase:False}) (x_train,i) in enumerate(x_generator())]
 
-
+# Given a pair of x and y (each being a list or a np array) and a
+# batch size, return a generator function which will yield the input
+# in bs-sized chunks. Attention: if the size of the input is not
+# divisible by bs, then the remainer will not be fed. Consider
+# shuffling the input.
+def bilist_generator(l,bs):
+    (l0,l1) = l
+    def gen():
+      for i in range(0, bs*(len(l0)//bs), bs):
+        yield (l0[i:i+bs],l1[i:i+bs])
+    return gen
 
     # k-Beam search at index i in a sequence.
     # work with k-size batch.

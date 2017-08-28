@@ -60,7 +60,7 @@ clipByGlobalNorm maxNorm x = funcall "tf.clip_by_global_norm" [x,float maxNorm] 
 placeholder :: ∀t s. (KnownShape s, KnownTyp t) => String -> Gen (T s t)
 placeholder n = do
   let name = text n
-  name <-- funcall "tf.placeholder" [showTyp @t, named "shape" (showShape @s)]
+  name <-- funcall "tf.placeholder" [showTyp @t, named "shape" (showShape @s), named "name" (text (show n))]
   return (T name)
 
 reduceAll :: String -> Tensor s t -> Tensor '[] t
@@ -378,6 +378,9 @@ lambda2 f = do
   let T body = f (T (v <> brackets (int 0))) (T (v <> brackets (int 1)))
   return (text "lambda " <> v <> text ": " <> body)
 
+if_ :: Scalar TFBool -> T s t -> T s t -> T s t
+if_ (T c) (T x) (T y) = T (funcall "tf.cond" [named "pred" c, named "true_fn" (lambda0 x), named "false_fn" (lambda0 y), named "strict" (bool True)])
+  where lambda0 z = text "lambda: " <> z
 
 -------------------------
 -- Generic parameters
