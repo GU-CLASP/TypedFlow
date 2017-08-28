@@ -20,12 +20,13 @@
 
 module TypedFlow.Layers where
 
-import Prelude hiding (tanh,Num(..),Floating(..))
-import qualified Prelude ()
+import Prelude hiding (tanh,Num(..),Floating(..),floor)
+import qualified Prelude
 import GHC.TypeLits
 import Text.PrettyPrint.Compact (float)
 import TypedFlow.TF
 import TypedFlow.Types
+import Data.Monoid (Endo(..))
 -- import Data.Kind (Type,Constraint)
 
 ---------------------
@@ -60,11 +61,20 @@ denseInitialiser = (glorotUniform,truncatedNormal 0.1)
 dense :: ∀m n batchSize. (n ⊸ m) -> Tensor '[n, batchSize] Float32 -> (Tensor '[m, batchSize] Float32)
 dense lf t = (lf # t)
 
-data KeepProb = KeepProb Float
+data DropProb = DropProb Float
 
 -- TODO: disable when predicting/validating/testing!
-dropout :: KeepProb -> Tensor s t -> Tensor s t
-dropout (KeepProb p) (T x) = T (funcall "tf.nn.dropout" [x, float p])
+-- | Generate a dropout function. The mask applied by the returned
+-- function will be constant for any given call to mkDropout. This
+-- behavior allows to use the same mask in the several steps of an
+-- RNN.
+mkDropout :: forall s t. KnownShape s => KnownBits t => DropProb -> Gen (Tensor s ('Typ 'Float t) -> Tensor s ('Typ 'Float t))
+mkDropout (DropProb dropProb) = do
+  let keepProb = 1.0 Prelude.- dropProb
+  -- isVal <- isValidation
+  -- if isVal then return id else do
+  mask <- assign (floor (randomUniform keepProb (1 Prelude.+ keepProb)) ⊘ constant keepProb)
+  return (mask ⊙)
 
 ------------------------
 -- Convolutional layers
@@ -149,22 +159,30 @@ gru (wz,wr,w) ((I ht1 :* Unit) , xt) = do
   ht <- assign ((ones ⊝ zt) ⊙ ht1 + zt ⊙ hTilda)
   return (I ht :* Unit, ht)
 
-class TravTensor tt
-   where travTensor :: (forall s t. T s t -> T s t) -> tt -> tt
+-- class TravTensor tt
+--    where travTensor :: (forall s t. T s t -> T s t) -> tt -> tt
 
-instance TravTensor (T s t) where
-  travTensor f x = f x
+-- instance TravTensor (T s t) where
+--   travTensor f x = f x
 
-instance (TravTensor a, TravTensor b) => TravTensor (a,b) where
-  travTensor f (a,b) = (travTensor f a, travTensor f b)
+-- instance (TravTensor a, TravTensor b) => TravTensor (a,b) where
+--   travTensor f (a,b) = (travTensor f a, travTensor f b)
 
-travAllTensors :: All TravTensor xs => (forall s t. T s t -> T s t) -> HList xs -> HList xs
-travAllTensors f (I x :* xs) = I (travTensor f x) :* travAllTensors f xs
-travAllTensors _f Unit = Unit
+-- travAllTensors :: All TravTensor xs => (forall s t. T s t -> T s t) -> HList xs -> HList xs
+-- travAllTensors f (I x :* xs) = I (travTensor f x) :* travAllTensors f xs
+-- travAllTensors _f Unit = Unit
 
-onState :: (forall s t. T s t -> T s t) -> All TravTensor xs => RnnCell xs a b -> RnnCell xs a b
-onState f cell (h,x) = do
-  cell (travAllTensors f h,x)
+
+-- onState' :: (forall s t. T s t -> T s t) -> All TravTensor xs => RnnCell xs a b -> RnnCell xs a b
+-- onState' f cell (h,x) = do
+--   cell (travAllTensors f h,x)
+
+onState ::   (x -> x) -> RnnCell '[x] a b -> RnnCell '[x] a b
+onState f = onStates (hendo (Endo f :* Unit))
+
+onStates ::  (HList xs -> HList xs) -> RnnCell xs a b -> RnnCell xs a b
+onStates f cell (h,x) = do
+  cell (f h, x)
 
 -- | Stack two RNN cells
 stackRnnCells, (.-.) :: forall s0 s1 a b c. KnownLen s0 => RnnCell s0 a b -> RnnCell s1 b c -> RnnCell (s0 ++ s1) a c

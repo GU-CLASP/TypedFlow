@@ -110,10 +110,16 @@ newtype F g t s = F (g s t)
 -- | Heterogeneous tensor vector with the same kind of elements
 type HTV t = NP (F T t)
 
+hsingle :: x -> HList '[x]
+hsingle x = I x :* Unit
+
 hmap :: (forall x. f x -> g x) -> NP f xs -> NP g xs
 hmap _ Unit = Unit
 hmap f (x :* xs) = f x :* hmap f xs
 
+hendo :: NP Endo xs -> HList xs -> HList xs
+hendo Unit Unit = Unit
+hendo (Endo f :* fs) (I x :* xs) = (I (f x) :* xs)
 
 happ :: NP f xs -> NP f ys -> NP f (xs ++ ys)
 happ Unit xs = xs
@@ -356,7 +362,7 @@ binOp op (T x) (T y) = T (funcall op [ x , y])
 unOp :: ∀ s1 s2 t1 t2. String -> Tensor s1 t1 -> Tensor s2 t2
 unOp op (T x) = T (funcall op [x])
 
-assign :: ∀s t. (T s t) -> Gen (T s t)
+assign :: ∀s t. T s t -> Gen (T s t)
 assign (T x) = do
   v <- newVar
   v <-- x
