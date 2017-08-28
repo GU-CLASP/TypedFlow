@@ -2,67 +2,6 @@ import tensorflow as tf
 import sys
 from time import time
 
-# optimizer is one of tf.train.GradientDescentOptimizer(0.05), tf.train.AdamOptimizer() etc.
-def train (sess, model, optimizer, train_generator, valid_generator, epochs, callbacks=[]):
-    (training_phase,x,y,y_,accuracy,loss,params,gradients) = model
-    # must come before the initializer (this line creates variables!)
-    train = optimizer.apply_gradients(zip(gradients, params))
-    # train = optimizer.minimize(loss)
-    sess.run(tf.local_variables_initializer())
-    sess.run(tf.global_variables_initializer())
-    def halfEpoch(isTraining):
-        totalAccur = 0
-        totalLoss = 0
-        n = 0
-        print ("Training" if isTraining else "Validation", end="")
-        start_time = time()
-        for (x_train,y_train) in train_generator() if isTraining else valid_generator():
-            print(".",end="")
-            sys.stdout.flush()
-            _,lossAcc,accur = sess.run([train,loss,accuracy], feed_dict={x:x_train, y:y_train, training_phase:isTraining})
-            n+=1
-            totalLoss += lossAcc
-            totalAccur += accur
-        end_time = time()
-        if n > 0:
-            avgLoss = totalLoss / float(n)
-            avgAccur = totalAccur / float(n)
-            print(".")
-            print ("Time=%.1f" % (end_time - start_time), "loss=%g" % avgLoss, "accuracy=%.3f" % avgAccur)
-            return (avgLoss,avgAccur)
-        else:
-            print ("No data")
-            return (0,0)
-
-    for e in range(epochs):
-        (trainLoss,trainAccur) = halfEpoch(True)
-        (valLoss,valAccur) = halfEpoch(False)
-        if any(c({"train_loss":trainLoss,
-                  "train_accur":trainAccur,
-                  "val_loss":valLoss,
-                  "val_accur":valAccur,
-                  "time":end_time - start_time
-                  }) for c in callbacks):
-            break
-
-def earlyStopping(patience = 1):
-    oldLoss = 10000000000
-    p = patience
-    def callback(values):
-        nonlocal oldLoss, p
-        newLoss = values["val_loss"]
-        if newLoss > oldLoss:
-            p -= 1
-        if p <= 0:
-            return True
-        oldLoss = newLoss
-        return False
-    return callback
-
-def predict (sess, model, x_generator):
-    (training_phase,x,y,y_,accuracy,loss,params,gradients) = model
-    return [sess.run(y, feed_dict={x:x_train, training_phase:False}) (x_train,i) in enumerate(x_generator())]
-
 # Given a pair of x and y (each being a list or a np array) and a
 # batch size, return a generator function which will yield the input
 # in bs-sized chunks. Attention: if the size of the input is not
@@ -74,6 +13,73 @@ def bilist_generator(l,bs):
       for i in range(0, bs*(len(l0)//bs), bs):
         yield (l0[i:i+bs],l1[i:i+bs])
     return gen
+
+
+# optimizer is one of tf.train.GradientDescentOptimizer(0.05), tf.train.AdamOptimizer() etc.
+def train (session, model, train_generator, valid_generator=bilist_generator(([],[]),1), optimizer=tf.train.AdamOptimizer(), epochs=100, callbacks=[]):
+    (training_phase,x,y,y_,accuracy,loss,params,gradients) = model
+    # must come before the initializer (this line creates variables!)
+    train = optimizer.apply_gradients(zip(gradients, params))
+    # train = optimizer.minimize(loss)
+    session.run(tf.local_variables_initializer())
+    session.run(tf.global_variables_initializer())
+    def halfEpoch(isTraining):
+        totalAccur = 0
+        totalLoss = 0
+        n = 0
+        print ("Training" if isTraining else "Validation", end="")
+        start_time = time()
+        for (x_train,y_train) in train_generator() if isTraining else valid_generator():
+            print(".",end="")
+            sys.stdout.flush()
+            _,lossAcc,accur = session.run([train,loss,accuracy], feed_dict={x:x_train, y:y_train, training_phase:isTraining})
+            n+=1
+            totalLoss += lossAcc
+            totalAccur += accur
+        end_time = time()
+        if n > 0:
+            avgLoss = totalLoss / float(n)
+            avgAccur = totalAccur / float(n)
+            print(".")
+            print ("Time=%.1f" % (end_time - start_time), "loss=%g" % avgLoss, "accuracy=%.3f" % avgAccur)
+            return {"loss":avgLoss,"accuracy":avgAccur,"time":(end_time - start_time)}
+        else:
+            print ("No data")
+            return {"loss":0,"accur":0,"time":0}
+
+    for e in range(epochs):
+        print ("Epoch {0}/{1}".format(e, epochs))
+        tr = halfEpoch(True)
+        va = halfEpoch(False)
+        if any(c({"train":tr, "val":va}) for c in callbacks):
+            break
+
+def StopWhenValidationGetsWorse(patience = 1):
+    bestLoss = 10000000000
+    p = patience
+    def callback(values):
+        nonlocal bestLoss, p, patience
+        newLoss = values["val"]["loss"]
+        if newLoss > bestLoss:
+            p -= 1
+        else:
+            bestLoss = newLoss
+            p = patience
+        if p <= 0:
+            return True
+        return False
+    return callback
+
+def StopWhenGoodAccuracy(accur = .99):
+    def callback(values):
+        nonlocal accur
+        return values["val"]["accuracy"] > accur
+    return callback
+
+
+def predict (session, model, x_generator):
+    (training_phase,x,y,y_,accuracy,loss,params,gradients) = model
+    return np.concatenate([session.run(y, feed_dict={x:x_train, training_phase:False}) (x_train,i) in enumerate(x_generator())])
 
     # k-Beam search at index i in a sequence.
     # work with k-size batch.
