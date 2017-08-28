@@ -43,7 +43,7 @@ parameter' name (T initial) = do
   v <-- funcall "tf.Variable" [initial, named "name" (string (show (name)))]
   return (T v)
 
--- TODO: gather the parameters in Haskell
+-- TODO: get the parameters from the genParams field
 getParameters :: Gen UntypedExpression
 getParameters = do
   v <- newVar

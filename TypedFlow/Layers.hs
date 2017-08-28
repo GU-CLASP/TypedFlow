@@ -48,7 +48,7 @@ type (a ⊸ b) = (Tensor '[a,b] Float32, Tensor '[b] Float32)
 type EmbbeddingP numObjects embeddingSize t = Tensor '[numObjects, embeddingSize] ('Typ 'Float t)
 
 embeddingInitializer :: (KnownNat numObjects, KnownBits b, KnownNat embeddingSize) => EmbbeddingP numObjects embeddingSize b
-embeddingInitializer = randomUniform (-0.05) 0.05 -- TODO: scale better?
+embeddingInitializer = randomUniform (-0.05) 0.05
 
 embedding :: ∀ embeddingSize numObjects batchSize t.
              EmbbeddingP numObjects embeddingSize t -> Tensor '[batchSize] Int32 -> Tensor '[embeddingSize,batchSize] ('Typ 'Float t)
@@ -312,8 +312,7 @@ chainForward f (s0 , V (x:xs)) = do
   (s1,x') <- f (s0 , x)
   (sFin,V xs') <- chainForward f (s1 , V xs)
   return (sFin,V (x':xs'))
--- TODO: attempt to do the above with
--- tf.foldl
+-- TODO: attempt to do the above with tf.foldl
 
 chainBackward :: ∀ state a b n. ((state , a) -> Gen (state , b)) → (state , V n a) -> Gen (state , V n b)
 chainBackward _ (s0 , V []) = return (s0 , V [])
