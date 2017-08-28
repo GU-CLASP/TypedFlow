@@ -1,6 +1,13 @@
 import tensorflow as tf
+import numpy as np
 import sys
 from time import time
+
+def cuda_pref_device(n):
+    os.environ["CUDA_DEVICE_ORDER"]= "PCI_BUS_ID"
+    if os.environ.get("CUDA_VISIBLE_DEVICES") is None:
+        os.environ["CUDA_VISIBLE_DEVICES"] = str(n)
+
 
 # Given a pair of x and y (each being a list or a np array) and a
 # batch size, return a generator function which will yield the input
@@ -16,7 +23,6 @@ def bilist_generator(l,bs):
 
 # optimizer is one of tf.train.GradientDescentOptimizer(0.05), tf.train.AdamOptimizer() etc.
 def train (session, model, train_generator, valid_generator=bilist_generator(([],[]),1), optimizer=tf.train.AdamOptimizer(), epochs=100, callbacks=[]):
-    (training_phase,x,y,y_,accuracy,loss,params,gradients) = model
     # must come before the initializer (this line creates variables!)
     train = optimizer.apply_gradients(zip(model["gradients"], model["params"]))
     # train = optimizer.minimize(loss)
@@ -31,7 +37,7 @@ def train (session, model, train_generator, valid_generator=bilist_generator(([]
         for (x_train,y_train) in train_generator() if isTraining else valid_generator():
             print(".",end="")
             sys.stdout.flush()
-            _,lossAcc,accur = session.run([model["train"],model["loss"],model["accuracy"]], feed_dict={model["x"]:x_train, model["y"]:y_train, model["training_phase"]:isTraining})
+            _,lossAcc,accur = session.run([train,model["loss"],model["accuracy"]], feed_dict={model["x"]:x_train, model["y"]:y_train, model["training_phase"]:isTraining})
             n+=1
             totalLoss += lossAcc
             totalAccur += accur
@@ -78,14 +84,20 @@ def StopWhenGoodAccuracy(accur = .99):
 
 def predict (session, model, xs):
     bs = model["batch_size"]
-    zeros = np.zeros_like(xs[0])
-    for i in range(0, bs*(len(xs)//bs), bs):
-        chunk = xs[i:i+bs]
-        yield (chunk + [zeros] * bs-len(chunk))
-
-
-    return np.concatenate([session.run(model["y"], feed_dict={model["x"]:x_train, model["training_phase"]:False}) (x_train,i) in gen])
-
+    zeros = np.zeros_like(xs[0]) # at least one example is needed
+    results = []
+    def run():
+        for i in range(0, bs*(-(-len(xs)//bs)), bs):
+            chunk = xs[i:i+bs]
+            if i + bs > len(xs):
+                origLen = len(chunk)
+                chunk = list(chunk) + [zeros] * (bs - origLen) # pad the last chunk
+            else:
+                origLen = bs
+            print (".")
+            yield (session.run(model["y"], feed_dict={model["x"]:chunk, model["training_phase"]:False}))[:origLen]
+    return np.concatenate(list(run()))
+    
     # k-Beam search at index i in a sequence.
     # work with k-size batch.
     # keep for every j < k a sum of the log probs, r(j).
