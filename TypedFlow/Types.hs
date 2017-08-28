@@ -30,6 +30,8 @@ import Control.Monad.State
 import Data.Char (toLower)
 -- import GHC.Prim (unsafeCoerce#)
 import Data.Kind (Type,Constraint)
+import Data.Type.Equality
+
 type DOC = Doc ()
 
 type i < j = CmpNat i j ~ 'LT
@@ -60,6 +62,13 @@ initLast' (Cons _ (Cons y ys)) k = initLast' (Cons y ys) (k)
 initLast :: forall s k. KnownShape s => ((Init s ++ '[Last s]) ~ s => k) -> k
 initLast = initLast' @s shapeSing
 
+knownLast' :: SShape s -> (KnownNat (Last s) => k) -> k
+knownLast' Nil _ = error "knownLast: does not hold on empty lists"
+knownLast' (Cons (SNat _) Nil) k = k
+knownLast' (Cons _ (Cons y xs)) k = knownLast' (Cons y xs) k
+
+knownLast :: forall s k. KnownShape s => (KnownNat (Last s) => k) -> k
+knownLast = knownLast' @s shapeSing
 
 splitApp' :: forall ys xs k. PeanoLen xs -> ((Take (PeanoLength xs) (xs ++ ys) ~ xs,
                                               Drop (PeanoLength xs) (xs ++ ys) ~ ys) => k) -> k
@@ -352,7 +361,7 @@ tuple :: [DOC] -> DOC
 tuple = parens . sep . punctuate comma
 
 dict :: [(String,DOC)] -> DOC
-dict xs = encloseSep "{" "," "}" [text (show k) <> ":" <> v | (k,v) <- xs]
+dict xs = encloseSep "{" "}" "," [text (show k) <> ":" <> v | (k,v) <- xs]
 
 funcall :: String -> [DOC] -> DOC
 funcall = funcall' . text

@@ -33,7 +33,7 @@ predict input gold = do
 
 main :: IO ()
 main = do
-  generateFile "lm.py" (compile (defaultOptions {maxGradientNorm = Just 1}) (predict @5 @11 @512))
+  generateFile "lm.py" (compile (defaultOptions) (predict @5 @11 @512))
   putStrLn "done!"
 
 (|>) :: ∀ a b. a -> b -> (a, b)

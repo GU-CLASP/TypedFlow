@@ -108,10 +108,11 @@ data Options = Options {maxGradientNorm :: Maybe Prelude.Float}
 defaultOptions :: Options
 defaultOptions = Options {maxGradientNorm = Nothing}
 
-compile :: (KnownShape input, KnownTyp tIn, KnownShape output, KnownTyp tOut) =>
+compile :: forall input tIn output tOut.
+           (KnownShape input, KnownTyp tIn, KnownShape output, KnownTyp tOut) =>
            Options ->
            Model input tIn output tOut  -> Gen ()
-compile Options{..} model = do
+compile Options{..} model = knownLast @input $ do
   gen (text "import tensorflow as tf")
   genFun "mkModel" [] $ do
     x <- placeholder "x"
@@ -135,4 +136,5 @@ compile Options{..} model = do
                                 ,("accuracy",fromTensor accuracy)
                                 ,("loss",fromTensor loss)
                                 ,("params",params)
+                                ,("batch_size",showDim @ (Last input))
                                 ,("gradients",gradients)])
