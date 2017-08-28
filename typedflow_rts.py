@@ -1,44 +1,63 @@
 import tensorflow as tf
 import sys
+from time import time
 
-# optimize is one of tf.train.GradientDescentOptimizer(0.05), etc.
-def train (sess, model, optimizer, train_generator, valid_generator, epochs):
+# optimizer is one of tf.train.GradientDescentOptimizer(0.05), tf.train.AdamOptimizer() etc.
+def train (sess, model, optimizer, train_generator, valid_generator, epochs, callbacks=[]):
     (training_phase,x,y,y_,accuracy,loss,params,gradients) = model
     # must come before the initializer (this line creates variables!)
     train = optimizer.apply_gradients(zip(gradients, params))
     # train = optimizer.minimize(loss)
     sess.run(tf.local_variables_initializer())
     sess.run(tf.global_variables_initializer())
-    for e in range(epochs):
+    def halfEpoch(isTraining):
         totalAccur = 0
         totalLoss = 0
         n = 0
-        for (x_train,y_train) in train_generator():
+        print ("Training" if isTraining else "Validation", end="")
+        start_time = time()
+        for (x_train,y_train) in train_generator() if isTraining else valid_generator():
             print(".",end="")
             sys.stdout.flush()
-            _,lossAcc,accur = sess.run([train,loss,accuracy], feed_dict={x:x_train, y:y_train, training_phase:True})
+            _,lossAcc,accur = sess.run([train,loss,accuracy], feed_dict={x:x_train, y:y_train, training_phase:isTraining})
             n+=1
             totalLoss += lossAcc
             totalAccur += accur
-        print(".")
-        print ("Training Loss = ", totalLoss / float(n), " Training accuracy = ", totalAccur / float(n))
-
-        totalLoss = 0
-        totalAccur = 0
-        n = 0
-        for (x_train,y_train) in valid_generator():
-            print(".",end="")
-            sys.stdout.flush()
-            lossAcc,accur = sess.run([loss,accuracy], feed_dict={x:x_train, y:y_train, training_phase:False})
-            totalLoss += lossAcc
-            totalAccur += accur
-            n+=1
-        print(".")
+        end_time = time()
         if n > 0:
-            print ("Validation Loss = ", totalLoss / float(n), " Validation accuracy = ", totalAccur / float(n))
+            avgLoss = totalLoss / float(n)
+            avgAccur = totalAccur / float(n)
+            print(".")
+            print ("Time=%.1f" % (end_time - start_time), "loss=%g" % avgLoss, "accuracy=%.3f" % avgAccur)
+            return (avgLoss,avgAccur)
         else:
-            print ("No validation data.")
+            print ("No data")
+            return (0,0)
 
+    for e in range(epochs):
+        (trainLoss,trainAccur) = halfEpoch(True)
+        (valLoss,valAccur) = halfEpoch(False)
+        if any(c({"train_loss":trainLoss,
+                  "train_accur":trainAccur,
+                  "val_loss":valLoss,
+                  "val_accur":valAccur,
+                  "time":end_time - start_time
+                  }) for c in callbacks):
+            break
+
+def earlyStopping(patience = 1):
+    oldLoss = 10000000000
+    p = patience
+    def callback(values):
+        nonlocal oldLoss, p
+        newLoss = values["val_loss"]
+        if newLoss > oldLoss:
+            p -= 1
+        if p <= 0:
+            return True
+        oldLoss = newLoss
+        return False
+    return callback
 
 def predict (sess, model, x_generator):
     (training_phase,x,y,y_,accuracy,loss,params,gradients) = model
