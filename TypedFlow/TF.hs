@@ -54,7 +54,8 @@ grad :: T s Float32 -> UntypedExpression -> UntypedExpression
 grad (T y) vars = funcall "tf.gradients" [y, vars]
 
 clipByGlobalNorm :: Float -> UntypedExpression -> UntypedExpression
-clipByGlobalNorm maxNorm x = funcall "tf.clip_by_global_norm" [x,float maxNorm]
+clipByGlobalNorm maxNorm x = funcall "tf.clip_by_global_norm" [x,float maxNorm] <> brackets (int 0)
+ -- clip_by_global_norm returns a couple (clipped grads, global_norm)
 
 placeholder :: ∀t s. (KnownShape s, KnownTyp t) => String -> Gen (T s t)
 placeholder n = do
