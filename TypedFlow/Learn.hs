@@ -28,7 +28,7 @@ import Prelude (($),return,Maybe(..),id)
 import Text.PrettyPrint.Compact (text)
 import Data.Monoid hiding (Last)
 import GHC.TypeLits (KnownNat)
-import Control.Monad.State (modify)
+import Control.Monad.State (modify, gets)
 
 
 
@@ -129,7 +129,8 @@ compile Options{..} model = knownLast @input $ do
                      Nothing -> id
                      Just clip -> clipByGlobalNorm clip
     gradients <-- clipping (grad modelLoss params)
-    gen (text "return " <> dict [("training_phase", fromTensor trainingPhasePlaceholder)
+    peeks <- gets genPeeks
+    gen (text "return " <> dict ([("training_phase", fromTensor trainingPhasePlaceholder)
                                 ,("x",fromTensor x)
                                 ,("y",fromTensor y)
                                 ,("y_",fromTensor y_)
@@ -137,4 +138,4 @@ compile Options{..} model = knownLast @input $ do
                                 ,("loss",fromTensor loss)
                                 ,("params",params)
                                 ,("batch_size",showDim @ (Last input))
-                                ,("gradients",gradients)])
+                                ,("gradients",gradients)] <> peeks))

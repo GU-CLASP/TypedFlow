@@ -128,7 +128,7 @@ hmap f (x :* xs) = f x :* hmap f xs
 
 hendo :: NP Endo xs -> HList xs -> HList xs
 hendo Unit Unit = Unit
-hendo (Endo f :* fs) (I x :* xs) = (I (f x) :* xs)
+hendo (Endo f :* fs) (I x :* xs) = (I (f x) :* hendo fs xs)
 
 happ :: NP f xs -> NP f ys -> NP f (xs ++ ys)
 happ Unit xs = xs
@@ -318,14 +318,18 @@ data ParamInfo = ParamInfo {paramName :: String
                            ,paramShape :: [Integer]
                            ,paramDType :: Typ
                            ,paramVar   :: forall s t. Tensor s t}
-data GState = GState {nextVar :: Integer,
+data GState = GState {nextVar :: Integer, -- ^ next free variable
                       genText :: DOC,
-                      genParams :: [ParamInfo],
-                      genTrainingPlaceholder :: Scalar TFBool}
+                      genParams :: [ParamInfo], -- ^ optimizable parameters
+                      genTrainingPlaceholder :: Scalar TFBool, -- ^ flag which is true when training
+                      genPeeks :: [(String,UntypedExpression)]}
 newtype Gen x = Gen {fromGen :: State GState x} deriving (Monad, MonadState GState, Functor, Applicative)
 
 newParameter :: MonadState GState m => ParamInfo -> m ()
 newParameter p =   modify $ \GState{..} -> GState{genParams = p:genParams,..}
+
+peekAt :: MonadState GState m => String -> Tensor s t -> m ()
+peekAt p (T v) = modify $ \GState{..} -> GState{genPeeks = (p,v):genPeeks,..}
 
 newVar :: Gen DOC
 newVar = do
@@ -395,7 +399,11 @@ lambda f = do
 
 generate :: Gen () -> (String,[ParamInfo])
 generate s = (renderWith (Options 92 (const id)) genText,genParams)
-  where GState{..} =  execState (fromGen s) (GState {nextVar = 0, genText = mempty, genParams=[], genTrainingPlaceholder= T "NO TRAINING PLACEHOLDER!"})
+  where GState{..} =  execState (fromGen s) (GState {nextVar = 0
+                                                    ,genText = mempty
+                                                    ,genParams=[]
+                                                    ,genTrainingPlaceholder = T "NO TRAINING PLACEHOLDER!"
+                                                    ,genPeeks=[]})
 
 generateFile :: String -> Gen () -> IO ()
 generateFile fname g = do
