@@ -14,19 +14,23 @@ import TypedFlow
 first :: (t2 -> t1) -> (t2, t) -> (t1, t)
 first f (a,b) = (f a, b)
 
+(***) :: (t3 -> t2) -> (t1 -> t) -> (t3, t1) -> (t2, t)
+(f *** g) (a,b) = (f a, g b)
+
 predict :: forall (outSize::Nat) (vocSize::Nat) batchSize. KnownNat outSize => KnownNat vocSize => KnownNat batchSize => Model '[21,batchSize] Int32 '[batchSize] Int32
 predict input gold = do
   embs <- parameter "embs" embeddingInitializer
   lstm1 <- parameter "w1" lstmInitializer
   drp <- mkDropout (DropProb 0.1)
   rdrp <- mkDropout (DropProb 0.1)
+  rdrp' <- mkDropout (DropProb 0.1)
   w <- parameter "dense" denseInitialiser
   (_sFi,predictions) <-
     rnn (timeDistribute (embedding @9 @vocSize embs)
           .-.
           timeDistribute drp
           .-.
-          (onState (first rdrp) (lstm @50 lstm1)))
+          (onState (rdrp *** rdrp') (lstm @50 lstm1)))
         (I (zeros,zeros) :* Unit) input
   categorical ((dense @outSize w) (last0 predictions)) gold
 
