@@ -1,3 +1,4 @@
+{-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE ViewPatterns #-}
 {-# LANGUAGE TypeInType #-}
 {-# OPTIONS_GHC -fplugin GHC.TypeLits.KnownNat.Solver #-}
@@ -64,7 +65,6 @@ dense lf t = (lf # t)
 
 data DropProb = DropProb Float
 
--- TODO: disable when predicting/validating/testing!
 -- | Generate a dropout function. The mask applied by the returned
 -- function will be constant for any given call to mkDropout. This
 -- behavior allows to use the same mask in the several steps of an
@@ -73,11 +73,27 @@ mkDropout :: forall s t. KnownShape s => KnownBits t => DropProb -> Gen (Tensor 
 mkDropout (DropProb dropProb) = do
   let keepProb = 1.0 Prelude.- dropProb
   isTraining <- gets genTrainingPlaceholder
-  -- if isVal then return id else do
   mask <- assign (if_ isTraining
                    (floor (randomUniform keepProb (1 Prelude.+ keepProb)) ⊘ constant keepProb)
                    ones)
   return (mask ⊙)
+
+newtype EndoTensor t s = EndoTensor (Tensor s t -> Tensor s t)
+
+mkDropouts' :: forall shapes t. KnownBits t => All KnownShape shapes =>
+               SList shapes -> DropProb -> Gen (NP (EndoTensor ('Typ 'Float t)) shapes)
+mkDropouts' LZ _ = return Unit
+mkDropouts' (LS _ rest) d = do
+  x <- mkDropout d
+  xs <- mkDropouts' rest d
+  return (EndoTensor x :* xs)
+
+appEndoTensor :: NP (EndoTensor t) s -> HTV t s -> HTV t s
+appEndoTensor Unit Unit = Unit
+appEndoTensor (EndoTensor f :* fs) (F x :* xs) = F (f x) :* appEndoTensor fs xs
+
+mkDropouts :: KnownBits t => KnownLen shapes => All KnownShape shapes => DropProb -> Gen (HTV ('Typ 'Float t) shapes -> HTV ('Typ 'Float t) shapes)
+mkDropouts d = appEndoTensor <$> mkDropouts' shapeSList d
 
 ------------------------
 -- Convolutional layers
