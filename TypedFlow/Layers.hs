@@ -18,6 +18,7 @@
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE UnicodeSyntax #-}
+{-# LANGUAGE PatternSynonyms #-}
 
 module TypedFlow.Layers where
 
@@ -150,8 +151,8 @@ lstmInitializer = (forgetInit, cellInitializerBit, cellInitializerBit,cellInitia
   where forgetInit = (fst cellInitializerBit, ones)
 
 lstm :: ∀ n x bs. (KnownNat bs) => LSTMP n x ->
-        RnnCell '[(T '[n,bs] Float32, T '[n,bs] Float32)] (Tensor '[x,bs] Float32) (Tensor '[n,bs] Float32)
-lstm (wf,wi,wc,wo) ((I (ht1, ct1) :* Unit) , input) = do
+        RnnCell '[HTV Float32 '[ '[n,bs], '[n,bs]]] (Tensor '[x,bs] Float32) (Tensor '[n,bs] Float32)
+lstm (wf,wi,wc,wo) (HSingle (VecPair ht1 ct1) , input) = do
   hx <- assign (concat0 ht1 input)
   let f = sigmoid (wf # hx)
       i = sigmoid (wi # hx)
@@ -159,7 +160,7 @@ lstm (wf,wi,wc,wo) ((I (ht1, ct1) :* Unit) , input) = do
       o = sigmoid (wo # hx)
   c <- assign ((f ⊙ ct1) + (i ⊙ cTilda))
   h <- assign (o ⊙ tanh c)
-  return (I (h,c) :* Unit , h)
+  return (HSingle (VecPair h c) , h)
 
 type GRUP n x = (((n + x) ⊸ n),
                  ((n + x) ⊸ n),

@@ -1,3 +1,4 @@
+{-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE UndecidableSuperClasses #-}
 {-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE RecordWildCards #-}
@@ -98,10 +99,6 @@ instance KnownNat n => Applicative (V n) where
   pure = V . replicate (fromIntegral (natVal (Proxy @n)))
   V fs <*> V xs = V (zipWith ($) fs xs)
 
-data V' (n::Nat) a where
-  VZ :: V' 0 a
-  VS :: a -> V' n a -> V' (1+n) a
-
 -- From: https://www.cs.ox.ac.uk/projects/utgp/school/andres.pdf
 data NP f (xs :: [k]) where
   Unit :: NP f '[]
@@ -109,6 +106,11 @@ data NP f (xs :: [k]) where
 newtype I a = I a
 type HList = NP I
 
+pattern HSingle :: a -> HList '[a]
+pattern HSingle x = (I x :* Unit)
+
+pattern VecPair :: Tensor s t -> Tensor s' t -> HTV t '[s,s']
+pattern VecPair t1 t2 = F t1 :* F t2 :* Unit
 
 type family All (c :: k -> Constraint) (xs :: [k]) :: Constraint where
   All c '[] = ()
@@ -119,9 +121,6 @@ newtype F g t s = F (g s t)
 
 -- | Heterogeneous tensor vector with the same kind of elements
 type HTV t = NP (F T t)
-
-hsingle :: x -> HList '[x]
-hsingle x = I x :* Unit
 
 hmap :: (forall x. f x -> g x) -> NP f xs -> NP g xs
 hmap _ Unit = Unit
