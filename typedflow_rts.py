@@ -14,16 +14,17 @@ def cuda_pref_device(n):
 # in bs-sized chunks. Attention: if the size of the input is not
 # divisible by bs, then the remainer will not be fed. Consider
 # shuffling the input.
-def bilist_generator(l,bs):
+def bilist_generator(l):
     (l0,l1) = l
-    def gen():
+    def gen(bs):
       for i in range(0, bs*(len(l0)//bs), bs):
         yield (l0[i:i+bs],l1[i:i+bs])
     return gen
 
 # optimizer is one of tf.train.GradientDescentOptimizer(0.05), tf.train.AdamOptimizer() etc.
-def train (session, model, train_generator, valid_generator=bilist_generator(([],[]),1), optimizer=tf.train.AdamOptimizer(), epochs=100, callbacks=[]):
+def train (session, model, train_generator, valid_generator=bilist_generator(([],[])), optimizer=tf.train.AdamOptimizer(), epochs=100, callbacks=[]):
     # must come before the initializer (this line creates variables!)
+    batch_size = model["batch_size"]
     train = optimizer.apply_gradients(zip(model["gradients"], model["params"]))
     # train = optimizer.minimize(loss)
     session.run(tf.local_variables_initializer())
@@ -34,12 +35,15 @@ def train (session, model, train_generator, valid_generator=bilist_generator(([]
         n = 0
         print ("Training" if isTraining else "Validation", end="")
         start_time = time()
-        for (x_train,y_train) in train_generator() if isTraining else valid_generator():
+        for (x_train,y_train) in train_generator(batch_size) if isTraining else valid_generator(batch_size):
             print(".",end="")
             sys.stdout.flush()
-            _,lossAcc,accur = session.run([train,model["loss"],model["accuracy"]], feed_dict={model["x"]:x_train, model["y"]:y_train, model["training_phase"]:isTraining})
+            _,loss,accur = session.run([train,model["loss"],model["accuracy"]],
+                                       feed_dict={model["x"]:x_train,
+                                                  model["y"]:y_train,
+                                                  model["training_phase"]:isTraining})
             n+=1
-            totalLoss += lossAcc
+            totalLoss += loss
             totalAccur += accur
         end_time = time()
         if n > 0:
@@ -75,14 +79,14 @@ def StopWhenValidationGetsWorse(patience = 1):
         return False
     return callback
 
-def StopWhenGoodAccuracy(accur = .99):
+def StopWhenAccurate(accur = .99):
     def callback(values):
         nonlocal accur
         return values["val"]["accuracy"] > accur
     return callback
 
 
-def predict (session, model, xs):
+def predict (session, model, xs, result="y_"):
     bs = model["batch_size"]
     zeros = np.zeros_like(xs[0]) # at least one example is needed
     results = []
@@ -95,7 +99,7 @@ def predict (session, model, xs):
             else:
                 origLen = bs
             print (".")
-            yield (session.run(model["y"], feed_dict={model["x"]:chunk, model["training_phase"]:False}))[:origLen]
+            yield (session.run(model[result], feed_dict={model["x"]:chunk, model["training_phase"]:False}))[:origLen]
     return np.concatenate(list(run()))
     
     # k-Beam search at index i in a sequence.
