@@ -70,7 +70,7 @@ reduceMeanAll :: ∀ (s :: Shape) t. Tensor s t -> Tensor '[] t
 reduceMeanAll = reduceAll "mean"
 
 reduce :: ∀ s s' n t. KnownLen s' => String -> Tensor (s ++ (n ': s')) t -> Tensor (s ++ s') t
-reduce op (T x) = T (funcall ("tf.reduce_" ++ op) [x, text "axis=" <> integer (shapeLen @ s')])
+reduce op (T x) = T (funcall ("tf.reduce_" ++ op) [x, text "axis=" <> integer (listLen @ s')])
 
 reduceSum, reduceMean :: ∀ s s' n t. KnownLen s' => Tensor (s ++ (n ': s')) t -> Tensor (s ++ s') t
 reduceSum = reduce @s @s' @n "sum"
@@ -120,22 +120,22 @@ split0 (T x) = do
 concatT :: ∀ n d1 d2 s t.
     (KnownPeano n, KnownLen s, (d1+d2) ~ At n s) =>
     T (Take n s ++ (d1 ': Drop (Succ n) s)) t -> T (Take n s ++ (d2 ': Drop ('Succ n) s)) t -> T s t
-concatT (T x) (T y) = T (funcall "tf.concat" [list [x,y], named "axis" (integer (shapeLen @s - peanoInt @n - 1))])
+concatT (T x) (T y) = T (funcall "tf.concat" [list [x,y], named "axis" (integer (listLen @s - peanoInt @n - 1))])
 
 concat0 :: ∀ ys d1 d2 t. (KnownShape ys) =>  T (d1 ': ys) t -> T (d2 ': ys) t -> T ((d1 + d2) ': ys) t
 concat0 = concatT @Dim0
   -- let T x = t
   --     T y = u
-  -- in (T (funcall "tf.concat" [list [x,y], text "axis=" <> integer (shapeLen @ ys)]))
+  -- in (T (funcall "tf.concat" [list [x,y], text "axis=" <> integer (listLen @ ys)]))
 
 concat1 :: ∀ n ys d1 d2 t. (KnownShape ys) =>  T (n ': d1 ': ys) t -> T (n ': d2 ': ys) t -> T (n ': (d1 + d2) ': ys) t
 concat1 = concatT @Dim1
 
 -- expandDim :: ∀ s0 s t. KnownLen s => Tensor (s0 ++ s) t -> Tensor (s0 ++ (1 ': s)) t
--- expandDim (T x) = (T (funcall "tf.expand_dims" [x, text "axis=" <> integer (shapeLen @ s)]))
+-- expandDim (T x) = (T (funcall "tf.expand_dims" [x, text "axis=" <> integer (listLen @ s)]))
 
 expandDim :: forall n s t. (KnownLen s, KnownPeano n) => Tensor s t -> Tensor (Take n s ++ (1 ': Drop n s)) t
-expandDim (T x) = (T (funcall "tf.expand_dims" [x, named "axis" (integer (shapeLen @s - peanoInt @n))]))
+expandDim (T x) = (T (funcall "tf.expand_dims" [x, named "axis" (integer (listLen @s - peanoInt @n))]))
 
 expandDim0 :: ∀ s t. KnownLen s => Tensor s t -> Tensor (1 ': s) t
 expandDim0 = expandDim @Dim0
@@ -150,7 +150,7 @@ replicateT :: ∀ n s t. (KnownNat n, KnownLen s) => T s t -> T (n ': s) t
 replicateT = tile @n . expandDim0
 
 squeeze :: ∀ s0 s1 t. KnownLen s1 => Tensor (s0 ++ (1 ': s1)) t -> Tensor (s0 ++ s1) t
-squeeze (T x) = T (funcall "tf.squeeze" [x, text "axis=" <> integer (shapeLen @ s1)])
+squeeze (T x) = T (funcall "tf.squeeze" [x, text "axis=" <> integer (listLen @ s1)])
 
 squeeze0 :: ∀ s t. KnownLen s => Tensor (1 ': s) t -> Tensor s t
 squeeze0 = squeeze @ '[]
@@ -174,12 +174,12 @@ inflate3 (T t) = T (funcall "tf.reshape" [t, showShapeMinus @(m ': n ': o ': s)]
 
 -- | Access the last element in a tensor (in the 0th dimension)
 last0 :: ∀ n s t. KnownNat n => KnownLen s => T (n ': s) t -> Tensor s t
-last0 (T x) = T (x <> list (replicate (fromIntegral (shapeLen @s)) (text ":") ++ [integer (natVal (Proxy @n) - 1)]))
+last0 (T x) = T (x <> list (replicate (fromIntegral (listLen @s)) (text ":") ++ [integer (natVal (Proxy @n) - 1)]))
 
 -- | Take a slice at dimension n from i to j.
 slice :: forall n i j s t. KnownNat j => KnownNat i => (i < j, j <= At n s, KnownPeano n, KnownLen s) =>
          Tensor s t -> Tensor (Take n s ++ ((j-i) ': Drop ('Succ n) s)) t
-slice (T x) = T (x <> list (replicate (fromIntegral (shapeLen @s - peanoInt @n - 1)) (text ":") ++ [integer (natVal (Proxy @i)) <> text ".." <> integer (natVal (Proxy @j))]))
+slice (T x) = T (x <> list (replicate (fromIntegral (listLen @s - peanoInt @n - 1)) (text ":") ++ [integer (natVal (Proxy @i)) <> text ".." <> integer (natVal (Proxy @j))]))
 
 slice1 :: forall i j m n s t. KnownNat j => KnownNat i => (i < j, j <= m, KnownLen s) =>
          Tensor (n ': m ': s) t -> Tensor (n ': (j-i) ': s) t
@@ -188,12 +188,12 @@ slice1 = slice @Dim1 @i @j
 unstack :: ∀ s (n::Nat) t. (KnownLen s, KnownNat n) => Tensor (n ': s) t -> Gen (V n (T s t))
 unstack (T x) = do
   v <- newVar
-  v <-- funcall "tf.unstack" [x, text "axis=" <> integer (shapeLen @ s)]
+  v <-- funcall "tf.unstack" [x, text "axis=" <> integer (listLen @ s)]
   return $ V $ [ T $ v <> brackets (integer i)| i <- [0..n Prelude.- 1] ]
         where n = natVal (Proxy @ n)
 
 stack :: ∀ s (n::Nat) t. (KnownLen s) => V n (T s t) -> Tensor (n ': s) t
-stack (V xs) = T (funcall "tf.stack" [list [x | T x <- xs], text "axis=" <> integer (shapeLen @ s)])
+stack (V xs) = T (funcall "tf.stack" [list [x | T x <- xs], text "axis=" <> integer (listLen @ s)])
 
 stackN :: ∀ s (n::Nat) t. V n (T s t) -> Tensor (s ++ '[n]) t
 stackN (V xs) = T (funcall "tf.stack" [list [x | T x <- xs], text "axis=0"])
@@ -202,10 +202,10 @@ transpose :: ∀ s t. T (Reverse s) t -> T s t
 transpose = unOp "tf.transpose"
 
 transposeN :: ∀ s n t. KnownLen s => T (n ': s) t -> T (s ++ '[n]) t
-transposeN (T x) = T (funcall "tf.transpose" [x, named "perm" (list (map integer (shapeLen @s:[0.. shapeLen @s-1])))])
+transposeN (T x) = T (funcall "tf.transpose" [x, named "perm" (list (map integer (listLen @s:[0.. listLen @s-1])))])
 
 transposeN' :: ∀ s n t. KnownLen s => T (s ++ '[n]) t -> T (n ': s) t
-transposeN' (T x) = T (funcall "tf.transpose" [x, named "perm" (list (map integer ([1.. shapeLen @s]++[0])))])
+transposeN' (T x) = T (funcall "tf.transpose" [x, named "perm" (list (map integer ([1.. listLen @s]++[0])))])
 
 
 gather :: ∀s n indexShape t. T (s ++ '[n]) t -> T indexShape Int32 -> T (s ++ indexShape) t
@@ -223,7 +223,7 @@ convolution :: forall outputChannels filterSpatialShape inChannels s t.
 convolution (T input) (T filters) = T (funcall "tf.nn.convolution" [input,filters
                                                                    ,named "padding" (text (show "SAME")) -- otherwise the shape s changes
                                                                    ,named "data_format" (text (show dataFormat))])
-  where dataFormat = case shapeLen @ filterSpatialShape of
+  where dataFormat = case listLen @ filterSpatialShape of
           1 -> "NWC"
           2 -> "NHWC"
           3 -> "NDHWC"
@@ -266,7 +266,7 @@ softmaxCrossEntropyWithLogits (T labels) (T logits) =
   T (funcall "tf.nn.softmax_cross_entropy_with_logits" [named "labels" labels,named "logits" logits])
 
 oneHot :: forall n numClasses s w. KnownNat numClasses => (KnownLen s, KnownPeano n) => Tensor s ('Typ 'Int w) -> Tensor (Take n s ++ (numClasses ': Drop n s)) Float32
-oneHot (T x) = T (funcall "tf.one_hot" [x, named "depth" (showDim @numClasses), named "axis" (integer (shapeLen @s - peanoInt @n))])
+oneHot (T x) = T (funcall "tf.one_hot" [x, named "depth" (showDim @numClasses), named "axis" (integer (listLen @s - peanoInt @n))])
 
 oneHot0 :: forall numClasses w batchSize. KnownNat numClasses => Tensor '[batchSize] ('Typ 'Int w) -> Tensor '[numClasses,batchSize] Float32
 oneHot0 = oneHot @Dim0
