@@ -1,3 +1,4 @@
+{-# LANGUAGE UndecidableSuperClasses #-}
 {-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
@@ -54,30 +55,30 @@ type family Init xs where
 -- initLast' :: forall s k. ((Init s ++ '[Last s]) ~ s => k) -> k
 -- initLast' k = unsafeCoerce# k -- why not?
 
-initLast' :: forall s k. SShape s -> ((Init s ++ '[Last s]) ~ s => k) -> k
-initLast' Nil _ = error "initLast': does not hold on empty lists"
-initLast' (Cons _ Nil) k = k
-initLast' (Cons _ (Cons y ys)) k = initLast' (Cons y ys) (k)
+initLast' :: forall s k. SList s -> ((Init s ++ '[Last s]) ~ s => k) -> k
+initLast' LZ _ = error "initLast': does not hold on empty lists"
+initLast' (LS _ LZ) k = k
+initLast' (LS _ (LS y ys)) k = initLast' (LS y ys) k
 
 initLast :: forall s k. KnownShape s => ((Init s ++ '[Last s]) ~ s => k) -> k
-initLast = initLast' @s shapeSing
+initLast = initLast' @s shapeSList
 
-knownLast' :: SShape s -> (KnownNat (Last s) => k) -> k
-knownLast' Nil _ = error "knownLast: does not hold on empty lists"
-knownLast' (Cons (SNat _) Nil) k = k
-knownLast' (Cons _ (Cons y xs)) k = knownLast' (Cons y xs) k
+knownLast' :: All KnownNat s => SList s -> (KnownNat (Last s) => k) -> k
+knownLast' LZ _ = error "knownLast: does not hold on empty lists"
+knownLast' (LS _ LZ) k = k
+knownLast' (LS _ (LS y xs)) k = knownLast' (LS y xs) k
 
 knownLast :: forall s k. KnownShape s => (KnownNat (Last s) => k) -> k
-knownLast = knownLast' @s shapeSing
+knownLast = knownLast' @s shapeSList
 
-splitApp' :: forall ys xs k. PeanoLen xs -> ((Take (PeanoLength xs) (xs ++ ys) ~ xs,
+splitApp' :: forall ys xs k. SList xs -> ((Take (PeanoLength xs) (xs ++ ys) ~ xs,
                                               Drop (PeanoLength xs) (xs ++ ys) ~ ys) => k) -> k
 splitApp' LZ k = k
-splitApp' (LS n) k = splitApp' @ys n k
+splitApp' (LS _ n) k = splitApp' @ys n k
 
 splitApp :: forall xs ys k. KnownLen xs => ((Take (PeanoLength xs) (xs ++ ys) ~ xs,
                                              Drop (PeanoLength xs) (xs ++ ys) ~ ys) => k) -> k
-splitApp = splitApp' @ys (shapePeanoLen @xs)
+splitApp = splitApp' @ys (shapeSList @xs)
 
 type family Length xs where
   Length '[] = 0
@@ -214,18 +215,12 @@ data T (shape :: Shape) (t :: Typ) = T {fromTensor :: UntypedExpression}
 data SNat (n :: Nat) where
   SNat :: KnownNat n => Proxy n -> SNat n
 
-data SShape s where
-  Nil :: SShape '[]
-  Cons :: SNat x -> SShape xs -> SShape (x ': xs)
+data Pair f g x = Pair (f x) (g x)
 
-class KnownLen s => KnownShape s where
-  shapeSing :: SShape s
+class (KnownLen s, All KnownNat s) => KnownShape s where
 
-instance KnownShape '[] where
-  shapeSing = Nil
-
-instance (KnownNat x, KnownShape xs) => KnownShape (x ': xs) where
-  shapeSing = Cons (SNat Proxy) shapeSing
+instance KnownShape '[]
+instance (KnownNat x, KnownShape xs) => KnownShape (x ': xs)
 
 class KnownTyp t where
   typVal :: Typ
@@ -245,39 +240,36 @@ instance KnownKind 'Bool where kindVal = Bool
 instance KnownKind 'Float where kindVal = Float
 instance KnownKind 'Int where kindVal = Int
 
-data PeanoLen s where
-  LZ :: PeanoLen '[]
-  LS :: forall x xs. PeanoLen xs -> PeanoLen (x ': xs)
+data SList s where
+  LZ :: SList '[]
+  LS :: forall x xs. Proxy x -> SList xs -> SList (x ': xs)
 
 type family PeanoLength xs :: Peano where
   PeanoLength '[] = 'Zero
   PeanoLength (x ': xs) = 'Succ (PeanoLength xs)
 
 class KnownLen s where
-  shapeLen :: Integer
+  listLen :: Integer -- CLEAN: re
   shapePeano :: SPeano (PeanoLength s)
-  shapePeanoLen :: PeanoLen s
+  shapeSList :: SList s
 
 instance KnownLen '[] where
-  shapeLen = 0
+  listLen = 0
   shapePeano = SZero
-  shapePeanoLen = LZ
+  shapeSList = LZ
   
 instance KnownLen xs => KnownLen (x ': xs) where
-  shapeLen = 1 Prelude.+ shapeLen @ xs
+  listLen = 1 Prelude.+ listLen @ xs
   shapePeano = SSucc (shapePeano @xs)
-  shapePeanoLen = LS (shapePeanoLen @xs)
+  shapeSList = LS Proxy (shapeSList @xs)
 
 
-getShape :: ∀s. KnownShape s=> SShape s
-getShape = shapeSing
-
-shapeToList' :: SShape s -> [Integer]
-shapeToList' Nil = []
-shapeToList' (Cons (SNat x) xs) = natVal x : shapeToList' xs
+shapeToList' :: All KnownNat s => SList s -> [Integer]
+shapeToList' LZ = []
+shapeToList' (LS x xs) = natVal x : shapeToList' xs
 
 shapeToList :: ∀(s::Shape). KnownShape s => [Integer]
-shapeToList = shapeToList' (getShape @ s)
+shapeToList = shapeToList' (shapeSList @ s)
 
 showShape' ::  [Integer] -> DOC
 showShape' s = list (map (showDim' "None") (reverse s))
@@ -290,7 +282,7 @@ showShapeMinus :: ∀ (s :: Shape). KnownShape s => DOC
 showShapeMinus = list (map (showDim' "-1") (reverse (shapeToList @ s)))
 
 showShapeLen :: ∀ (s::Shape). KnownLen s => DOC
-showShapeLen = (text . show) (shapeLen @ s)
+showShapeLen = (text . show) (listLen @ s)
 
 rememberNat :: SNat n -> (KnownNat n => r) -> r
 rememberNat (SNat _) k = k
