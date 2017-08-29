@@ -379,7 +379,13 @@ lambda2 f = do
   return (text "lambda " <> v <> text ": " <> body)
 
 if_ :: Scalar TFBool -> T s t -> T s t -> T s t
-if_ (T c) (T x) (T y) = T (funcall "tf.cond" [named "pred" c, named "true_fn" (lambda0 x), named "false_fn" (lambda0 y), named "strict" (bool True)])
+if_ (T c) (T x) (T y) = T (funcall "tf.cond" [-- named "pred" -- names have changed between TF 1.1 and TF 1.3
+                                              c,
+                                              -- named "true_fn"
+                                              (lambda0 x),
+                                              -- named "false_fn"
+                                              (lambda0 y),
+                                              named "strict" (bool True)])
   where lambda0 z = text "lambda: " <> z
 
 -------------------------
