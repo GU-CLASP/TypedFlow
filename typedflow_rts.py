@@ -21,14 +21,23 @@ def bilist_generator(l):
         yield (l0[i:i+bs],l1[i:i+bs])
     return gen
 
-# optimizer is one of tf.train.GradientDescentOptimizer(0.05), tf.train.AdamOptimizer() etc.
-def train (session, model, train_generator, valid_generator=bilist_generator(([],[])), optimizer=tf.train.AdamOptimizer(), epochs=100, callbacks=[]):
-    # must come before the initializer (this line creates variables!)
-    batch_size = model["batch_size"]
-    train = optimizer.apply_gradients(zip(model["gradients"], model["params"]))
-    # train = optimizer.minimize(loss)
+def initialize_params (session,model):
+    # it'd be nice to do:
+
+    # session.run(tf.variables_initializer(model["params"]))
+
+    # However this does not initialize the optimizer's variables. So,
+    # instead we do:
+
     session.run(tf.local_variables_initializer())
     session.run(tf.global_variables_initializer())
+
+def train (session, model, train_generator,
+           valid_generator=bilist_generator(([],[])),
+           epochs=100,
+           callbacks=[]):
+    batch_size = model["batch_size"]
+    stats = []
     def halfEpoch(isTraining):
         totalAccur = 0
         totalLoss = 0
@@ -38,7 +47,7 @@ def train (session, model, train_generator, valid_generator=bilist_generator(([]
         for (x_train,y_train) in train_generator(batch_size) if isTraining else valid_generator(batch_size):
             print(".",end="")
             sys.stdout.flush()
-            _,loss,accur = session.run([train,model["loss"],model["accuracy"]],
+            _,loss,accur = session.run([model["train"],model["loss"],model["accuracy"]],
                                        feed_dict={model["x"]:x_train,
                                                   model["y"]:y_train,
                                                   model["training_phase"]:isTraining})
@@ -51,17 +60,20 @@ def train (session, model, train_generator, valid_generator=bilist_generator(([]
             avgAccur = totalAccur / float(n)
             print(".")
             print ("Time=%.1f" % (end_time - start_time), "loss=%g" % avgLoss, "accuracy=%.3f" % avgAccur)
-            return {"loss":avgLoss,"accuracy":avgAccur,"time":(end_time - start_time)}
+            return {"loss":avgLoss,"accuracy":avgAccur,"time":(end_time - start_time),"error_rate":1-avgAccur,"start_time":start_time}
         else:
             print ("No data")
-            return {"loss":0,"accur":0,"time":0}
+            return {"loss":0,"accur":0,"time":0,"error_rate":0,"start_time":0}
 
     for e in range(epochs):
         print ("Epoch {0}/{1}".format(e, epochs))
         tr = halfEpoch(True)
         va = halfEpoch(False)
-        if any(c({"train":tr, "val":va}) for c in callbacks):
+        epoch_stats = {"train":tr, "val":va, "epoch":e}
+        stats.append(epoch_stats)
+        if any(c(epoch_stats) for c in callbacks):
             break
+    return stats
 
 def StopWhenValidationGetsWorse(patience = 1):
     bestLoss = 10000000000
@@ -79,10 +91,10 @@ def StopWhenValidationGetsWorse(patience = 1):
         return False
     return callback
 
-def StopWhenAccurate(accur = .99):
+def StopWhenAccurate(error_rate = .01):
     def callback(values):
-        nonlocal accur
-        return values["val"]["accuracy"] > accur
+        nonlocal error_rate
+        return values["val"]["error_rate"] < error_rate
     return callback
 
 

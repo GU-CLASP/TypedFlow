@@ -114,10 +114,13 @@ compile :: forall input tIn output tOut.
            Model input tIn output tOut  -> Gen ()
 compile Options{..} model = knownLast @input $ do
   gen (text "import tensorflow as tf")
-  genFun "mkModel" [] $ do
+  genFun "mkModel" [text "optimizer=tf.train.AdamOptimizer()"] $ do
     x <- placeholder "x"
     y <- placeholder "y"
+    peekAt "x" x
+    peekAt "y" y
     trainingPhasePlaceholder <- placeholder "training_phase"
+    peekAt "training_phase" trainingPhasePlaceholder
     modify $ \GState{..} -> GState{genTrainingPlaceholder = trainingPhasePlaceholder,..}
     ModelOutput{..} <- model x y
     y_ <- assign modelY
@@ -129,13 +132,14 @@ compile Options{..} model = knownLast @input $ do
                      Nothing -> id
                      Just clip -> clipByGlobalNorm clip
     gradients <-- clipping (grad modelLoss params)
+    peekAt "accuracy" accuracy
+    peekAt "loss" loss
+    peekAt "y_" y_
     peeks <- gets genPeeks
-    gen (text "return " <> dict ([("training_phase", fromTensor trainingPhasePlaceholder)
-                                ,("x",fromTensor x)
-                                ,("y",fromTensor y)
-                                ,("y_",fromTensor y_)
-                                ,("accuracy",fromTensor accuracy)
-                                ,("loss",fromTensor loss)
-                                ,("params",params)
-                                ,("batch_size",showDim @ (Last input))
-                                ,("gradients",gradients)] <> peeks))
+    trainStep <- newVar
+    trainStep <-- funcall "optimizer.apply_gradients" [funcall "zip" [gradients,params]]
+    gen (text "return " <> dict ([("train",trainStep)
+                                 ,("params",params)
+                                 ,("optimizer",text "optimizer")
+                                 ,("batch_size",showDim @ (Last input))
+                                 ,("gradients",gradients)] <> peeks))
