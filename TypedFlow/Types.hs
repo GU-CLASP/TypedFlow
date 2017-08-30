@@ -247,6 +247,29 @@ type family PeanoLength xs :: Peano where
   PeanoLength '[] = 'Zero
   PeanoLength (x ': xs) = 'Succ (PeanoLength xs)
 
+
+withKnownNat :: forall k. Int -> (forall (n::Nat). KnownNat n => Proxy n -> k) -> k
+withKnownNat 0 f = f (Proxy @0)
+withKnownNat 1 f = f (Proxy @1)
+withKnownNat n f = withKnownNat (n `div` 2) (if n `mod` 2 == 0 then f2x else f2x1)
+  where f2x,f2x1 :: forall (n::Nat). KnownNat n => Proxy n -> k
+        f2x  _ = f (Proxy @(n*2))
+        f2x1 _ = f (Proxy @(n*2+1))
+
+-- Probably a GHC bug:
+-- withKnownNat'' :: forall k. Int -> (forall (n::Nat). KnownNat n => k) -> k
+-- withKnownNat'' 0 f = f @0
+-- withKnownNat'' n f = withKnownNat'' (n-1) fsucc
+--   where fsucc :: forall (n::Nat). KnownNat n =>  k
+--         fsucc = f @(n+1)
+
+-- This also fails:
+-- appProxy :: forall (n::Nat) k. KnownNat n => Proxy n -> (forall (m::Nat). KnownNat m => k) -> k
+-- appProxy f _ = f @n
+
+-- withKnownNat :: forall k. Int -> (forall (n::Nat). KnownNat n => k) -> k
+-- withKnownNat n f = withKnownNat' n (\proxy -> appProxy proxy f)
+
 class KnownLen s where
   listLen :: Integer -- CLEAN: re
   shapePeano :: SPeano (PeanoLength s)
