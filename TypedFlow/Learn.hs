@@ -78,7 +78,7 @@ timedCategorical :: forall len nCat bs. KnownNat nCat => KnownNat bs => KnownNat
 timedCategorical logits' y = do
   logits <- assign logits'
   let y_ = argmax1 logits
-      modelY = logits
+      modelY = softmax1 logits
   correctPrediction <- assign (equal y_ y)
   modelAccuracy <- assign (reduceMeanAll (flatten2 (cast @Float32 correctPrediction)))
   crossEntropies <- zipWithT softmaxCrossEntropyWithLogits (oneHot1 y) logits
