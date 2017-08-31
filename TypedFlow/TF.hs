@@ -249,7 +249,7 @@ softmax1 (T x) = T (funcall "tf.nn.softmax" [x, named "dim" (showShapeLen @s)])
 
 argmax :: forall n u m s t. (KnownLen s, KnownPeano n,KnownBits u) => Tensor (Take n s ++ (m ': Drop n s)) t -> Tensor s ('Typ 'Int u)
 -- argmax :: forall s0 u n s t. (KnownLen s,KnownBits u) => T (s0 ++ (n ': s)) ('Typ 'Float t) -> T (s0 ++ s) ('Typ 'Int u)
-argmax (T t) = T (funcall "tf.argmax" [t, named "axis" (showShapeLen @ s), named "output_type" (showTyp @('Typ 'Int u))])
+argmax (T t) = T (funcall "tf.argmax" [t, named "axis" (integer ((listLen @ s) - peanoInt @n)) , named "output_type" (showTyp @('Typ 'Int u))])
 
 argmax0 :: forall u n s t. (KnownLen s, KnownBits u) => T (n ': s) t -> T s ('Typ 'Int u)
 argmax0 = argmax @Dim0
