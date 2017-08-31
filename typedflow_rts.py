@@ -19,7 +19,7 @@ def bilist_generator(l):
     (l0,l1) = l
     def gen(bs):
       for i in range(0, bs*(len(l0)//bs), bs):
-        yield (l0[i:i+bs],l1[i:i+bs])
+        yield {"x":l0[i:i+bs],"y":l1[i:i+bs]}
     return gen
 
 def initialize_params (session,model):
@@ -33,7 +33,8 @@ def initialize_params (session,model):
     session.run(tf.local_variables_initializer())
     session.run(tf.global_variables_initializer())
 
-def train (session, model, train_generator,
+def train (session, model,
+           train_generator,
            valid_generator=bilist_generator(([],[])),
            epochs=100,
            callbacks=[]):
@@ -45,13 +46,12 @@ def train (session, model, train_generator,
         n = 0
         print ("Training" if isTraining else "Validation", end="")
         start_time = time()
-        for (x_train,y_train) in train_generator(batch_size) if isTraining else valid_generator(batch_size):
+        for inputs in train_generator(batch_size) if isTraining else valid_generator(batch_size):
             print(".",end="")
             sys.stdout.flush()
             _,loss,accur = session.run([model["train"],model["loss"],model["accuracy"]],
-                                       feed_dict={model["x"]:x_train,
-                                                  model["y"]:y_train,
-                                                  model["training_phase"]:isTraining})
+                                       feed_dict=dict ([(model["training_phase"],isTraining)] +
+                                                       [(model[k],v) for k,v in inputs])
             n+=1
             totalLoss += loss
             totalAccur += accur

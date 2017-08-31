@@ -24,7 +24,7 @@ module TypedFlow.Learn where
 import TypedFlow.Types
 import TypedFlow.TF
 import qualified Prelude (Float)
-import Prelude (($),return,Maybe(..),id)
+import Prelude (($),return,Maybe(..),id,(=<<))
 import Text.PrettyPrint.Compact (text)
 import Data.Monoid hiding (Last)
 import GHC.TypeLits (KnownNat)
@@ -73,18 +73,23 @@ categoricalDistribution logits' y = do
   modelLoss <- assign (reduceMeanAll (softmaxCrossEntropyWithLogits y logits))
   return ModelOutput{..}
 
+-- | @timedCategorical targetWeights logits y@
+--
+-- targetWeights: a zero-one matrix of the same size as
+-- decoder_outputs. It is intended to mask padding positions outside
+-- of the target sequence lengths with values 0.
+
 timedCategorical :: forall len nCat bs. KnownNat nCat => KnownNat bs => KnownNat len =>
-  Tensor '[len,nCat,bs] Float32 -> Tensor '[len,bs] Int32 -> Gen (ModelOutput '[len,nCat,bs] Float32)
-timedCategorical logits' y = do
+  Tensor '[len,bs] Float32 -> Tensor '[len,nCat,bs] Float32 -> Tensor '[len,bs] Int32 -> Gen (ModelOutput '[len,nCat,bs] Float32)
+timedCategorical targetWeights logits' y = do
   logits <- assign logits'
   let y_ = argmax1 logits
       modelY = softmax1 logits
   correctPrediction <- assign (equal y_ y)
   modelAccuracy <- assign (reduceMeanAll (flatten2 (cast @Float32 correctPrediction)))
   crossEntropies <- zipWithT softmaxCrossEntropyWithLogits (oneHot1 y) logits
-  modelLoss <- assign (reduceMeanAll crossEntropies)
+  modelLoss <- assign (reduceMeanAll (crossEntropies ⊙ targetWeights))
   return ModelOutput{..}
-  -- TODO: use sentence length to mask "useless" loss?
 
 data ModelOutput s t = ModelOutput {modelY :: T s t -- ^ prediction
                                    ,modelLoss :: Scalar Float32
@@ -110,22 +115,23 @@ defaultOptions :: Options
 defaultOptions = Options {maxGradientNorm = Nothing}
 
 compile :: forall sx tx sy ty sy_ ty_.
-           (KnownShape sx, KnownTyp tx, KnownShape sy, KnownTyp ty) =>
-           Options ->
-           (Tensor sx tx -> Tensor sy ty -> Gen (ModelOutput sy_ ty_))
+           (KnownShape sx, KnownTyp tx, KnownShape sy, KnownTyp ty, KnownShape sy_) =>
+           Options -> (Tensor sx tx -> Tensor sy ty -> Gen (ModelOutput sy_ ty_))
            -- Model input tIn output tOut
         -> Gen ()
-compile Options{..} model = knownLast @sx $ do
+compile options f = compileGen options $ do
+  x <- placeholder "x"
+  f x =<< placeholder "y"
+
+
+compileGen :: forall sy ty. (KnownShape sy) =>
+           Options -> Gen (ModelOutput sy ty) -> Gen ()
+compileGen Options{..} model = knownLast @sy $ do
   gen (text "import tensorflow as tf")
   genFun "mkModel" [text "optimizer=tf.train.AdamOptimizer()"] $ do
-    x <- placeholder "x"
-    y <- placeholder "y"
-    peekAt "x" x
-    peekAt "y" y
     trainingPhasePlaceholder <- placeholder "training_phase"
-    peekAt "training_phase" trainingPhasePlaceholder
     modify $ \GState{..} -> GState{genTrainingPlaceholder = trainingPhasePlaceholder,..}
-    ModelOutput{..} <- model x y
+    ModelOutput{..} <- model
     y_ <- assign modelY
     loss <- assign modelLoss
     accuracy <- assign modelAccuracy
@@ -144,5 +150,5 @@ compile Options{..} model = knownLast @sx $ do
     gen (text "return " <> dict ([("train",trainStep)
                                  ,("params",params)
                                  ,("optimizer",text "optimizer")
-                                 ,("batch_size",showDim @ (Last sx))
+                                 ,("batch_size",showDim @ (Last sy))
                                  ,("gradients",gradients)] <> peeks))

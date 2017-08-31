@@ -61,6 +61,7 @@ placeholder :: ∀t s. (KnownShape s, KnownTyp t) => String -> Gen (T s t)
 placeholder n = do
   let name = text n
   name <-- funcall "tf.placeholder" [showTyp @t, named "shape" (showShape @s), named "name" (text (show n))]
+  peekAt n (T name)
   return (T name)
 
 reduceAll :: String -> Tensor s t -> Tensor '[] t
