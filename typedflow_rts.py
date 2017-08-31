@@ -114,35 +114,24 @@ def predict (session, model, xs, result="y_"):
             print (".")
             yield (session.run(model[result], feed_dict={model["x"]:chunk, model["training_phase"]:False}))[:origLen]
     return np.concatenate(list(run()))
-    
-    # k-Beam search at index i in a sequence.
-    # work with k-size batch.
-    # keep for every j < k a sum of the log probs, r(j).
-    # for every possible output work w at the i-th step in the sequence, compute r'(j,w) = r(j) * logit(i,w)
-    # compute the k pairs (j,w) which minimize r'(j,w). Let M this set.
-    # r(l) = r'(j,w) for (l,(j,w)),in enumarate(M)
-    
-    
-    # # beam search
-    # def translate(src_sent, k=1):
-    #     # (log(1), initialize_of_zeros)
-    #     k_beam = [(0, [0]*(sequence_max_len+1))]
-    
-    #     # l : point on target sentence to predict
-    #     for l in range(sequence_max_len):
-    #         all_k_beams = []
-    #         for prob, trg_sent_predict in k_beam:
-    #             predicted       = encoder_decoder.predict([np.array([src_sent]), np.array([trg_sent_predict])])[0]
-    #             # top k!
-    #             possible_k_trgs = predicted[l].argsort()[-k:][::-1]
-    
-    #             # add to all possible candidates for k-beams
-    #             all_k_beams += [
-    #                 (
-    #                     sum(np.log(predicted[i][trg_sent_predict[i+1]]) for i in range(l)) + np.log(predicted[l][next_wid]),
-    #                     list(trg_sent_predict[:l+1])+[next_wid]+[0]*(sequence_max_len-l-1)
-    #                 )
-    #                 for next_wid in possible_k_trgs
-    #             ]
-    #         # top k
-    #         k_beam = sorted(all_k_beams)[-k:]
+
+
+def beam_translate(session, model, k, x, start_symbol, out_len, voc_size):
+    xs = np.array ([x] * k) # The input is always the same
+    ys = [[start_symbol]] * k #
+    probs = [1] * k
+
+    def pad(z):
+        return np.array(z + [0] * (out_len - len(z)))
+    for i in range(out_len-1):
+        print ("beam search at:", i)
+        xfull = np.concatenate((xs, np.array([pad(y) for y in ys])),axis = 1)
+        print (xfull.shape)
+        y_s = tyf.predict(session,model,xfull if i > 0 else [xfull[0]] )
+        all_words = sorted([(y_s[j][w][i] * probs[j], ys[j] + [w])
+                            for j in range(len(y_s))
+                            for w in range(voc_size)])
+        best = all_words[-k:]
+        (probs,ys) = zip(*best)
+
+    return ys
