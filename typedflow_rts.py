@@ -2,6 +2,7 @@ import tensorflow as tf
 import numpy as np
 import sys
 from time import time
+import os
 
 def cuda_pref_device(n):
     os.environ["CUDA_DEVICE_ORDER"]= "PCI_BUS_ID"
