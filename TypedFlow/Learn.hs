@@ -73,12 +73,13 @@ categoricalDistribution logits' y = do
   modelLoss <- assign (reduceMeanAll (softmaxCrossEntropyWithLogits y logits))
   return ModelOutput{..}
 
-timedCategorical :: forall len nCat bs. KnownNat nCat => KnownNat bs => KnownNat len => Model '[len,nCat,bs] Float32 '[len,bs] Int32
+timedCategorical :: forall len nCat bs. KnownNat nCat => KnownNat bs => KnownNat len =>
+  Tensor '[len,nCat,bs] Float32 -> Tensor '[len,bs] Int32 -> Gen (ModelOutput '[len,nCat,bs] Float32)
 timedCategorical logits' y = do
   logits <- assign logits'
-  let y_ = (argmax1 logits)
-      modelY = y_
-  correctPrediction <- assign (equal (argmax1 logits) y)
+  let y_ = argmax1 logits
+      modelY = logits
+  correctPrediction <- assign (equal y_ y)
   modelAccuracy <- assign (reduceMeanAll (flatten2 (cast @Float32 correctPrediction)))
   crossEntropies <- zipWithT softmaxCrossEntropyWithLogits (oneHot1 y) logits
   modelLoss <- assign (reduceMeanAll crossEntropies)
@@ -108,11 +109,13 @@ data Options = Options {maxGradientNorm :: Maybe Prelude.Float}
 defaultOptions :: Options
 defaultOptions = Options {maxGradientNorm = Nothing}
 
-compile :: forall input tIn output tOut.
-           (KnownShape input, KnownTyp tIn, KnownShape output, KnownTyp tOut) =>
+compile :: forall sx tx sy ty sy_ ty_.
+           (KnownShape sx, KnownTyp tx, KnownShape sy, KnownTyp ty) =>
            Options ->
-           Model input tIn output tOut  -> Gen ()
-compile Options{..} model = knownLast @input $ do
+           (Tensor sx tx -> Tensor sy ty -> Gen (ModelOutput sy_ ty_))
+           -- Model input tIn output tOut
+        -> Gen ()
+compile Options{..} model = knownLast @sx $ do
   gen (text "import tensorflow as tf")
   genFun "mkModel" [text "optimizer=tf.train.AdamOptimizer()"] $ do
     x <- placeholder "x"
@@ -141,5 +144,5 @@ compile Options{..} model = knownLast @input $ do
     gen (text "return " <> dict ([("train",trainStep)
                                  ,("params",params)
                                  ,("optimizer",text "optimizer")
-                                 ,("batch_size",showDim @ (Last input))
+                                 ,("batch_size",showDim @ (Last sx))
                                  ,("gradients",gradients)] <> peeks))
