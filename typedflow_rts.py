@@ -50,8 +50,8 @@ def train (session, model,
             print(".",end="")
             sys.stdout.flush()
             _,loss,accur = session.run([model["train"],model["loss"],model["accuracy"]],
-                                       feed_dict=dict ([(model["training_phase"],isTraining)] +
-                                                       [(model[k],v) for k,v in inputs])
+                                       feed_dict=dict([(model["training_phase"],isTraining)] +
+                                                      [(model[k],inputs[k]) for k in inputs]))
             n+=1
             totalLoss += loss
             totalAccur += accur
@@ -99,39 +99,53 @@ def StopWhenAccurate(error_rate = .01):
     return callback
 
 
+def s2s_generator(src_in,tgt_in,tgt_out,tgt_weights):
+    def gen(bs):
+      for i in range(0, bs*(len(src_in)//bs), bs):
+        yield {"src_in":src_in[i:i+bs],
+               "tgt_in":tgt_in[i:i+bs],
+               "tgt_out":tgt_out[i:i+bs],
+               "tgt_weights":tgt_weights[i:i+bs]}
+    return gen
+
 def predict (session, model, xs, result="y_"):
     bs = model["batch_size"]
-    zeros = np.zeros_like(xs[0]) # at least one example is needed
+    k0 = xs.keys[0] # at least one key is needed
+    total_len = len(xs[k0])
+    zeros = dict((k,np.zeros_like(xs[k][0])) for k in xs) # at least one example is needed
     results = []
     def run():
-        for i in range(0, bs*(-(-len(xs)//bs)), bs):
-            chunk = xs[i:i+bs]
-            if i + bs > len(xs):
-                origLen = len(chunk)
-                chunk = list(chunk) + [zeros] * (bs - origLen) # pad the last chunk
+        for i in range(0, bs*(-(-total_len//bs)), bs):
+            chunks = dict((k,xs[k][i:i+bs]) for k in xs)
+            if i + bs > total_len:
+                origLen = total_len - i
+                chunks[k] = list(chunks[k]) + [zeros[k]] * (bs - origLen) # pad the last chunk
             else:
                 origLen = bs
             print (".")
-            yield (session.run(model[result], feed_dict={model["x"]:chunk, model["training_phase"]:False}))[:origLen]
+            yield (session.run(model[result],
+                               dict([(model["training_phase"],False)] +
+                                    [(model[k],chunks[k]) for k in xs])))[:origLen]
     return np.concatenate(list(run()))
-
 
 def beam_translate(session, model, k, x, start_symbol, out_len, voc_size):
     xs = np.array ([x] * k) # The input is always the same
-    ys = [[start_symbol]] * k #
-    probs = [1] * k
+    ys = [[start_symbol]]  # start with a single thing; otherwise the minimum will be repeated k times
+    probs = [1]
 
     def pad(z):
         return np.array(z + [0] * (out_len - len(z)))
     for i in range(out_len-1):
         print ("beam search at:", i)
-        xfull = np.concatenate((xs, np.array([pad(y) for y in ys])),axis = 1)
-        print (xfull.shape)
-        y_s = tyf.predict(session,model,xfull if i > 0 else [xfull[0]] )
+        inputs = {"src_in":xs[:len(ys)], "tgt_in":np.array([pad(y) for y in ys])}
+        y_s = predict(session,model,inputs)
         all_words = sorted([(y_s[j][w][i] * probs[j], ys[j] + [w])
                             for j in range(len(y_s))
                             for w in range(voc_size)])
         best = all_words[-k:]
+        # for (p,y) in best: print("Prob", p, cp.sentence_decode(y))
         (probs,ys) = zip(*best)
 
     return ys
+
+
