@@ -195,18 +195,6 @@ stackRnnCells l1 l2 (hsplit @s0 -> (s0,s1),x) = do
 
 (.-.) = stackRnnCells
 
--- | @addAttention attn l@ adds the attention function @attn@ to the
--- rnn cell @l@.  Note that @attn@ can depend in particular on a
--- constant external value @h@ which is the complete input to pay
--- attention to.  The type parameter @x@ is the size of the portion of
--- @h@ that the cell @l@ will observe.
-addAttention :: KnownShape s =>
-                (HList states -> Gen (T (x ': s) t)) ->
-                RnnCell states (T ((a+x) ': s) t) (T (b ': s) t) ->
-                RnnCell states (T ( a    ': s) t) (T (b ': s) t)
-addAttention attn l (s,a) = do
-  focus <- attn s
-  l (s,concat0 a focus)
 
 -- | @attnExample1 θ h st@ combines each element of the vector h with
 -- s, and applies a dense layer with parameters θ. The "winning"
@@ -229,6 +217,7 @@ uniformAttn score hs_ ht = do
 -- commit 75aa22dfb159f10a1a5b4557777d9ff547c1975a).  The main
 -- difference with 'addAttention' above is that the attn function is
 -- that the final result depends on the attention vector rather than the output of the underlying cell.
+-- (This yields to exploding loss in my tests.)
 addAttentionWithFeedback ::KnownShape s => 
                 ((T (b ': s) t) -> Gen (T (x ': s) t)) ->
                 RnnCell state                    (T ((a+x) ': s) t) (T (b ': s) t) ->
@@ -237,6 +226,20 @@ addAttentionWithFeedback attn cell ((I prevAttnVector :* s),a) = do
   (s',y) <- cell (s,concat0 a prevAttnVector)
   focus <- attn y
   return ((I focus :* s'),focus)
+
+-- | @addAttention attn cell@ adds the attention function @attn@ to the
+-- rnn cell @cell@.  Note that @attn@ can depend in particular on a
+-- constant external value @h@ which is the complete input to pay
+-- attention to.
+addAttention :: KnownShape s =>
+                ((T (b ': s) t) -> Gen (T (x ': s) t)) ->
+                RnnCell states (T (a ': s) t) (T (b ': s) t) ->
+                RnnCell states (T (a ': s) t) (T (b+x ': s) t)
+addAttention attn cell (s,a) = do
+  (s',y) <- cell (s,a)
+  focus <- attn y
+  return (s',concat0 y focus)
+
 
 -- | Luong attention model (following
 -- https://github.com/tensorflow/nmt#background-on-the-attention-mechanism
@@ -258,8 +261,6 @@ luongMultiplicativeScoring w ht hs = hs · ir
         ir = w ∙ ht
 
 -- luongWrapper score w1 w2 θ hs = addAttentionWithFeedback (luongAttention (luongMultiplicativeScoring w1) w2 hs) (lstm θ)
--- attnExample' θ1 θ2 h  = addAttention (attnExample1 θ1 h . snd) (lstm θ2)
-
 
 -- | A layer in an rnn. @n@ is the length of the time sequence. @state@ is state propagated through time.
 type RnnLayer n state input t output u = HList state -> Tensor (n ': input) t -> Gen (HList state , Tensor (n ': output) u)
