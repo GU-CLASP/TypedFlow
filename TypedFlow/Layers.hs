@@ -231,14 +231,24 @@ addAttentionWithFeedback attn cell ((I prevAttnVector :* s),a) = do
 -- rnn cell @cell@.  Note that @attn@ can depend in particular on a
 -- constant external value @h@ which is the complete input to pay
 -- attention to.
-addAttention :: KnownShape s =>
+addAttentionAbove :: KnownShape s =>
                 ((T (b ': s) t) -> Gen (T (x ': s) t)) ->
                 RnnCell states (T (a ': s) t) (T (b ': s) t) ->
                 RnnCell states (T (a ': s) t) (T (b+x ': s) t)
-addAttention attn cell (s,a) = do
+addAttentionAbove attn cell (s,a) = do
   (s',y) <- cell (s,a)
   focus <- attn y
   return (s',concat0 y focus)
+
+
+addAttentionBelow ::KnownShape s => 
+                ((T (b ': s) t) -> Gen (T (x ': s) t)) ->
+                RnnCell state                    (T ((a+x) ': s) t) (T (b ': s) t) ->
+                RnnCell (T (b ': s) t ': state)  (T ( a    ': s) t) (T (b ': s) t)
+addAttentionBelow attn cell ((I prevY :* s),a) = do
+  focus <- attn prevY
+  (s',y) <- cell (s,concat0 a focus)
+  return ((I y :* s'),y)
 
 
 -- | Luong attention model (following
