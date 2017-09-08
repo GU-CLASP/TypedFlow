@@ -171,6 +171,10 @@ squeeze1 = squeeze @ '[n]
 flatten2 :: ∀ m n s t. (KnownNat m, KnownNat n, KnownShape s) => Tensor (m ': n ': s) t -> Tensor (m*n ': s) t
 flatten2 (T t) = T (funcall "tf.reshape" [t, showShapeMinus @(m*n ': s)])
 
+flattenN2 :: ∀ s m n t. (KnownNat m, KnownNat n, KnownShape s) => Tensor (s ++ '[m,n]) t -> Tensor (s ++ '[m*n]) t
+flattenN2 (T t) = knownShapeApp @s @'[m*n] $ T (funcall "tf.reshape" [t, showShapeMinus @(s ++ '[m*n])])
+
+
 -- | Reshape a tensor so that the first three dimensions are collapsed
 flatten3 :: ∀ m n o s t. (KnownNat m, KnownNat n, KnownNat o, KnownShape s) => Tensor (m ': n ': o ': s) t -> Tensor (m*n*o ': s) t
 flatten3 (T t) = T (funcall "tf.reshape" [t, showShapeMinus @(m*n*o ': s)])
@@ -226,7 +230,7 @@ instance                   LastEqual x (x ': '[])
 instance LastEqual x (y2 ': xs) => LastEqual x (y ': (y2 ': xs))
 
 reverseSequences :: forall bs n x t. KnownLen x => LastEqual bs x => T '[bs] Int32 -> T (n ': x) t -> T (n ': x) t
-reverseSequences (T input) (T seqLengths) =
+reverseSequences (T seqLengths) (T input) =
   T (funcall "tf.reverse_sequence" [input, seqLengths, named "seq_axis" (showShapeLen @x),named "batch_axis" (int 0)])
 
 gather :: ∀s n indexShape t. T (s ++ '[n]) t -> T indexShape Int32 -> T (s ++ indexShape) t
@@ -312,7 +316,7 @@ randomOrthogonal = T (funcall' (funcall "tf.orthogonal_initializer" [named "dtyp
 constant :: forall s w. KnownShape s => Float -> T s ('Typ 'Float w)
 constant c = T (funcall "tf.constant" [float c, named "shape" (showShape @s)])
 
-sequenceMask :: forall maxlen n. KnownNat maxlen => Tensor '[n] Int32 -> Tensor '[maxlen,n] TFBool
+sequenceMask :: forall maxlen bs. KnownNat maxlen => Tensor '[bs] Int32 -> Tensor '[maxlen,bs] TFBool
 sequenceMask (T x) = T (funcall "tf.sequence_mask" [x, named "maxlen" (showDim @maxlen)])
 
 ---------------------------

@@ -36,6 +36,9 @@ import Data.Char (toLower)
 import Data.Kind (Type,Constraint)
 import Data.Type.Equality
 
+data Sat (a :: k -> Constraint) (b::k) where
+  Sat :: a b => Sat a b
+
 type DOC = Doc ()
 
 type i < j = CmpNat i j ~ 'LT
@@ -85,6 +88,13 @@ splitApp' (LS _ n) k = splitApp' @ys n k
 splitApp :: forall xs ys k. KnownLen xs => ((Take (PeanoLength xs) (xs ++ ys) ~ xs,
                                              Drop (PeanoLength xs) (xs ++ ys) ~ ys) => k) -> k
 splitApp = splitApp' @ys (shapeSList @xs)
+
+knownShapeApp' :: forall t s k. (All KnownNat s, KnownShape t) => SList s -> (KnownShape (s ++ t) => k) -> k
+knownShapeApp' LZ k = k
+knownShapeApp' (LS _ n) k = knownShapeApp' @t n k
+
+knownShapeApp :: forall s t k.  (KnownShape s, KnownShape t) => (KnownShape (s ++ t) => k) -> k
+knownShapeApp = knownShapeApp' @t (shapeSList @s)
 
 type family Length xs where
   Length '[] = 0

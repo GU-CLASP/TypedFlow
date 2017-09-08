@@ -126,7 +126,6 @@ maxPool2D (T value) = T (funcall "tf.nn.max_pool" [value
 -------------------------------
 -- RNN layers and combinators
 
-type RnnCell states input output = (HTV Float32 states , input) -> Gen (HTV Float32 states , output)
 
 
 -- | Any pure function (feed-forward layer) can be transformed into a
@@ -163,7 +162,7 @@ lstm (wf,wi,wc,wo) (VecPair ht1 ct1, input) = do
       o = sigmoid (wo # hx)
   c <- assign ((f ⊙ ct1) + (i ⊙ cTilda))
   h <- assign (o ⊙ tanh c)
-  return (VecPair h c , h)
+  return (VecPair h c, h)
 
 type GRUP n x = (((n + x) ⊸ n),
                  ((n + x) ⊸ n),
@@ -272,7 +271,10 @@ luongMultiplicativeScoring w ht hs = hs · ir
 -- luongWrapper score w1 w2 θ hs = addAttentionWithFeedback (luongAttention (luongMultiplicativeScoring w1) w2 hs) (lstm θ)
 
 
--- | A layer in an rnn. @n@ is the length of the time sequence. @state@ is state propagated through time.
+-- | A cell in an rnn. @state@ is the state propagated through time.
+type RnnCell states input output = (HTV Float32 states , input) -> Gen (HTV Float32 states , output)
+
+-- | A layer in an rnn. @n@ is the length of the time sequence. @state@ is the state propagated through time.
 type RnnLayer n state input t output u = FHTV state -> Tensor (n ': input) t -> Gen (FHTV state , Tensor (n ': output) u)
 
 -- | Build a RNN by repeating a cell @n@ times.
@@ -290,11 +292,11 @@ rnn cell s0 t = do
 -- | Build a RNN by repeating a cell @n@ times. However the state is
 -- propagated in the right-to-left direction (decreasing indices in
 -- the time dimension of the input and output tensors)
-rnnBackwards :: ∀ n state input output t u.
+rnnBackward :: ∀ n state input output t u.
        (KnownNat n, KnownShape input, KnownShape output) =>
        RnnCell state (T input t) (T output u) -> RnnLayer n state input t output u
 
-rnnBackwards cell s0 t = do
+rnnBackward cell s0 t = do
   xs <- unstack t
   (sFin,us) <- chainBackward cell (s0,xs)
   return (sFin,stack us)
@@ -372,8 +374,15 @@ transposeV (LS _ n) xxs  = F ys' :* yys'
         help (V xs) = (V (map (fromF . hhead) xs),V (map htail xs))
 
 gatherFinalStates :: KnownLen x => KnownNat n => LastEqual bs x => T '[bs] Int32 -> T (n ': x) t -> T x t
-gatherFinalStates ixs params = nth0 0 (reverseSequences ixs params)
+gatherFinalStates dynLen states = nth0 0 (reverseSequences dynLen states)
 
+
+-- a more efficient algorithm (perhaps:)
+-- gatherFinalStates' :: forall x n bs t. KnownLen x => KnownNat n => LastEqual bs x => T '[bs] Int32 -> T (x ++ '[n,bs]) t -> T x (x ++ '[bs])
+-- gatherFinalStates' (T dynLen)t = gather (flattenN2 @x @n @bs t) indexInFlat
+--  where indexInFlat = (dynLen - 1) + tf.range(0, bs) * n
+
+  
 gathers :: forall n bs xs. All (LastEqual bs) xs => All KnownLen xs => KnownNat n =>
             SList xs -> T '[bs] Int32 -> FHTV (Ap (FMap (Cons n)) xs) -> FHTV xs
 gathers LZ _ Unit = Unit
@@ -388,3 +397,13 @@ rnnWithCull dynLen cell s0 t = do
   (us,ss) <- chainForwardWithState cell (s0,xs)
   let sss = transposeV @n (shapeSList @ls) ss
   return (gathers @n (shapeSList @ls) dynLen sss,stack us)
+
+rnnBackwardsWithCull :: forall n bs x y t u ls.
+  KnownLen ls => KnownNat n => KnownLen x  => KnownLen y => All KnownLen ls =>
+  All (LastEqual bs) ls => LastEqual bs x => LastEqual bs y =>
+  T '[bs] Int32 -> RnnCell ls (T x t) (T y u) -> RnnLayer n ls x t y u
+rnnBackwardsWithCull dynLen cell s0 t = do
+  (sFin,hs) <- rnnWithCull dynLen cell s0 (reverseSequences dynLen t)
+  hs' <- assign (reverseSequences dynLen hs)
+  return (sFin, hs')
+
