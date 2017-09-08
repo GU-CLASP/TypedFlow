@@ -1,3 +1,5 @@
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 {-# OPTIONS_GHC -fplugin GHC.TypeLits.KnownNat.Solver #-}
 {-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE RecordWildCards #-}
@@ -181,7 +183,11 @@ inflate3 (T t) = T (funcall "tf.reshape" [t, showShapeMinus @(m ': n ': o ': s)]
 
 -- | Access the last element in a tensor (in the 0th dimension)
 last0 :: ∀ n s t. KnownNat n => KnownLen s => T (n ': s) t -> Tensor s t
-last0 (T x) = T (x <> list (replicate (fromIntegral (listLen @s)) (text ":") ++ [integer (natVal (Proxy @n) - 1)]))
+last0 = nth0 (natVal (Proxy @n) - 1)
+
+-- | Access the nth element in a tensor (in the 0th dimension)
+nth0 :: ∀ n s t. KnownNat n => KnownLen s => Integer -> T (n ': s) t -> Tensor s t
+nth0 i (T x) = T (x <> list (replicate (fromIntegral (listLen @s)) (text ":") ++ [integer i]))
 
 -- | Take a slice at dimension n from i to j.
 slice :: forall n i j s t. KnownNat j => KnownNat i => (i < j, j <= At n s, KnownPeano n, KnownLen s) =>
@@ -214,6 +220,14 @@ transposeN (T x) = T (funcall "tf.transpose" [x, named "perm" (list (map integer
 transposeN' :: ∀ s n t. KnownLen s => T (s ++ '[n]) t -> T (n ': s) t
 transposeN' (T x) = T (funcall "tf.transpose" [x, named "perm" (list (map integer ([1.. listLen @s]++[0])))])
 
+
+class LastEqual x xs
+instance                   LastEqual x (x ': '[])
+instance LastEqual x (y2 ': xs) => LastEqual x (y ': (y2 ': xs))
+
+reverseSequences :: forall bs n x t. KnownLen x => LastEqual bs x => T '[bs] Int32 -> T (n ': x) t -> T (n ': x) t
+reverseSequences (T input) (T seqLengths) =
+  T (funcall "tf.reverse_sequence" [input, seqLengths, named "seq_axis" (showShapeLen @x),named "batch_axis" (int 0)])
 
 gather :: ∀s n indexShape t. T (s ++ '[n]) t -> T indexShape Int32 -> T (s ++ indexShape) t
 gather = binOp "tf.gather"

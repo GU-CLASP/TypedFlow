@@ -337,12 +337,20 @@ chainForward f (s0 , V (x:xs)) = do
   (sFin,V xs') <- chainForward f (s1 , V xs)
   return (sFin,V (x':xs'))
 
+-- | RNN helper
 chainBackward :: ∀ state a b n. ((state , a) -> Gen (state , b)) → (state , V n a) -> Gen (state , V n b)
 chainBackward _ (s0 , V []) = return (s0 , V [])
 chainBackward f (s0 , V (x:xs)) = do
   (s1,V xs') <- chainBackward f (s0,V xs)
   (sFin, x') <- f (s1,x)
   return (sFin,V (x':xs'))
+
+chainForwardWithState :: ∀ state a b n. ((state , a) -> Gen (state , b)) → (state , V n a) -> Gen (V n b, V n state)
+chainForwardWithState _ (_s0 , V []) = return (V [], V [])
+chainForwardWithState f (s0 , V (x:xs)) = do
+  (s1,x') <- f (s0 , x)
+  (V xs',V ss) <- chainForwardWithState f (s1 , V xs)
+  return (V (x':xs'), V (s1:ss) )
 
 chainBackwardWithState ::
   ∀ state a b n. ((state , a) -> Gen (state , b)) → (state , V n a) -> Gen (state , V n b, V n state)
@@ -351,10 +359,6 @@ chainBackwardWithState f (s0 , V (x:xs)) = do
   (s1,V xs',V ss') <- chainBackwardWithState f (s0,V xs)
   (sFin, x') <- f (s1,x)
   return (sFin,V (x':xs'),V (sFin:ss'))
-
-class LastEqual x xs
-instance                   LastEqual x (x ': '[])
-instance LastEqual x (y2 ': xs) => LastEqual x (y ': (y2 ': xs))
 
 transposeV :: forall n xs. All KnownLen xs =>
                SList xs -> V n (HTV Float32 xs) -> HTV Float32 (Ap (FMap (Cons n)) xs)
@@ -367,20 +371,20 @@ transposeV (LS _ n) xxs  = F ys' :* yys'
         help :: forall ys x t. V n (HTV t (x ': ys)) -> (V n (T x t) , V n (HTV t ys))
         help (V xs) = (V (map (fromF . hhead) xs),V (map htail xs))
 
-gather'' :: LastEqual bs x => T '[bs] Int32 -> T (n ': x) t -> T x t
-gather'' ixs params = error "gather''"
+gatherFinalStates :: KnownLen x => KnownNat n => LastEqual bs x => T '[bs] Int32 -> T (n ': x) t -> T x t
+gatherFinalStates ixs params = nth0 0 (reverseSequences ixs params)
 
-gathers :: forall n bs xs. All (LastEqual bs) xs => 
+gathers :: forall n bs xs. All (LastEqual bs) xs => All KnownLen xs => KnownNat n =>
             SList xs -> T '[bs] Int32 -> FHTV (Ap (FMap (Cons n)) xs) -> FHTV xs
 gathers LZ _ Unit = Unit
-gathers (LS _ n) ixs (F x :* xs) = F (gather'' ixs x) :* gathers @n n ixs xs
+gathers (LS _ n) ixs (F x :* xs) = F (gatherFinalStates ixs x) :* gathers @n n ixs xs
 
-rnnBackwardCull :: forall n bs x y t u ls.
+rnnWithCull :: forall n bs x y t u ls.
   KnownLen ls => KnownNat n => KnownLen x  => KnownLen y => All KnownLen ls =>
   All (LastEqual bs) ls =>
   T '[bs] Int32 -> RnnCell ls (T x t) (T y u) -> RnnLayer n ls x t y u
-rnnBackwardCull dynLen cell s0 t = do
+rnnWithCull dynLen cell s0 t = do
   xs <- unstack t
-  (_,us,ss) <- chainBackwardWithState cell (s0,xs)
+  (us,ss) <- chainForwardWithState cell (s0,xs)
   let sss = transposeV @n (shapeSList @ls) ss
   return (gathers @n (shapeSList @ls) dynLen sss,stack us)
