@@ -1,3 +1,6 @@
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE ViewPatterns #-}
 {-# LANGUAGE TypeInType #-}
@@ -123,7 +126,7 @@ maxPool2D (T value) = T (funcall "tf.nn.max_pool" [value
 -------------------------------
 -- RNN layers and combinators
 
-type RnnCell states input output = (HList states , input) -> Gen (HList states , output)
+type RnnCell states input output = (HTV Float32 states , input) -> Gen (HTV Float32 states , output)
 
 
 -- | Any pure function (feed-forward layer) can be transformed into a
@@ -151,8 +154,8 @@ lstmInitializer = (forgetInit, cellInitializerBit, cellInitializerBit,cellInitia
   where forgetInit = (fst cellInitializerBit, ones)
 
 lstm :: ∀ n x bs. (KnownNat bs) => LSTMP n x ->
-        RnnCell '[HTV Float32 '[ '[n,bs], '[n,bs]]] (Tensor '[x,bs] Float32) (Tensor '[n,bs] Float32)
-lstm (wf,wi,wc,wo) (HSingle (VecPair ht1 ct1) , input) = do
+        RnnCell '[ '[n,bs], '[n,bs]] (Tensor '[x,bs] Float32) (Tensor '[n,bs] Float32)
+lstm (wf,wi,wc,wo) (VecPair ht1 ct1, input) = do
   hx <- assign (concat0 ht1 input)
   let f = sigmoid (wf # hx)
       i = sigmoid (wi # hx)
@@ -160,7 +163,7 @@ lstm (wf,wi,wc,wo) (HSingle (VecPair ht1 ct1) , input) = do
       o = sigmoid (wo # hx)
   c <- assign ((f ⊙ ct1) + (i ⊙ cTilda))
   h <- assign (o ⊙ tanh c)
-  return (HSingle (VecPair h c) , h)
+  return (VecPair h c , h)
 
 type GRUP n x = (((n + x) ⊸ n),
                  ((n + x) ⊸ n),
@@ -170,19 +173,16 @@ gruInitializer :: (KnownNat n, KnownNat x) => GRUP n x
 gruInitializer = (cellInitializerBit, cellInitializerBit, cellInitializerBit)
 
 gru :: ∀ n x bs. (KnownNat bs, KnownNat n) => GRUP n x ->
-        RnnCell '[T '[n,bs] Float32] (Tensor '[x,bs] Float32) (Tensor '[n,bs] Float32)
-gru (wz,wr,w) ((I ht1 :* Unit) , xt) = do
+        RnnCell '[ '[n,bs] ] (Tensor '[x,bs] Float32) (Tensor '[n,bs] Float32)
+gru (wz,wr,w) (VecSing ht1, xt) = do
   hx <- assign (concat0 ht1 xt)
   let zt = sigmoid (wz # hx)
       rt = sigmoid (wr # hx)
       hTilda = tanh (w # (concat0 (rt ⊙ ht1) xt))
   ht <- assign ((ones ⊝ zt) ⊙ ht1 + zt ⊙ hTilda)
-  return (I ht :* Unit, ht)
+  return (VecSing ht, ht)
 
-onState ::   (x -> x) -> RnnCell '[x] a b -> RnnCell '[x] a b
-onState f = onStates (hendo (Endo f :* Unit))
-
-onStates ::  (HList xs -> HList xs) -> RnnCell xs a b -> RnnCell xs a b
+onStates ::  (HTV Float32 xs -> HTV Float32 xs) -> RnnCell xs a b -> RnnCell xs a b
 onStates f cell (h,x) = do
   cell (f h, x)
 
@@ -195,6 +195,7 @@ stackRnnCells l1 l2 (hsplit @s0 -> (s0,s1),x) = do
 
 (.-.) = stackRnnCells
 
+{-
 
 -- | @attnExample1 θ h st@ combines each element of the vector h with
 -- s, and applies a dense layer with parameters θ. The "winning"
@@ -258,10 +259,8 @@ luongAttention :: ∀ attnSize d m e batchSize. KnownNat m => ( KnownNat batchSi
                AttentionScoring batchSize e d ->
                Tensor '[d+e,attnSize] Float32 ->
                T '[m,d,batchSize] Float32 -> T '[e,batchSize] Float32 -> Gen (T '[attnSize,batchSize] Float32)
-luongAttention score w hs_ ht = do
-  ct <- uniformAttn score hs_ ht
-  let at = tanh (w ∙ concat0 ct ht)
-  return at
+luongAttention score w hs_ ht = uniformAttn score hs_ ht
+-- TODO: mask according to length
 
 type AttentionScoring batchSize e d = Tensor '[e,batchSize] Float32 -> Tensor '[d,batchSize] Float32 -> Tensor '[batchSize] Float32
 
@@ -269,11 +268,12 @@ luongMultiplicativeScoring :: forall e d batchSize. T [e,d] Float32 ->  Attentio
 luongMultiplicativeScoring w ht hs = hs · ir
   where ir :: T '[d,batchSize] Float32
         ir = w ∙ ht
-
+-}
 -- luongWrapper score w1 w2 θ hs = addAttentionWithFeedback (luongAttention (luongMultiplicativeScoring w1) w2 hs) (lstm θ)
 
+
 -- | A layer in an rnn. @n@ is the length of the time sequence. @state@ is state propagated through time.
-type RnnLayer n state input t output u = HList state -> Tensor (n ': input) t -> Gen (HList state , Tensor (n ': output) u)
+type RnnLayer n state input t output u = FHTV state -> Tensor (n ': input) t -> Gen (FHTV state , Tensor (n ': output) u)
 
 -- | Build a RNN by repeating a cell @n@ times.
 rnn :: ∀ n state input output t u.
@@ -298,7 +298,7 @@ rnnBackwards cell s0 t = do
   xs <- unstack t
   (sFin,us) <- chainBackward cell (s0,xs)
   return (sFin,stack us)
-  
+
 -- note: an alternative design would be to reverse the input and
 -- output tensors instead. (thus we could make 'backwards' a
 -- completely separate function that does not do any chaining.)
@@ -314,9 +314,20 @@ stackRnnLayers f g (hsplit @s1 -> (s0,s1)) x = do
   (s1',z) <- g s1 y
   return (happ s0' s1',z)
 
-
 infixr .--.
 (.--.) = stackRnnLayers
+
+
+bothRnnLayers,(.++.)  :: forall s1 s2 a t b u c v n bs. KnownNat bs => KnownLen s1 =>
+                  RnnLayer n s1 a t '[b,bs] u -> RnnLayer n s2 a t '[c,bs] u -> RnnLayer n (s1 ++ s2) a t '[b+c,bs] u
+bothRnnLayers f g (hsplit @s1 -> (s0,s1)) x = do
+  (s0',y) <- f s0 x
+  (s1',z) <- g s1 x
+  return (happ s0' s1',concat1 y z)
+
+
+infixr .++.
+(.++.) = bothRnnLayers
 
 -- | RNN helper
 chainForward :: ∀ state a b n. ((state , a) -> Gen (state , b)) → (state , V n a) -> Gen (state , V n b)
@@ -325,7 +336,6 @@ chainForward f (s0 , V (x:xs)) = do
   (s1,x') <- f (s0 , x)
   (sFin,V xs') <- chainForward f (s1 , V xs)
   return (sFin,V (x':xs'))
--- TODO: attempt to do the above with tf.foldl
 
 chainBackward :: ∀ state a b n. ((state , a) -> Gen (state , b)) → (state , V n a) -> Gen (state , V n b)
 chainBackward _ (s0 , V []) = return (s0 , V [])
@@ -333,3 +343,44 @@ chainBackward f (s0 , V (x:xs)) = do
   (s1,V xs') <- chainBackward f (s0,V xs)
   (sFin, x') <- f (s1,x)
   return (sFin,V (x':xs'))
+
+chainBackwardWithState ::
+  ∀ state a b n. ((state , a) -> Gen (state , b)) → (state , V n a) -> Gen (state , V n b, V n state)
+chainBackwardWithState _ (s0 , V []) = return (s0 , V [], V [])
+chainBackwardWithState f (s0 , V (x:xs)) = do
+  (s1,V xs',V ss') <- chainBackwardWithState f (s0,V xs)
+  (sFin, x') <- f (s1,x)
+  return (sFin,V (x':xs'),V (sFin:ss'))
+
+class LastEqual x xs
+instance                   LastEqual x (x ': '[])
+instance LastEqual x (y2 ': xs) => LastEqual x (y ': (y2 ': xs))
+
+transposeV :: forall n xs. All KnownLen xs =>
+               SList xs -> V n (HTV Float32 xs) -> HTV Float32 (Ap (FMap (Cons n)) xs)
+transposeV LZ _ = Unit
+transposeV (LS _ n) xxs  = F ys' :* yys'
+  where (ys,yys) = help @(Tail xs) xxs
+        ys' = stack ys
+        yys' = transposeV n yys
+
+        help :: forall ys x t. V n (HTV t (x ': ys)) -> (V n (T x t) , V n (HTV t ys))
+        help (V xs) = (V (map (fromF . hhead) xs),V (map htail xs))
+
+gather'' :: LastEqual bs x => T '[bs] Int32 -> T (n ': x) t -> T x t
+gather'' ixs params = error "gather''"
+
+gathers :: forall n bs xs. All (LastEqual bs) xs => 
+            SList xs -> T '[bs] Int32 -> FHTV (Ap (FMap (Cons n)) xs) -> FHTV xs
+gathers LZ _ Unit = Unit
+gathers (LS _ n) ixs (F x :* xs) = F (gather'' ixs x) :* gathers @n n ixs xs
+
+rnnBackwardCull :: forall n bs x y t u ls.
+  KnownLen ls => KnownNat n => KnownLen x  => KnownLen y => All KnownLen ls =>
+  All (LastEqual bs) ls =>
+  T '[bs] Int32 -> RnnCell ls (T x t) (T y u) -> RnnLayer n ls x t y u
+rnnBackwardCull dynLen cell s0 t = do
+  xs <- unstack t
+  (_,us,ss) <- chainBackwardWithState cell (s0,xs)
+  let sss = transposeV @n (shapeSList @ls) ss
+  return (gathers @n (shapeSList @ls) dynLen sss,stack us)

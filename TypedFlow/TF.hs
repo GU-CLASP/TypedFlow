@@ -24,13 +24,19 @@ module TypedFlow.TF where
 import Prelude hiding (tanh,Num(..),Floating(..))
 import qualified Prelude
 import Prelude ((-))
-import Text.PrettyPrint.Compact hiding (Last)
+import Text.PrettyPrint.Compact hiding (Last, All)
 import GHC.TypeLits
 import Data.Proxy
 import TypedFlow.Types
 
 zeros :: ∀ t (shape :: Shape). KnownShape shape => (T shape t)
 zeros = T (funcall "tf.zeros" [showShape @shape])
+
+repeatZeros :: forall (ss :: [Shape]) t. All KnownShape ss => KnownLen ss => HTV t ss
+repeatZeros = zs (shapeSList @ss)
+  where zs :: forall (s :: [Shape]). All KnownShape s => SList s -> HTV t s
+        zs LZ = Unit
+        zs (LS _ n) = F zeros :* zs n
 
 ones :: ∀ t (shape :: Shape). KnownShape shape => (T shape t)
 ones = T (funcall "tf.ones" [showShape @shape])
@@ -120,7 +126,7 @@ split0 (T x) = do
 
 concatT :: ∀ n d1 d2 s t.
     (KnownPeano n, KnownLen s, (d1+d2) ~ At n s) =>
-    T (Take n s ++ (d1 ': Drop (Succ n) s)) t -> T (Take n s ++ (d2 ': Drop ('Succ n) s)) t -> T s t
+    T (Take n s ++ (d1 ': Drop ('Succ n) s)) t -> T (Take n s ++ (d2 ': Drop ('Succ n) s)) t -> T s t
 concatT (T x) (T y) = T (funcall "tf.concat" [list [x,y], named "axis" (integer (listLen @s - peanoInt @n - 1))])
 
 concat0 :: ∀ ys d1 d2 t. (KnownShape ys) =>  T (d1 ': ys) t -> T (d2 ': ys) t -> T ((d1 + d2) ': ys) t
@@ -212,6 +218,7 @@ transposeN' (T x) = T (funcall "tf.transpose" [x, named "perm" (list (map intege
 gather :: ∀s n indexShape t. T (s ++ '[n]) t -> T indexShape Int32 -> T (s ++ indexShape) t
 gather = binOp "tf.gather"
 
+
 negate :: ∀ s t. T s t -> T s t
 negate = unOp "-"
 
@@ -290,6 +297,9 @@ randomOrthogonal = T (funcall' (funcall "tf.orthogonal_initializer" [named "dtyp
 
 constant :: forall s w. KnownShape s => Float -> T s ('Typ 'Float w)
 constant c = T (funcall "tf.constant" [float c, named "shape" (showShape @s)])
+
+sequenceMask :: forall maxlen n. KnownNat maxlen => Tensor '[n] Int32 -> Tensor '[maxlen,n] TFBool
+sequenceMask (T x) = T (funcall "tf.sequence_mask" [x, named "maxlen" (showDim @maxlen)])
 
 ---------------------------
 -- Contrib

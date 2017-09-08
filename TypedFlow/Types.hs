@@ -1,3 +1,5 @@
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE UndecidableSuperClasses #-}
 {-# LANGUAGE ConstraintKinds #-}
@@ -42,6 +44,9 @@ type i < j = CmpNat i j ~ 'LT
 type family (++) xs ys where
    '[] ++  xs       = xs
    (x ': xs) ++ ys       = x ': (xs ++ ys)
+
+type family Tail xs where
+  Tail (x ': xs) = xs
 
 type family Last xs where
   Last '[x] = x
@@ -109,6 +114,9 @@ type HList = NP I
 pattern HSingle :: a -> HList '[a]
 pattern HSingle x = (I x :* Unit)
 
+pattern VecSing :: Tensor s t -> HTV t '[s]
+pattern VecSing t1 = F t1 :* Unit
+
 pattern VecPair :: Tensor s t -> Tensor s' t -> HTV t '[s,s']
 pattern VecPair t1 t2 = F t1 :* F t2 :* Unit
 
@@ -116,11 +124,48 @@ type family All (c :: k -> Constraint) (xs :: [k]) :: Constraint where
   All c '[] = ()
   All c (x ': xs) = (c x, All c xs)
 
+class Fun (c :: k -> Constraint)  where
+  type Ap c (t :: k) :: l
+
+class Cons (x :: k) (xs :: [k])
+
+class Snoc (x :: k) (xs :: [k])
+
+instance Fun (Cons x) where
+  type Ap (Cons x) xs = x ': xs
+
+instance Fun (Snoc x) where
+  type Ap (Snoc x) '[] = '[x]
+  type Ap (Snoc x) (y ': ys) = y ': Ap (Snoc x) ys
+
+class FMap (c :: k -> Constraint) (xs :: [k]) where
+
+instance Fun c => Fun (FMap c)  where
+  type Ap (FMap c) '[] = '[]
+  type Ap (FMap c) (x ': xs) = Ap c x ': Ap (FMap c) xs
+
+type family All2 (c :: k -> l -> Constraint) (xs :: [k]) (ys :: [l]) :: Constraint where
+  All2 c '[] '[] = ()
+  All2 c (x ': xs) (y ': ys) = (c x y, All2 c xs ys)
+  All2 c '[] (y ': ys) = 'True ~ 'False
+  All2 c (y ': ys) '[] = 'True ~ 'False
+
 -- | Flip at type level
-newtype F g t s = F (g s t)
+newtype F g t s = F {fromF :: g s t}
 
 -- | Heterogeneous tensor vector with the same kind of elements
 type HTV t = NP (F T t)
+type FHTV = HTV Float32
+
+hhead :: NP f (x ': xs) -> f x
+hhead (x :* _) = x
+
+htail :: NP f (x ': xs) -> NP f xs
+htail (_ :* xs) = xs
+
+-- htmap :: forall f ss t u. (forall s. Tensor s t -> Tensor (Ap f s) u) -> HTV t ss -> HTV u (Ap (FMap f) ss)
+-- htmap _ Unit = Unit
+-- htmap f (F x :* xs) = F (f x) :* htmap @f f xs
 
 hmap :: (forall x. f x -> g x) -> NP f xs -> NP g xs
 hmap _ Unit = Unit
@@ -181,9 +226,9 @@ type family Take n xs where
    Take ('Succ n) (x ': xs) =  x ': Take n xs
 
 type family Drop n xs where
-   Drop 'Zero xs            =  xs
-   Drop ('Succ n) '[]            =  '[]
-   Drop ('Succ n) (x ': xs) =  Drop n xs
+   Drop 'Zero xs            = xs
+   Drop ('Succ n) '[]       = '[]
+   Drop ('Succ n) (x ': xs) = Drop n xs
 
 type family At n xs where
   At 'Zero (x ': xs) = x
@@ -239,9 +284,15 @@ instance KnownKind 'Bool where kindVal = Bool
 instance KnownKind 'Float where kindVal = Float
 instance KnownKind 'Int where kindVal = Int
 
-data SList s where
-  LZ :: SList '[]
-  LS :: forall x xs. Proxy x -> SList xs -> SList (x ': xs)
+-- data SList s where
+--   LZ :: SList '[]
+--   LS :: forall x xs. Proxy x -> SList xs -> SList (x ': xs)
+
+type SList = SList' Proxy
+
+data SList' f s where
+  LZ :: SList' f '[]
+  LS :: forall x xs f. f x -> SList' f xs -> SList' f (x ': xs)
 
 type family PeanoLength xs :: Peano where
   PeanoLength '[] = 'Zero
@@ -429,3 +480,5 @@ generateFile fname g = do
 
 named :: String -> DOC -> DOC
 named fname x = text (fname <> "=") <> x
+
+

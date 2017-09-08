@@ -7,146 +7,104 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UnicodeSyntax #-}
-module Seq2Seq where
-
--- https://github.com/tensorflow/nmt
-
--- Neural Machine Translation and Sequence-to-sequence Models:
--- A Tutorial
--- Graham Neubig
--- Language Technologies Institute, Carnegie Mellon University
--- -- https://arxiv.org/pdf/1703.01619.pdf
-
 
 import TypedFlow
 
-encoder :: forall (vocSize :: Nat) (n :: Nat) (bs :: Nat). 
-                 KnownNat vocSize => (KnownNat bs, KnownNat n) =>
-                 [Char]
+encoder :: forall (lstmSize :: Nat) (vocSize :: Nat) (n :: Nat) (bs :: Nat). 
+                 KnownNat lstmSize => KnownNat vocSize => (KnownNat bs, KnownNat n) =>
+                 String
+                 -> T '[bs] Int32 -- lengths
+                 -> EmbbeddingP vocSize 50 'B32
                  -> Tensor '[n, bs] Int32
                  -> Gen
-                      (HList '[(T '[512, bs] Float32, T '[512, bs] Float32), (T '[512, bs] Float32, T '[512, bs] Float32)],
-                       Tensor '[n, 512, bs] Float32)
-encoder prefix input = do
-  embs <- parameter (prefix++"embs") embeddingInitializer
+                      ((FHTV '[ '[lstmSize, bs], '[lstmSize, bs], '[lstmSize, bs], '[lstmSize, bs]]),
+                       Tensor '[n, lstmSize+lstmSize, bs] Float32)
+encoder prefix lens embs input = do
   lstm1 <- parameter (prefix++"w1") lstmInitializer
   lstm2 <- parameter (prefix++"w2") lstmInitializer
-  let drp = dropout (KeepProb 0.8)
+  drp1 <- mkDropout (DropProb 0.2)
+  rdrp1 <- mkDropouts (DropProb 0.2)
+  rdrp2 <- mkDropouts (DropProb 0.2)
   -- todo: what to do about sentence length?
   (sFinal,h) <-
     (rnn (timeDistribute (embedding @50 @vocSize embs))
       .--.
-     rnn (timeDistribute drp)
+     rnn (timeDistribute drp1)
       .--.
-     rnn (onState drp (lstm @512 lstm1))
-      .--.
-     rnn (timeDistribute drp)
-      .--.
-     rnnBackwards (onState drp (lstm @512 lstm2))
-     ) (I (zeros,zeros) :* I (zeros,zeros) :* Unit) input
+     (rnn             (onStates rdrp1 (lstm @lstmSize lstm1))
+       .++.
+      rnnBackwardCull' lens (onStates rdrp2 (lstm @lstmSize lstm2)))
+     ) repeatZeros input
   h' <- assign h  -- will be used many times as input to attention model
   return (sFinal,h')
-
-decoder :: forall (n :: Nat) (outVocabSize :: Nat) (bs :: Nat) (d::Nat).
-                 KnownNat d => (KnownNat bs, KnownNat outVocabSize, KnownNat n) =>
-                 [Char]
+decoder :: forall (lstmSize :: Nat) (n :: Nat) (outVocabSize :: Nat) (bs :: Nat) (d::Nat).
+                 KnownNat lstmSize => KnownNat d => (KnownNat bs, KnownNat outVocabSize, KnownNat n) =>
+                 String
+                 -> EmbbeddingP outVocabSize 50 'B32
                  -> T '[n, d, bs] Float32 -- todo: consider a larger size for the output string
-                 -> (HList '[(T '[512, bs] Float32, T '[512, bs] Float32), (T '[512, bs] Float32, T '[512, bs] Float32)])
+                 -> (HList '[HTV Float32 '[ '[lstmSize, bs], '[lstmSize, bs]], HTV Float32 '[ '[lstmSize, bs], '[lstmSize, bs]]])
                  -> Tensor '[n, bs] Int32
                  -> Gen (Tensor '[n, outVocabSize, bs] Float32)
-decoder prefix hs thoughtVectors target = do
-  embs <- parameter (prefix++"embs") embeddingInitializer
+decoder prefix embs hs thoughtVectors startTarget = do
   -- note: for an intra-language translation the embeddings can be shared.
   projs <- parameter (prefix++"proj") denseInitialiser
   lstm1 <- parameter (prefix++"w1") lstmInitializer
   lstm2 <- parameter (prefix++"w2") lstmInitializer
-  w1 <- parameter (prefix++"att1") glorotUniform
-  w2 <- parameter (prefix++"att2") glorotUniform
-  let attn = (luongAttention @64 (luongMultiplicativeScoring w1) w2 hs)
-      initAttn = zeros
-  let drp = dropout (KeepProb 0.8)
+  -- w1 <- parameter (prefix++"att1") glorotUniform
+  -- w2 <- parameter (prefix++"att2") glorotUniform
+  -- let attn = (luongAttention @64 (luongMultiplicativeScoring w1) w2 hs)
+  --     initAttn = zeros
+  drp1 <- mkDropout (DropProb 0.2)
+  drp2 <- mkDropout (DropProb 0.2)
+  rdrp1 <- mkDropouts (DropProb 0.2)
+  rdrp2 <- mkDropouts (DropProb 0.2)
   (_sFinal,outFinal) <-
     (rnn (timeDistribute (embedding @50 @outVocabSize embs)
           .-.
-          timeDistribute drp
+          timeDistribute drp1
           .-.
-          addAttentionWithFeedback attn
-           ((lstm @512 lstm1)
+          -- addAttentionWithFeedback attn
+          
+           ((onState rdrp1 (lstm @lstmSize lstm1))
              .-.
-             timeDistribute drp
+             timeDistribute drp2
              .-.
-             (lstm @512 lstm2))
+             (onState rdrp2 (lstm @lstmSize lstm2)))
           .-.
-          (timeDistribute (softmax0 . dense projs)) -- TODO: add a softmax?
-         )) (I initAttn :* thoughtVectors) target
+          (timeDistribute (dense projs))
+         )) ({-I initAttn :* -}thoughtVectors) startTarget
 
      -- TODO: should we use the states for all layers as
      -- thoughtVectors? Or just the top one?
   return outFinal
 
-seq2seq :: forall (inVocSize :: Nat) (outVocSize :: Nat) (n :: Nat) (bs :: Nat).
-                 KnownNat inVocSize => KnownNat outVocSize => 
+seq2seq :: forall (vocSize :: Nat) (n :: Nat) (bs :: Nat).
+                 KnownNat vocSize => 
                  (KnownNat bs, KnownNat n) =>
                  Tensor '[n, bs] Int32 ->
                  Tensor '[n, bs] Int32 ->
-                 Gen (Tensor '[n, outVocSize, bs] Float32)
-seq2seq input gold = do
-  (thought,h) <- encoder @inVocSize "enc" input
-  decoder "dec" h thought gold
+                 Gen (Tensor '[n, vocSize, bs] Float32)
+seq2seq input outputPlusStart = do
+  embs <- parameter "embs" embeddingInitializer
+  (thought,h) <- encoder @256 @vocSize "enc" embs input
+  decoder "dec" embs h thought outputPlusStart
 
 -- TODO: beam search decoder. Perhaps best implemented outside of tensorflow?
 
-trainModel :: Tensor '[20, 128] Int32
-                    -> Tensor '[20, 128] Int32 -> Gen (ModelOutput '[20, 128] Int32)
-trainModel input gold = do
-  y_ <- seq2seq @10000 @10000 @20 @128 input gold
-  timedCategorical y_ gold
+trainModel :: forall vocSize len. KnownNat vocSize => KnownNat len => Gen (ModelOutput '[len, vocSize, 128] Float32)
+trainModel = do
+  sourceInput <- placeholder "src_in"
+  targetInput <- placeholder "tgt_in"
+  targetOutput <- placeholder "tgt_out"
+  masks <- placeholder "tgt_weights"
+  y_ <- seq2seq @vocSize @len @128 sourceInput targetInput
+  timedCategorical masks y_ targetOutput
 
 main :: IO ()
-main = generateFile "s2s_model.py" (compile (defaultOptions {maxGradientNorm = Just 1})
-                                    trainModel)
+main = generateFile "model.py" (compileGen (defaultOptions {maxGradientNorm = Just 1}) (trainModel @15295 @20))
 
 {-> main
 
-Parameters:
-decatt2: T [64, 1024] tf.float32
-decatt1: T [512, 512] tf.float32
-decw2_4_snd: T [512] tf.float32
-decw2_4_fst: T [512, 1024] tf.float32
-decw2_3_snd: T [512] tf.float32
-decw2_3_fst: T [512, 1024] tf.float32
-decw2_2_snd: T [512] tf.float32
-decw2_2_fst: T [512, 1024] tf.float32
-decw2_1_snd: T [512] tf.float32
-decw2_1_fst: T [512, 1024] tf.float32
-decw1_4_snd: T [512] tf.float32
-decw1_4_fst: T [512, 626] tf.float32
-decw1_3_snd: T [512] tf.float32
-decw1_3_fst: T [512, 626] tf.float32
-decw1_2_snd: T [512] tf.float32
-decw1_2_fst: T [512, 626] tf.float32
-decw1_1_snd: T [512] tf.float32
-decw1_1_fst: T [512, 626] tf.float32
-decproj_snd: T [10000] tf.float32
-decproj_fst: T [10000, 64] tf.float32
-decembs: T [50, 10000] tf.float32
-encw2_4_snd: T [512] tf.float32
-encw2_4_fst: T [512, 1024] tf.float32
-encw2_3_snd: T [512] tf.float32
-encw2_3_fst: T [512, 1024] tf.float32
-encw2_2_snd: T [512] tf.float32
-encw2_2_fst: T [512, 1024] tf.float32
-encw2_1_snd: T [512] tf.float32
-encw2_1_fst: T [512, 1024] tf.float32
-encw1_4_snd: T [512] tf.float32
-encw1_4_fst: T [512, 562] tf.float32
-encw1_3_snd: T [512] tf.float32
-encw1_3_fst: T [512, 562] tf.float32
-encw1_2_snd: T [512] tf.float32
-encw1_2_fst: T [512, 562] tf.float32
-encw1_1_snd: T [512] tf.float32
-encw1_1_fst: T [512, 562] tf.float32
-encembs: T [50, 10000] tf.float32
 -}
 
 
