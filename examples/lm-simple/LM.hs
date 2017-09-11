@@ -11,26 +11,34 @@ module Aggr where
 
 import TypedFlow
 
-predict :: forall (outSize::Nat) (vocSize::Nat) batchSize. KnownNat outSize => KnownNat vocSize => KnownNat batchSize => Model '[21,batchSize] Int32 '[batchSize] Int32
-predict input gold = do
+predict :: forall len (vocSize::Nat) bs. KnownNat len => KnownNat vocSize => KnownNat bs =>
+           Gen (ModelOutput '[len,vocSize,bs] Float32)
+predict = do
+  input <- placeholder "x"
+  gold <- placeholder "y"
+  masks <- placeholder "weights"
+
   embs <- parameter "embs" embeddingInitializer
   lstm1 <- parameter "w1" lstmInitializer
   drp <- mkDropout (DropProb 0.1)
   rdrp <- mkDropouts (DropProb 0.1)
   w <- parameter "dense" denseInitialiser
   (_sFi,predictions) <-
-    rnn (timeDistribute (embedding @9 @vocSize embs)
+    rnn (timeDistribute (embedding @12 @vocSize embs)
           .-.
           timeDistribute drp
           .-.
-          (onState (rdrp) (lstm @50 lstm1)))
-        (I (VecPair zeros zeros) :* Unit) input
-  categorical ((dense @outSize w) (last0 predictions)) gold
+          onStates rdrp (lstm @150 lstm1)
+          .-.
+          timeDistribute (dense @vocSize w)
+        )
+        (repeatT zeros) input
+  timedCategorical @len @vocSize @bs masks predictions gold
 
 
 main :: IO ()
 main = do
-  generateFile "lm.py" (compile (defaultOptions) (predict @5 @11 @512))
+  generateFile "lm.py" (compileGen defaultOptions (predict @21 @12 @512))
   putStrLn "done!"
 
 (|>) :: ∀ a b. a -> b -> (a, b)
