@@ -34,11 +34,11 @@ import TypedFlow.Types
 zeros :: ∀ t (shape :: Shape). KnownShape shape => (T shape t)
 zeros = T (funcall "tf.zeros" [showShape @shape])
 
-repeatZeros :: forall (ss :: [Shape]) t. All KnownShape ss => KnownLen ss => HTV t ss
-repeatZeros = zs (shapeSList @ss)
+repeatT :: forall (ss :: [Shape]) t. All KnownShape ss => KnownLen ss => (forall s. KnownShape s => T s t) -> HTV t ss
+repeatT f = zs (shapeSList @ss)
   where zs :: forall (s :: [Shape]). All KnownShape s => SList s -> HTV t s
         zs LZ = Unit
-        zs (LS _ n) = F zeros :* zs n
+        zs (LS _ n) = F f :* zs n
 
 ones :: ∀ t (shape :: Shape). KnownShape shape => (T shape t)
 ones = T (funcall "tf.ones" [showShape @shape])
@@ -376,12 +376,15 @@ mapTN f t = do
 -- TODO: separate harmless and harmful effects. (the big question: are assignments harmful?)
 
 zipWithT :: forall (s :: [Nat]) (t :: Typ) (s1 :: [Nat]) (t1 :: Typ) (s2 :: Shape) (n :: Nat) (t2 :: Typ).
-            (KnownLen s, KnownLen s2, KnownLen s1) => KnownTyp t2 =>
+            KnownNat n => (KnownLen s, KnownLen s2, KnownLen s1) => KnownTyp t2 =>
                   (T s t -> T s1 t1 -> T s2 t2)
                   -> Tensor (n ': s) t
                   -> Tensor (n ': s1) t1
                   -> Gen (Tensor (n ': s2) t2)
 zipWithT f x y = do
+  -- xs <- unstack x
+  -- ys <- unstack y
+  -- return (stack (f <$> xs <*> ys))
   x' <- zipWithTN @n f (transposeN @s @n x) (transposeN @s1 @n y)
   return (transposeN' @s2 x')
 
@@ -392,9 +395,6 @@ zipWithTN :: forall (n :: Nat) (s :: [Nat]) (t :: Typ) (s1 :: [Nat]) (t1 :: Typ)
                   -> Tensor (s1 ++ '[n]) t1
                   -> Gen (Tensor (s2 ++ '[n]) t2)
 zipWithTN f (T t) (T u) =  do
-  -- xs <- unstack t
-  -- ys <- unstack u
-  -- return (stack (f <$> xs <*> ys))
   fn <- lambda2 f
   return (T (funcall "tf.map_fn" [fn, tuple [t,u], named "dtype" (showTyp @t2)]))
 
