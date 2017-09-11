@@ -22,6 +22,15 @@ def bilist_generator(l):
         yield {"x":l0[i:i+bs],"y":l1[i:i+bs]}
     return gen
 
+def dict_generator (xs):
+    k0 = next (iter (xs.keys())) # at least one key is needed
+    total_len = len(xs[k0])
+
+    def gen(bs):
+      for i in range(0, bs*(total_len//bs), bs):
+        yield dict((k,xs[k][i:i+bs]) for k in xs)
+
+
 def initialize_params (session,model):
     # it'd be nice to do:
 
@@ -110,7 +119,7 @@ def s2s_generator(src_in,tgt_in,tgt_out,tgt_weights):
 
 def predict (session, model, xs, result="y_"):
     bs = model["batch_size"]
-    k0 = xs.keys[0] # at least one key is needed
+    k0 = next (iter (xs.keys())) # at least one key is needed
     total_len = len(xs[k0])
     zeros = dict((k,np.zeros_like(xs[k][0])) for k in xs) # at least one example is needed
     results = []
@@ -119,7 +128,8 @@ def predict (session, model, xs, result="y_"):
             chunks = dict((k,xs[k][i:i+bs]) for k in xs)
             if i + bs > total_len:
                 origLen = total_len - i
-                chunks[k] = list(chunks[k]) + [zeros[k]] * (bs - origLen) # pad the last chunk
+                for k in xs:
+                    chunks[k] = list(chunks[k]) + [zeros[k]] * (bs - origLen) # pad the last chunk
             else:
                 origLen = bs
             print (".")
@@ -130,6 +140,7 @@ def predict (session, model, xs, result="y_"):
 
 def beam_translate(session, model, k, x, start_symbol, out_len, voc_size):
     xs = np.array ([x] * k) # The input is always the same
+    xs_len = np.array ([len(x)]*k)
     ys = [[start_symbol]]  # start with a single thing; otherwise the minimum will be repeated k times
     probs = [1]
 
@@ -137,7 +148,7 @@ def beam_translate(session, model, k, x, start_symbol, out_len, voc_size):
         return np.array(z + [0] * (out_len - len(z)))
     for i in range(out_len-1):
         print ("beam search at:", i)
-        inputs = {"src_in":xs[:len(ys)], "tgt_in":np.array([pad(y) for y in ys])}
+        inputs = {"src_len":xs_len[:len(ys)], "src_in":xs[:len(ys)], "tgt_in":np.array([pad(y) for y in ys])}
         y_s = predict(session,model,inputs)
         all_words = sorted([(y_s[j][w][i] * probs[j], ys[j] + [w])
                             for j in range(len(y_s))
