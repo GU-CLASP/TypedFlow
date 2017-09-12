@@ -194,38 +194,39 @@ stackRnnCells l1 l2 (hsplit @s0 -> (s0,s1),x) = do
 
 (.-.) = stackRnnCells
 
-{-
 
 -- | @attnExample1 θ h st@ combines each element of the vector h with
 -- s, and applies a dense layer with parameters θ. The "winning"
 -- element of h (using softmax) is returned.
-uniformAttn :: ∀ d m e batchSize. 
-               KnownNat m => AttentionScoring batchSize e d ->
+uniformAttn :: ∀ d m e batchSize. KnownNat m => 
+               T '[batchSize] Int32 ->
+               AttentionScoring batchSize e d ->
                T '[m,d,batchSize] Float32 -> T '[e,batchSize] Float32 -> Gen (T '[d,batchSize] Float32)
-uniformAttn score hs_ ht = do
+uniformAttn lengths score hs_ ht = do
   xx <- mapT (score ht) hs_
   let   αt :: T '[m,batchSize] Float32
-        αt = softmax0 xx
+        αt = softmax0 (mask ⊙ xx)
         ct :: T '[d,batchSize] Float32
         ct = squeeze0 (matmul hs_ (expandDim0 αt))
+        mask = cast (sequenceMask @m lengths) -- mask according to length
   return ct
 
 
--- | Add some attention, but feed back the attention vector back to
--- the next iteration in the rnn. (This follows the diagram at
--- https://github.com/tensorflow/nmt#background-on-the-attention-mechanism
--- commit 75aa22dfb159f10a1a5b4557777d9ff547c1975a).  The main
--- difference with 'addAttention' above is that the attn function is
--- that the final result depends on the attention vector rather than the output of the underlying cell.
--- (This yields to exploding loss in my tests.)
-addAttentionWithFeedback ::KnownShape s => 
-                ((T (b ': s) t) -> Gen (T (x ': s) t)) ->
-                RnnCell state                    (T ((a+x) ': s) t) (T (b ': s) t) ->
-                RnnCell (T (x ': s) t ': state)  (T ( a    ': s) t) (T (x ': s) t)
-addAttentionWithFeedback attn cell ((I prevAttnVector :* s),a) = do
-  (s',y) <- cell (s,concat0 a prevAttnVector)
-  focus <- attn y
-  return ((I focus :* s'),focus)
+-- -- | Add some attention, but feed back the attention vector back to
+-- -- the next iteration in the rnn. (This follows the diagram at
+-- -- https://github.com/tensorflow/nmt#background-on-the-attention-mechanism
+-- -- commit 75aa22dfb159f10a1a5b4557777d9ff547c1975a).  The main
+-- -- difference with 'addAttention' above is that the attn function is
+-- -- that the final result depends on the attention vector rather than the output of the underlying cell.
+-- -- (This yields to exploding loss in my tests.)
+-- addAttentionWithFeedback ::KnownShape s => 
+--                 ((T (b ': s) t) -> Gen (T (x ': s) t)) ->
+--                 RnnCell state                    (T ((a+x) ': s) t) (T (b ': s) t) ->
+--                 RnnCell (T (x ': s) t ': state)  (T ( a    ': s) t) (T (x ': s) t)
+-- addAttentionWithFeedback attn cell ((I prevAttnVector :* s),a) = do
+--   (s',y) <- cell (s,concat0 a prevAttnVector)
+--   focus <- attn y
+--   return ((I focus :* s'),focus)
 
 -- | @addAttention attn cell@ adds the attention function @attn@ to the
 -- rnn cell @cell@.  Note that @attn@ can depend in particular on a
@@ -241,25 +242,24 @@ addAttentionAbove attn cell (s,a) = do
   return (s',concat0 y focus)
 
 
-addAttentionBelow ::KnownShape s => 
+addAttentionBelow ::KnownShape s => (t ~ Float32) =>
                 ((T (b ': s) t) -> Gen (T (x ': s) t)) ->
                 RnnCell state                    (T ((a+x) ': s) t) (T (b ': s) t) ->
-                RnnCell (T (b ': s) t ': state)  (T ( a    ': s) t) (T (b ': s) t)
-addAttentionBelow attn cell ((I prevY :* s),a) = do
+                RnnCell ((b ': s) ': state)  (T ( a    ': s) t) (T (b ': s) t)
+addAttentionBelow attn cell ((F prevY :* s),a) = do
   focus <- attn prevY
   (s',y) <- cell (s,concat0 a focus)
-  return ((I y :* s'),y)
+  return ((F y :* s'),y)
 
 
--- | Luong attention model (following
--- https://github.com/tensorflow/nmt#background-on-the-attention-mechanism
--- commit 75aa22dfb159f10a1a5b4557777d9ff547c1975a)
-luongAttention :: ∀ attnSize d m e batchSize. KnownNat m => ( KnownNat batchSize) =>
-               AttentionScoring batchSize e d ->
-               Tensor '[d+e,attnSize] Float32 ->
-               T '[m,d,batchSize] Float32 -> T '[e,batchSize] Float32 -> Gen (T '[attnSize,batchSize] Float32)
-luongAttention score w hs_ ht = uniformAttn score hs_ ht
--- TODO: mask according to length
+-- -- | Luong attention model (following
+-- -- https://github.com/tensorflow/nmt#background-on-the-attention-mechanism
+-- -- commit 75aa22dfb159f10a1a5b4557777d9ff547c1975a)
+-- luongAttention :: ∀ attnSize d m e batchSize. KnownNat m => ( KnownNat batchSize) =>
+--                AttentionScoring batchSize e d ->
+--                Tensor '[d+e,attnSize] Float32 ->
+--                T '[m,d,batchSize] Float32 -> T '[e,batchSize] Float32 -> Gen (T '[attnSize,batchSize] Float32)
+-- luongAttention score w hs_ ht = uniformAttn score hs_ ht
 
 type AttentionScoring batchSize e d = Tensor '[e,batchSize] Float32 -> Tensor '[d,batchSize] Float32 -> Tensor '[batchSize] Float32
 
@@ -267,7 +267,7 @@ luongMultiplicativeScoring :: forall e d batchSize. T [e,d] Float32 ->  Attentio
 luongMultiplicativeScoring w ht hs = hs · ir
   where ir :: T '[d,batchSize] Float32
         ir = w ∙ ht
--}
+
 -- luongWrapper score w1 w2 θ hs = addAttentionWithFeedback (luongAttention (luongMultiplicativeScoring w1) w2 hs) (lstm θ)
 
 
