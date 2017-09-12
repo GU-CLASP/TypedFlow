@@ -90,6 +90,7 @@ timedCategorical targetWeights logits' y = do
   crossEntropies <- zipWithT softmaxCrossEntropyWithLogits (oneHot1 y) logits
   modelLoss <- assign (reduceMeanAll (crossEntropies ⊙ targetWeights))
   return ModelOutput{..}
+  -- TODO: add a variant with sampled_softmax_loss
 
 data ModelOutput s t = ModelOutput {modelY :: T s t -- ^ prediction
                                    ,modelLoss :: Scalar Float32
