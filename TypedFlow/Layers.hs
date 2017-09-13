@@ -132,7 +132,12 @@ maxPool2D (T value) = T (funcall "tf.nn.max_pool" [value
 -- cell by ignoring the RNN state.
 
 timeDistribute :: (a -> b) -> RnnCell '[] a b
-timeDistribute pureLayer (Unit,a) = return (Unit, pureLayer a)
+timeDistribute pureLayer = timeDistribute' (return . pureLayer)
+
+timeDistribute' :: (a -> Gen b) -> RnnCell '[] a b
+timeDistribute' stateLess (Unit,a) = do
+  b <- stateLess a
+  return (Unit,b)
 
 cellInitializerBit :: ∀ n x. (KnownNat n, KnownNat x) => (n + x) ⊸ n
 cellInitializerBit = (concat0 recurrentInitializer kernelInitializer,biasInitializer)
@@ -194,6 +199,11 @@ stackRnnCells l1 l2 (hsplit @s0 -> (s0,s1),x) = do
 
 (.-.) = stackRnnCells
 
+passThrough :: KnownNat bs => RnnCell s0 (T '[x,bs] t) (T '[y,bs] t) -> RnnCell s0 (T '[x,bs] t) (T '[x+y,bs] t)
+passThrough cell (s,x) = do
+  (s',y) <- cell (s,x)
+  return (s',concat0 x y)
+
 
 -- | @attnExample1 θ h st@ combines each element of the vector h with
 -- s, and applies a dense layer with parameters θ. The "winning"
@@ -251,15 +261,20 @@ addAttentionBelow attn cell ((F prevY :* s),a) = do
   (s',y) <- cell (s,concat0 a focus)
   return ((F y :* s'),y)
 
+ 
 
--- -- | Luong attention model (following
--- -- https://github.com/tensorflow/nmt#background-on-the-attention-mechanism
--- -- commit 75aa22dfb159f10a1a5b4557777d9ff547c1975a)
--- luongAttention :: ∀ attnSize d m e batchSize. KnownNat m => ( KnownNat batchSize) =>
---                AttentionScoring batchSize e d ->
---                Tensor '[d+e,attnSize] Float32 ->
---                T '[m,d,batchSize] Float32 -> T '[e,batchSize] Float32 -> Gen (T '[attnSize,batchSize] Float32)
--- luongAttention score w hs_ ht = uniformAttn score hs_ ht
+
+-- | Luong attention model (following
+-- https://github.com/tensorflow/nmt#background-on-the-attention-mechanism
+-- commit 75aa22dfb159f10a1a5b4557777d9ff547c1975a)
+luongAttention :: ∀ attnSize d m e batchSize. KnownNat m => ( KnownNat batchSize) =>
+               Tensor '[batchSize] Int32 ->
+               AttentionScoring batchSize e d ->
+               Tensor '[d+e,attnSize] Float32 ->
+               T '[m,d,batchSize] Float32 -> T '[e,batchSize] Float32 -> Gen (T '[attnSize,batchSize] Float32)
+luongAttention lens score w hs_ ht = do
+  ct <- uniformAttn lens score hs_ ht
+  return (tanh (w ∙ (concat0 ct ht)))
 
 type AttentionScoring batchSize e d = Tensor '[e,batchSize] Float32 -> Tensor '[d,batchSize] Float32 -> Tensor '[batchSize] Float32
 
@@ -330,6 +345,7 @@ bothRnnLayers f g (hsplit @s1 -> (s0,s1)) x = do
 
 infixr .++.
 (.++.) = bothRnnLayers
+
 
 -- | RNN helper
 chainForward :: ∀ state a b n. ((state , a) -> Gen (state , b)) → (state , V n a) -> Gen (state , V n b)

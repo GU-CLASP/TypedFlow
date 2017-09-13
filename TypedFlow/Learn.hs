@@ -56,7 +56,7 @@ categorical logits' y = do
       modelY = y_
   correctPrediction <- assign (equal y_ y)
   modelAccuracy <- assign (reduceMeanAll (cast @Float32 correctPrediction))
-  modelLoss <- assign (reduceMeanAll (softmaxCrossEntropyWithLogits (oneHot0 y) logits))
+  modelLoss <- assign (reduceMeanAll (sparseSoftmaxCrossEntropyWithLogits y logits))
   return ModelOutput{..}
 
 -- | First type argument is the number of classes.
@@ -79,18 +79,19 @@ categoricalDistribution logits' y = do
 -- decoder_outputs. It is intended to mask padding positions outside
 -- of the target sequence lengths with values 0.
 
-timedCategorical :: forall len nCat bs. KnownNat nCat => KnownNat bs => KnownNat len =>
+timedCategoricalSparse :: forall len nCat bs. KnownNat nCat => KnownNat bs => KnownNat len =>
   Tensor '[len,bs] Float32 -> Tensor '[len,nCat,bs] Float32 -> Tensor '[len,bs] Int32 -> Gen (ModelOutput '[len,nCat,bs] Float32)
-timedCategorical targetWeights logits' y = do
+timedCategoricalSparse targetWeights logits' y = do
   logits <- assign logits'
   let y_ = argmax1 logits
       modelY = softmax1 logits
   correctPrediction <- assign (equal y_ y)
   modelAccuracy <- assign (reduceMeanAll (flatten2 (cast @Float32 correctPrediction)))
-  crossEntropies <- zipWithT softmaxCrossEntropyWithLogits (oneHot1 y) logits
+  let crossEntropies = sparseSoftmaxCrossEntropyWithLogits y (transpose01 logits)
   modelLoss <- assign (reduceMeanAll (crossEntropies ⊙ targetWeights))
   return ModelOutput{..}
-  -- TODO: add a variant with sampled_softmax_loss
+  
+-- TODO: add a variant of timedCategorical with sampled_softmax_loss
 
 data ModelOutput s t = ModelOutput {modelY :: T s t -- ^ prediction
                                    ,modelLoss :: Scalar Float32

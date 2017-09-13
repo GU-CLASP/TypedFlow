@@ -224,6 +224,9 @@ transposeN (T x) = T (funcall "tf.transpose" [x, named "perm" (list (map integer
 transposeN' :: ∀ s n t. KnownLen s => T (s ++ '[n]) t -> T (n ': s) t
 transposeN' (T x) = T (funcall "tf.transpose" [x, named "perm" (list (map integer ([1.. listLen @s]++[0])))])
 
+transpose01 :: ∀ s m n t. KnownLen s => T (m ': n ': s) t -> T (n ': m ': s) t
+transpose01 (T x) = T (funcall "tf.transpose" [x, named "perm" (list (map integer ([0..l-1] ++ [l Prelude.+ 1,l])))])
+  where l = listLen @s
 
 class LastEqual x xs
 instance                   LastEqual x (x ': '[])
@@ -290,6 +293,10 @@ cast (T t) = T (funcall "tf.cast" [t, showTyp @ u])
 softmaxCrossEntropyWithLogits :: Tensor '[numClasses,batchSize] Float32 -> Tensor '[numClasses,batchSize] Float32 -> Tensor '[batchSize] Float32
 softmaxCrossEntropyWithLogits (T labels) (T logits) =
   T (funcall "tf.nn.softmax_cross_entropy_with_logits" [named "labels" labels,named "logits" logits])
+
+sparseSoftmaxCrossEntropyWithLogits :: Tensor s Int32 -> Tensor (numClasses ': s) Float32 -> Tensor s Float32
+sparseSoftmaxCrossEntropyWithLogits (T labels) (T logits) =
+  T (funcall "tf.nn.sparse_softmax_cross_entropy_with_logits" [named "labels" labels,named "logits" logits])
 
 oneHot :: forall n numClasses s w. KnownNat numClasses => (KnownLen s, KnownPeano n) => Tensor s ('Typ 'Int w) -> Tensor (Take n s ++ (numClasses ': Drop n s)) Float32
 oneHot (T x) = T (funcall "tf.one_hot" [x, named "depth" (showDim @numClasses), named "axis" (integer (listLen @s - peanoInt @n))])
