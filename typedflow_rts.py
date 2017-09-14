@@ -138,11 +138,13 @@ def predict (session, model, xs, result="y_"):
                                     [(model[k],chunks[k]) for k in xs])))[:origLen]
     return np.concatenate(list(run()))
 
-def beam_translate(session, model, k, x, start_symbol, out_len, voc_size):
+
+def beam_translate(session, model, k, x, xlen, start_symbol, out_len, voc_size):
     xs = np.array ([x] * k) # The input is always the same
-    xs_len = np.array ([len(x)]*k)
+    xs_len = np.array ([xlen]*k) # this is very important to get right
     ys = [[start_symbol]]  # start with a single thing; otherwise the minimum will be repeated k times
     probs = [1]
+    hist = [[]]
 
     def pad(z):
         return np.array(z + [0] * (out_len - len(z)))
@@ -150,13 +152,11 @@ def beam_translate(session, model, k, x, start_symbol, out_len, voc_size):
         print ("beam search at:", i)
         inputs = {"src_len":xs_len[:len(ys)], "src_in":xs[:len(ys)], "tgt_in":np.array([pad(y) for y in ys])}
         y_s = predict(session,model,inputs)
-        all_words = sorted([(y_s[j][w][i] * probs[j], ys[j] + [w])
+        all_words = sorted([(y_s[j][w][i] * probs[j], ys[j] + [w], hist[j] + [y_s[j][w][i]])
                             for j in range(len(y_s))
                             for w in range(voc_size)])
         best = all_words[-k:]
-        # for (p,y) in best: print("Prob", p, cp.sentence_decode(y))
-        (probs,ys) = zip(*best)
+        # for (p,y,h) in best: print("Prob", p, decode(y),h)
+        (probs,ys,hist) = zip(*best)
 
     return ys
-
-

@@ -199,8 +199,8 @@ stackRnnCells l1 l2 (hsplit @s0 -> (s0,s1),x) = do
 
 (.-.) = stackRnnCells
 
-passThrough :: KnownNat bs => RnnCell s0 (T '[x,bs] t) (T '[y,bs] t) -> RnnCell s0 (T '[x,bs] t) (T '[x+y,bs] t)
-passThrough cell (s,x) = do
+withBypass :: KnownNat bs => RnnCell s0 (T '[x,bs] t) (T '[y,bs] t) -> RnnCell s0 (T '[x,bs] t) (T '[x+y,bs] t)
+withBypass cell (s,x) = do
   (s',y) <- cell (s,x)
   return (s',concat0 x y)
 

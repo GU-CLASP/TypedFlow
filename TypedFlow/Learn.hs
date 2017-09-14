@@ -79,9 +79,9 @@ categoricalDistribution logits' y = do
 -- decoder_outputs. It is intended to mask padding positions outside
 -- of the target sequence lengths with values 0.
 
-timedCategoricalSparse :: forall len nCat bs. KnownNat nCat => KnownNat bs => KnownNat len =>
+timedCategorical :: forall len nCat bs. KnownNat nCat => KnownNat bs => KnownNat len =>
   Tensor '[len,bs] Float32 -> Tensor '[len,nCat,bs] Float32 -> Tensor '[len,bs] Int32 -> Gen (ModelOutput '[len,nCat,bs] Float32)
-timedCategoricalSparse targetWeights logits' y = do
+timedCategorical targetWeights logits' y = do
   logits <- assign logits'
   let y_ = argmax1 logits
       modelY = softmax1 logits
