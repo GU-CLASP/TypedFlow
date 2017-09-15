@@ -35,7 +35,7 @@ encoder :: forall (lstmSize :: Nat) (vocSize :: Nat) (n :: Nat) (bs :: Nat).
 encoder prefix lens input = do
   embs <- parameter "embs" embeddingInitializer
   lstm1 <- mkLSTM (prefix++"lstm1")
-  (sFinal,h) <- rnn  -- TODO: cull
+  (sFinal,h) <- rnnWithCull lens -- drop the right-part (padding) of the input
     ⋆ (timeDistribute (embedding @50 @vocSize embs)
        .-.
        lstm1)
@@ -59,13 +59,16 @@ decoder prefix lens hs thoughtVectors targetInput = do
   lstm1 <- mkLSTM (prefix++"lstm1")
   embs <- parameter "embs" embeddingInitializer
   w1 <- parameter (prefix++"att1") glorotUniform
-  let attn = uniformAttn lens (luongMultiplicativeScoring w1) hs
+  drp <- mkDropout (DropProb 0.2)
+  let attn = uniformAttn lens (luongMultiplicativeScoring w1) hs -- NOTE: attention on the left-part of the input.
   (_sFinal,outFinal) <-
     rnn ⋆ (timeDistribute (embedding @50 @outVocabSize embs)
             .-.
             lstm1
             .-.
             withBypass (timeDistribute' attn)
+            .-.
+            timeDistribute drp
             .-.
             timeDistribute (dense projs))
         ⋆ thoughtVectors
