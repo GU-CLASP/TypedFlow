@@ -33,6 +33,7 @@ import TypedFlow.TF
 import TypedFlow.Types
 import Data.Monoid (Endo(..))
 import Control.Monad.State (gets)
+import Data.Type.Equality
 -- import Data.Kind (Type,Constraint)
 
 ---------------------
@@ -159,7 +160,21 @@ lstmInitializer = (forgetInit, cellInitializerBit, cellInitializerBit,cellInitia
 
 lstm :: ∀ n x bs. (KnownNat bs) => LSTMP n x ->
         RnnCell '[ '[n,bs], '[n,bs]] (Tensor '[x,bs] Float32) (Tensor '[n,bs] Float32)
-lstm (wf,wi,wc,wo) (VecPair ht1 ct1, input) = do
+lstm = sizeChangingLstm
+
+attentiveLstm :: forall n a x bs. KnownNat bs =>
+  (Tensor '[n,bs] Float32 -> Tensor '[x,bs] Float32 -> Tensor '[a,bs] Float32) ->
+  LSTMP n (a + x) ->
+  RnnCell '[ '[n,bs], '[n,bs]] (Tensor '[x,bs] Float32) (Tensor '[n,bs] Float32)
+attentiveLstm att w (VecPair ht1 ct1, input) = case plusAssoc @n @a @x of
+  Refl -> do
+    let a = att ct1 input
+    sizeChangingLstm w (VecPair (concat0 ht1 a)  ct1, input)
+
+sizeChangingLstm :: ∀ n m x bs. (KnownNat bs) =>
+       (((m + x) ⊸ n), ((m + x) ⊸ n), ((m + x) ⊸ n), ((m + x) ⊸ n)) ->
+       (HTV Float32 '[ '[m,bs], '[n,bs]] , (Tensor '[x,bs] Float32)) -> Gen (HTV Float32 '[ '[n,bs], '[n,bs]] , Tensor '[n,bs] Float32)
+sizeChangingLstm (wf,wi,wc,wo) (VecPair ht1 ct1, input) = do
   hx <- assign (concat0 ht1 input)
   let f = sigmoid (wf # hx)
       i = sigmoid (wi # hx)
@@ -335,7 +350,7 @@ infixr .--.
 (.--.) = stackRnnLayers
 
 
-bothRnnLayers,(.++.)  :: forall s1 s2 a t b u c v n bs. KnownNat bs => KnownLen s1 =>
+bothRnnLayers,(.++.)  :: forall s1 s2 a t b u c n bs. KnownNat bs => KnownLen s1 =>
                   RnnLayer n s1 a t '[b,bs] u -> RnnLayer n s2 a t '[c,bs] u -> RnnLayer n (s1 ++ s2) a t '[b+c,bs] u
 bothRnnLayers f g (hsplit @s1 -> (s0,s1)) x = do
   (s0',y) <- f s0 x

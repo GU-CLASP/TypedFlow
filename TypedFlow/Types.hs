@@ -29,6 +29,7 @@ module TypedFlow.Types where
 
 import Text.PrettyPrint.Compact hiding (All,Last)
 import GHC.TypeLits
+import Unsafe.Coerce
 import Data.Proxy
 import Control.Monad.State
 import Data.Char (toLower)
@@ -63,6 +64,9 @@ type family Init xs where
 
 -- initLast' :: forall s k. ((Init s ++ '[Last s]) ~ s => k) -> k
 -- initLast' k = unsafeCoerce# k -- why not?
+
+plusAssoc :: forall x y z. (x + y) + z :~: x + (y + z)
+plusAssoc = unsafeCoerce Refl
 
 initLast' :: forall s k. SList s -> ((Init s ++ '[Last s]) ~ s => k) -> k
 initLast' LZ _ = error "initLast': does not hold on empty lists"
