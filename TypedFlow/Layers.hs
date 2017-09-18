@@ -162,13 +162,13 @@ lstm :: ∀ n x bs. (KnownNat bs) => LSTMP n x ->
         RnnCell '[ '[n,bs], '[n,bs]] (Tensor '[x,bs] Float32) (Tensor '[n,bs] Float32)
 lstm = sizeChangingLstm
 
-attentiveLstm :: forall n a x bs. KnownNat bs =>
-  (Tensor '[n,bs] Float32 -> Tensor '[x,bs] Float32 -> Tensor '[a,bs] Float32) ->
+attentiveLstm :: forall x n a bs. KnownNat bs =>
+  (Tensor '[n,bs] Float32 -> Tensor '[x,bs] Float32 -> Gen (Tensor '[a,bs] Float32)) ->
   LSTMP n (a + x) ->
   RnnCell '[ '[n,bs], '[n,bs]] (Tensor '[x,bs] Float32) (Tensor '[n,bs] Float32)
 attentiveLstm att w (VecPair ht1 ct1, input) = case plusAssoc @n @a @x of
   Refl -> do
-    let a = att ct1 input
+    a <- att ct1 input
     sizeChangingLstm w (VecPair (concat0 ht1 a)  ct1, input)
 
 sizeChangingLstm :: ∀ n m x bs. (KnownNat bs) =>

@@ -139,7 +139,8 @@ def predict (session, model, xs, result="y_"):
     return np.concatenate(list(run()))
 
 
-def beam_translate(session, model, k, x, xlen, start_symbol, out_len, voc_size):
+def beam_translate(session, model, k, x, xlen, start_symbol):
+    (_,voc_size,out_len) = model["y_"].shape
     xs = np.array ([x] * k) # The input is always the same
     xs_len = np.array ([xlen]*k) # this is very important to get right
     ys = [[start_symbol]]  # start with a single thing; otherwise the minimum will be repeated k times
