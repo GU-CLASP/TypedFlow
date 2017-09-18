@@ -20,3 +20,5 @@ cabal.sandbox.config
 .stack-work/
 cabal.project.local
 .HTF/
+/examples/seq2seq/s2s.py
+/examples/seq2seq/synthtrees.txt

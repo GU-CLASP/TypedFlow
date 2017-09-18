@@ -2,6 +2,9 @@ local-packages:
   typedflow:
     location: .
 
+nix-deps:
+    - QuickCheck
+
 source-deps:
   pretty-compact:
     location: git@github.com:jyp/prettiest.git
