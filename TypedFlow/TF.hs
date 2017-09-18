@@ -298,11 +298,10 @@ gather = binOp "tf.gather"
 
 -- | Size-preserving convolution operation.
 convolution :: forall outputChannels filterSpatialShape inChannels s t.
-                KnownLen filterSpatialShape =>
-                  ((1 + Length filterSpatialShape) ~ Length s) => -- the last dim of s is the batch size
-                  T ('[inChannels] ++ s) t -> -- ^ input tensor (batched)
-                  T ('[outputChannels,inChannels] ++ filterSpatialShape) t ->  -- ^ filters
-                  T ('[outputChannels] ++ s) t
+               KnownLen filterSpatialShape => ((1 + Length filterSpatialShape) ~ Length s) -- the last dim of s is the batch size
+            => T ('[inChannels] ++ s) t -- ^ input tensor (batched)
+            -> T ('[outputChannels,inChannels] ++ filterSpatialShape) t -- ^ filters
+            -> T ('[outputChannels] ++ s) t
 convolution (T input) (T filters) = T (funcall "tf.nn.convolution" [input,filters
                                                                    ,named "padding" (text (show "SAME")) -- otherwise the shape s changes
                                                                    ,named "data_format" (text (show dataFormat))])
@@ -348,18 +347,16 @@ cast (T t) = T (funcall "tf.cast" [t, showTyp @ u])
 
 
 -- | (dense) softmax cross entropy with logits.
-softmaxCrossEntropyWithLogits ::
-  Tensor '[numClasses,batchSize] Float32 -> -- ^ labels
-  Tensor '[numClasses,batchSize] Float32 -> -- ^ logits
-  Tensor '[batchSize] Float32
+softmaxCrossEntropyWithLogits :: Tensor '[numClasses,batchSize] Float32 -- ^ labels
+                              -> Tensor '[numClasses,batchSize] Float32 -- ^ logits
+                              -> Tensor '[batchSize] Float32
 softmaxCrossEntropyWithLogits (T labels) (T logits) =
   T (funcall "tf.nn.softmax_cross_entropy_with_logits" [named "labels" labels,named "logits" logits])
 
 -- | sparse softmax cross entropy with logits.
-sparseSoftmaxCrossEntropyWithLogits ::
-  Tensor s Int32 -> -- ^ desired labels
-  Tensor (numClasses ': s) Float32 -> -- ^ predictions
-  Tensor s Float32
+sparseSoftmaxCrossEntropyWithLogits :: Tensor s Int32                   -- ^ desired labels
+                                    -> Tensor (numClasses ': s) Float32 -- ^ predictions
+                                    -> Tensor s Float32
 sparseSoftmaxCrossEntropyWithLogits (T labels) (T logits) =
   T (funcall "tf.nn.sparse_softmax_cross_entropy_with_logits" [named "labels" labels,named "logits" logits])
 
