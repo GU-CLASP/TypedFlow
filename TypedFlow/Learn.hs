@@ -31,19 +31,11 @@ import GHC.TypeLits (KnownNat)
 import Control.Monad.State (modify, gets)
 
 
-
--- crossEntropy :: Tensor '[n,bs] Float32 -> Tensor '[n,bs] Float32 -> Tensor '[bs] Float32
--- crossEntropy y_ y = negate (reduceSum0 (y_ ⊙ log y))
-
-  -- (- t * log(y) - (1 - t) * log(1 - y))
-
 binaryCrossEntropy :: KnownNat bs => Tensor '[bs] Float32 -> Tensor '[bs] Float32 -> Tensor '[bs] Float32
 binaryCrossEntropy t y = negate (t ⊙ log y) ⊝ (ones ⊝ t) ⊙ log (ones ⊝ y)
 
 --------------------------------
 -- Model maker.
-
-type Batch s batchSize = Tensor (s++'[batchSize])
 
 -- | First type argument is the number of classes.
 -- @categorical logits gold@
@@ -90,17 +82,17 @@ timedCategorical targetWeights logits' y = do
   let crossEntropies = sparseSoftmaxCrossEntropyWithLogits y (transpose01 logits)
   modelLoss <- assign (reduceMeanAll (crossEntropies ⊙ targetWeights))
   return ModelOutput{..}
-  
--- TODO: add a variant of timedCategorical with sampled_softmax_loss
 
+-- | Triple of values that are always output in a model: prediction, loss and accuracy.
 data ModelOutput s t = ModelOutput {modelY :: T s t -- ^ prediction
                                    ,modelLoss :: Scalar Float32
                                    ,modelAccuracy :: Scalar Float32
                                    }
--- | (input value, gold value) ↦ (prediction, accuracy, loss)
+
+-- | A standard modelling function: (input value, gold value) ↦ (prediction, accuracy, loss)
 type Model input tIn output tOut = T input tIn -> T output tOut -> Gen (ModelOutput output tOut)
 
-
+-- | Model with binary output.
 binary :: forall bs. (KnownNat bs) => Model '[bs] Float32 '[bs] Int32
 binary score y = do
   sigy_ <- assign (sigmoid score)
@@ -111,11 +103,15 @@ binary score y = do
   modelLoss <- assign (reduceMeanAll (binaryCrossEntropy (cast @Float32 y) sigy_))
   return ModelOutput{..}
 
-data Options = Options {maxGradientNorm :: Maybe Prelude.Float}
+-- | Model compiler options
+data Options = Options {maxGradientNorm :: Maybe Prelude.Float -- ^ apply gradient clipping
+                       }
 
+-- | default model compiler options
 defaultOptions :: Options
 defaultOptions = Options {maxGradientNorm = Nothing}
 
+-- | compile a standard model
 compile :: forall sx tx sy ty sy_ ty_.
            (KnownShape sx, KnownTyp tx, KnownShape sy, KnownTyp ty, KnownShape sy_) =>
            Options -> (Tensor sx tx -> Tensor sy ty -> Gen (ModelOutput sy_ ty_))
@@ -126,6 +122,8 @@ compile options f = compileGen options $ do
   f x =<< placeholder "y"
 
 
+-- | Generic a model with non-standard parameters ("x" and "y" must be
+-- provided as placeholders manually).
 compileGen :: forall sy ty. (KnownShape sy) =>
            Options -> Gen (ModelOutput sy ty) -> Gen ()
 compileGen Options{..} model = knownLast @sy $ do

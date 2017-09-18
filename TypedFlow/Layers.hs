@@ -447,7 +447,6 @@ gatherFinalStates dynLen states = nth0 0 (reverseSequences dynLen states)
 -- gatherFinalStates' (T dynLen)t = gather (flattenN2 @x @n @bs t) indexInFlat
 --  where indexInFlat = (dynLen - 1) + tf.range(0, bs) * n
 
--- | 
 gathers :: forall n bs xs. All (LastEqual bs) xs => All KnownLen xs => KnownNat n =>
             SList xs -> T '[bs] Int32 -> FHTV (Ap (FMap (Cons n)) xs) -> FHTV xs
 gathers LZ _ Unit = Unit
