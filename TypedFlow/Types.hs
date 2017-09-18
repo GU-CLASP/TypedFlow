@@ -407,7 +407,8 @@ newtype Gen x = Gen {fromGen :: State GState x} deriving (Monad, MonadState GSta
 newParameter :: MonadState GState m => ParamInfo -> m ()
 newParameter p =   modify $ \GState{..} -> GState{genParams = p:genParams,..}
 
-peekAt :: MonadState GState m => String -> Tensor s t -> m ()
+-- | Name a tensor so that it is made available for session.run. (See the )
+peekAt :: String -> Tensor s t -> Gen ()
 peekAt p (T v) = modify $ \GState{..} -> GState{genPeeks = (p,v):genPeeks,..}
 
 newVar :: Gen DOC
