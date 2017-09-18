@@ -1,6 +1,9 @@
+test: s2s.py synthtrees.txt main.py
+	nix-shell --run "python main.py"
+
 s2s.py: Seq2Seq.hs
-	ghci -i../.. Seq2Seq.hs -e main
+	nix-shell ../../.styx/shell.nix --run "ghci -i../.. Seq2Seq.hs -e main"
 
 synthtrees.txt: GenTr.hs
-	ghc --make GenTr
-        ./GenTr
+	nix-shell ../../.styx/shell.nix --run "ghc --make GenTr"
+	./GenTr

@@ -11,4 +11,5 @@ source-deps:
     revision: a36f4ea19eed4ece78f7c939a1bc73a3393386a2
     # location: ~/repo/prettiest
 
-
+nixpkgs:
+  url: https://github.com/NixOS/nixpkgs-channels/archive/nixos-17.03.tar.gz

@@ -121,7 +121,7 @@ model = do
 main :: IO ()
 main = generateFile "s2s.py" (compileGen
                                defaultOptions {maxGradientNorm = Just 5}
-                               (model @15295 @20 @256))
+                               (model @15 @22 @256))
 
 {-> main
 
