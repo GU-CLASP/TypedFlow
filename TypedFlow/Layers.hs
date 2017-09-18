@@ -32,38 +32,45 @@ import GHC.TypeLits
 import TypedFlow.TF
 import TypedFlow.Types
 import Control.Monad.State (gets)
-import Data.Type.Equality
+-- import Data.Type.Equality
 -- import Data.Kind (Type,Constraint)
-
+import Data.Monoid ((<>))
 ---------------------
 -- Linear functions
 
 
 -- A linear function form a to b is a matrix and a bias.
-type (a ⊸ b) = (Tensor '[a,b] Float32, Tensor '[b] Float32)
+type (a ⊸ b) = DenseP Float32 a b
+
+data DenseP t a b = DenseP {denseWeights :: Tensor '[a,b] t
+                           ,denseBiases :: Tensor '[b] t}
 
 -----------------------
 -- Feed-forward layers
 
 -- | Parameters for the embedding layers
-type EmbbeddingP numObjects embeddingSize t = Tensor '[numObjects, embeddingSize] ('Typ 'Float t)
+newtype EmbbeddingP numObjects embeddingSize t = EmbbeddingP (Tensor '[numObjects, embeddingSize] ('Typ 'Float t))
 
--- | Standard initializer for embedding layers
-embeddingInitializer :: (KnownNat numObjects, KnownBits b, KnownNat embeddingSize) => EmbbeddingP numObjects embeddingSize b
-embeddingInitializer = randomUniform (-0.05) 0.05
+instance (KnownNat numObjects, KnownBits b, KnownNat embeddingSize) => Parameter (EmbbeddingP numObjects embeddingSize b) where
+  parameter s (EmbbeddingP p) = EmbbeddingP <$> parameter s p
+
+instance (KnownNat numObjects, KnownBits b, KnownNat embeddingSize) => ParamWithDefault (EmbbeddingP numObjects embeddingSize b) where
+  defaultInitializer = EmbbeddingP (randomUniform (-0.05) 0.05)
 
 -- | embedding layer
 embedding :: ∀ embeddingSize numObjects batchSize t.
              EmbbeddingP numObjects embeddingSize t -> Tensor '[batchSize] Int32 -> Tensor '[embeddingSize,batchSize] ('Typ 'Float t)
-embedding param input = gather @ '[embeddingSize] (transpose param) input
+embedding (EmbbeddingP param) input = gather @ '[embeddingSize] (transpose param) input
 
--- | Standard initializer for a linear function (dense layers)
-denseInitialiser :: (KnownNat n, KnownNat m) => (n ⊸ m)
-denseInitialiser = (glorotUniform,truncatedNormal 0.1)
+instance (KnownNat a, KnownNat b, KnownTyp t) => Parameter (DenseP t a b) where
+  parameter s (DenseP x y) = DenseP <$> parameter (s<>"_w") x <*> parameter (s<>"_bias") y
+
+instance (KnownNat n, KnownNat m) => ParamWithDefault (n ⊸ m) where
+  defaultInitializer = DenseP glorotUniform (truncatedNormal 0.1)
 
 -- | Apply a linear function
 (#) :: (a ⊸ b) -> T '[a,batchSize] Float32 -> Tensor '[b,batchSize] Float32
-(weightMatrix, bias) # v = weightMatrix ∙ v + bias
+(DenseP weightMatrix bias) # v = weightMatrix ∙ v + bias
 
 -- | Dense layer
 dense :: ∀m n batchSize. (n ⊸ m) -> Tensor '[n, batchSize] Float32 -> (Tensor '[m, batchSize] Float32)
@@ -107,20 +114,24 @@ mkDropouts d = appEndoTensor <$> mkDropouts' shapeSList where
 ------------------------
 -- Convolutional layers
 
--- | Standard initializer for a convolutional layer
-convInitialiser :: (KnownShape s1, KnownShape s2) =>
-                   (T s1 ('Typ 'Float w), T s2 ('Typ 'Float w))
-convInitialiser = (truncatedNormal 0.1, constant 0.1)
+data ConvP t outChannels inChannels filterSpatialShape
+  = ConvP (T ('[outChannels,inChannels] ++ filterSpatialShape)  ('Typ 'Float t)) (T '[outChannels] ('Typ 'Float t))
+
+instance (KnownNat outChannels,KnownNat inChannels, KnownShape filterSpatialShape, KnownBits t) =>
+  ParamWithDefault (ConvP t outChannels inChannels filterSpatialShape) where
+  defaultInitializer = ConvP (truncatedNormal 0.1) (constant 0.1)
+
+instance (KnownNat outChannels,KnownNat inChannels, KnownShape filterSpatialShape, KnownBits t) =>
+  Parameter (ConvP t outChannels inChannels filterSpatialShape) where
+  parameter s (ConvP x y) = ConvP <$> parameter (s<>"_filters") x <*> parameter (s <> "_biases") y
 
 -- | Size-preserving convolution layer
 conv :: forall outChannels filterSpatialShape inChannels s t.
                   ((1 + Length filterSpatialShape) ~ Length s,
-                   KnownLen filterSpatialShape,
-                   KnownShape s) => -- the last dim of s is the batch size
-                  (T ('[outChannels,inChannels] ++ filterSpatialShape) t, T ('[outChannels] ++ Init s) t) ->
-                  T ('[inChannels] ++ s) t -> (T ('[outChannels] ++ s) t)
-conv (filters,bias) input = initLast @s (add @'[Last s] c  bias)
- where c = (convolution input filters)
+                   KnownLen filterSpatialShape) => -- the last dim of s is the batch size
+                  ConvP t outChannels inChannels filterSpatialShape ->
+                  T ('[inChannels] ++ s) ('Typ 'Float t) -> (T ('[outChannels] ++ s) ('Typ 'Float t))
+conv (ConvP filters bias) input = convolution input filters + bias
 
 
 -- | 2 by 2 maxpool layer.
@@ -151,8 +162,8 @@ timeDistribute' stateLess (Unit,a) = do
 
 -- | Standard RNN gate initializer. (The recurrent kernel is
 -- orthogonal to avoid divergence; the input kernel is glorot)
-cellInitializerBit :: ∀ n x. (KnownNat n, KnownNat x) => (n + x) ⊸ n
-cellInitializerBit = (concat0 recurrentInitializer kernelInitializer,biasInitializer)
+cellInitializerBit :: ∀ n x. (KnownNat n, KnownNat x) => DenseP Float32 (n + x) n
+cellInitializerBit = DenseP (concat0 recurrentInitializer kernelInitializer) biasInitializer
   where
         recurrentInitializer :: Tensor '[n, n] Float32
         recurrentInitializer = randomOrthogonal
@@ -161,38 +172,18 @@ cellInitializerBit = (concat0 recurrentInitializer kernelInitializer,biasInitial
         biasInitializer = zeros
 
 -- | Parameter for an LSTM
-type LSTMP n x = (((n + x) ⊸ n),
-                  ((n + x) ⊸ n),
-                  ((n + x) ⊸ n),
-                  ((n + x) ⊸ n))
+data LSTMP n x = LSTMP ((n + x) ⊸ n) ((n + x) ⊸ n) ((n + x) ⊸ n) ((n + x) ⊸ n)
 
--- | Standard LSTM initializer
-lstmInitializer :: (KnownNat n, KnownNat x) => LSTMP n x
-lstmInitializer = (forgetInit, cellInitializerBit, cellInitializerBit,cellInitializerBit)
-  where forgetInit = (fst cellInitializerBit, ones)
+instance (KnownNat n, KnownNat x) => Parameter (LSTMP n x) where
+  parameter s (LSTMP x y z w) = LSTMP <$> parameter (s<>"_f") x <*> parameter (s<>"_i") y <*> parameter (s<>"_c") z <*> parameter (s<>"_o") w
+instance (KnownNat n, KnownNat x) => ParamWithDefault (LSTMP n x) where
+  defaultInitializer = LSTMP forgetInit cellInitializerBit cellInitializerBit cellInitializerBit
+    where forgetInit = DenseP (denseWeights cellInitializerBit) ones
 
 -- | Standard LSTM
 lstm :: ∀ n x bs. (KnownNat bs) => LSTMP n x ->
         RnnCell '[ '[n,bs], '[n,bs]] (Tensor '[x,bs] Float32) (Tensor '[n,bs] Float32)
-lstm = sizeChangingLstm
-
--- | LSTM for an attention model. Takes an attention function.
-attentiveLstm :: forall x n a bs. KnownNat bs =>
-  (Tensor '[n,bs] Float32 -> Tensor '[x,bs] Float32 -> Gen (Tensor '[a,bs] Float32)) ->
-  LSTMP n (a + x) ->
-  RnnCell '[ '[n,bs], '[n,bs]] (Tensor '[x,bs] Float32) (Tensor '[n,bs] Float32)
-attentiveLstm att w (VecPair ht1 ct1, input) = case plusAssoc @n @a @x of
-  Refl -> do
-    a <- att ct1 input
-    sizeChangingLstm w (VecPair (concat0 ht1 a)  ct1, input)
-
--- | standard LSTM, but with a state whose size is different at
--- between the input and the output. This can be useful as a building
--- block for complex RNN cells.
-sizeChangingLstm :: ∀ n m x bs. (KnownNat bs) =>
-       (((m + x) ⊸ n), ((m + x) ⊸ n), ((m + x) ⊸ n), ((m + x) ⊸ n)) ->
-       (HTV Float32 '[ '[m,bs], '[n,bs]] , (Tensor '[x,bs] Float32)) -> Gen (HTV Float32 '[ '[n,bs], '[n,bs]] , Tensor '[n,bs] Float32)
-sizeChangingLstm (wf,wi,wc,wo) (VecPair ht1 ct1, input) = do
+lstm (LSTMP wf wi wc wo) (VecPair ht1 ct1, input) = do
   hx <- assign (concat0 ht1 input)
   let f = sigmoid (wf # hx)
       i = sigmoid (wi # hx)
@@ -202,19 +193,28 @@ sizeChangingLstm (wf,wi,wc,wo) (VecPair ht1 ct1, input) = do
   h <- assign (o ⊙ tanh c)
   return (VecPair h c, h)
 
--- | Parameter for a GRU
-type GRUP n x = (((n + x) ⊸ n),
-                 ((n + x) ⊸ n),
-                 ((n + x) ⊸ n))
+-- | LSTM for an attention model. Takes an attention function.
+attentiveLstm :: forall x n a bs. KnownNat bs =>
+  (Tensor '[n,bs] Float32 -> Tensor '[x,bs] Float32 -> Gen (Tensor '[a,bs] Float32)) ->
+  LSTMP n (a+x) ->
+  RnnCell '[ '[n,bs], '[n,bs]] (Tensor '[x,bs] Float32) (Tensor '[n,bs] Float32)
+attentiveLstm att w (VecPair ht1 ct1, input) = do
+  a <- att ct1 input
+  lstm w (VecPair ht1  ct1, concat0 a input)
 
--- | Standard GRU initializer
-gruInitializer :: (KnownNat n, KnownNat x) => GRUP n x
-gruInitializer = (cellInitializerBit, cellInitializerBit, cellInitializerBit)
+-- | Parameter for a GRU
+data GRUP n x = GRUP ((n + x) ⊸ n)  ((n + x) ⊸ n)  ((n + x) ⊸ n)
+
+instance (KnownNat n, KnownNat x) => Parameter (GRUP n x) where
+  parameter s (GRUP x y z) = GRUP <$> parameter (s<>"_z") x <*> parameter (s<>"_r") y <*> parameter (s<>"_w") z
+instance (KnownNat n, KnownNat x) => ParamWithDefault (GRUP n x) where
+  defaultInitializer = GRUP cellInitializerBit cellInitializerBit cellInitializerBit
+
 
 -- | Standard GRU cell
 gru :: ∀ n x bs. (KnownNat bs, KnownNat n) => GRUP n x ->
         RnnCell '[ '[n,bs] ] (Tensor '[x,bs] Float32) (Tensor '[n,bs] Float32)
-gru (wz,wr,w) (VecSing ht1, xt) = do
+gru (GRUP wz wr w) (VecSing ht1, xt) = do
   hx <- assign (concat0 ht1 xt)
   let zt = sigmoid (wz # hx)
       rt = sigmoid (wr # hx)

@@ -15,7 +15,7 @@ import TypedFlow
 mkLSTM :: ∀ n x bs. KnownNat x => KnownNat n => (KnownNat bs) =>
         String -> Gen (RnnCell '[ '[n,bs], '[n,bs]] (Tensor '[x,bs] Float32) (Tensor '[n,bs] Float32))
 mkLSTM pName = do
-  params <- parameter pName lstmInitializer
+  params <- parameterDefault pName
   drp1 <- mkDropout (DropProb 0.2)
   rdrp1 <- mkDropouts (DropProb 0.2)
   return (timeDistribute drp1 .-. onStates rdrp1 (lstm params))
@@ -25,8 +25,8 @@ mkBiLSTM :: ∀ time n x bs. KnownNat time => KnownNat x => KnownNat n => (Known
             T '[bs] Int32 -> -- lengths
             Gen (RnnLayer time '[ '[n,bs], '[n,bs], '[n,bs], '[n,bs]] '[x,bs] Float32 '[n+n,bs] Float32)
 mkBiLSTM pName dynLen = do
-  p1 <- parameter (pName ++ ".fwd") lstmInitializer
-  p2 <- parameter (pName ++ ".bwd") lstmInitializer
+  p1 <- parameterDefault (pName ++ ".fwd")
+  p2 <- parameterDefault (pName ++ ".bwd")
   drp <- mkDropout (DropProb 0.2)
   rdrp <- mkDropouts (DropProb 0.2)
   return (rnn (timeDistribute drp) .--.
@@ -69,7 +69,7 @@ decoder :: forall (lstmSize :: Nat) (n :: Nat) (outVocabSize :: Nat) (bs :: Nat)
                  -> Gen (Tensor '[n, outVocabSize, bs] Float32)
 decoder prefix lens hs thoughtVectors targetInput = do
   -- note: for an intra-language translation the embeddings can be shared.
-  projs <- parameter (prefix++"proj") denseInitialiser
+  projs <- parameterDefault (prefix++"proj")
   lstm1 <- mkLSTM (prefix++"lstm1")
   lstm2 <- mkLSTM (prefix++"lstm2")
   embs <- parameter "embs" embeddingInitializer
@@ -104,9 +104,9 @@ seq2seq :: forall (vocSize :: Nat) (n :: Nat) (bs :: Nat).
                  Tensor '[bs] Int32 ->
                  Tensor '[n, bs] Int32 ->
                  Gen (Tensor '[n, vocSize, bs] Float32)
-seq2seq input inputLen outputPlusStart = do
-  (thought,h) <- encoder @100 @vocSize "enc" inputLen input
-  decoder "dec" inputLen h thought outputPlusStart
+seq2seq input inputLen output = do
+  (thought,h) <- encoder @200 @vocSize "enc" inputLen input
+  decoder "dec" inputLen h thought output
 
 model :: forall vocSize len batchSize. KnownNat batchSize => KnownNat vocSize => KnownNat len => Gen (ModelOutput '[len, vocSize, batchSize] Float32)
 model = do

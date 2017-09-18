@@ -18,11 +18,11 @@ atShape x = x
 
 mnist :: forall batchSize. KnownNat batchSize => Model [784,batchSize] Float32  '[10,batchSize] Float32
 mnist input gold = do
-  filters1 <- parameter "f1" convInitialiser
-  filters2 <- parameter "f2" convInitialiser
-  w1 <- parameter "w1" denseInitialiser
-  w2 <- parameter "w2" denseInitialiser
-  let nn = arrange3                           #>
+  filters1 <- parameterDefault "f1"
+  filters2 <- parameterDefault "f2"
+  w1 <- parameterDefault "w1"
+  w2 <- parameterDefault "w2"
+  let nn = inflate3                           #>
            atShape @'[1,28,28,batchSize]      #>
            (relu . conv @32 @'[5,5] filters1) #>
            atShape @'[32,28,28,batchSize]     #>
@@ -30,7 +30,7 @@ mnist input gold = do
            atShape @'[32,14,14,batchSize]     #>
            (relu . conv @64 @'[5,5] filters2) #>
            maxPool2D @2 @2                    #>
-           linearize3                         #>
+           flatten3                           #>
            (relu . dense @1024 w1)            #>
            dense @10 w2
       logits = nn input
@@ -38,7 +38,7 @@ mnist input gold = do
 
 main :: IO ()
 main = do
-  writeFile "mnist_model.py" (generate $ compile defaultOptions (mnist @None))
+  generateFile "mnist_model.py" (compile defaultOptions (mnist @None))
   putStrLn "done!"
 
 {-> main

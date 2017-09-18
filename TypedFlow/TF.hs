@@ -499,6 +499,9 @@ if_ (T c) (T x) (T y) = T (funcall "tf.cond" [-- named "pred" -- names have chan
 -------------------------
 -- Generic parameters
 
+parameterDefault :: forall p. ParamWithDefault p => String -> Gen p
+parameterDefault name = parameter name defaultInitializer
+
 class Parameter p where
   -- | parameterize over tuples of tensors
   parameter :: String -> p -> Gen p
@@ -514,3 +517,6 @@ instance (Parameter p1, Parameter p2, Parameter p3) => Parameter (p1,p2,p3) wher
 
 instance (Parameter p1, Parameter p2, Parameter p3, Parameter p4) => Parameter (p1,p2,p3,p4) where
   parameter s (x,y,z,w) = (,,,) <$> parameter (s<>"_1") x <*> parameter (s<>"_2") y <*> parameter (s<>"_3") z <*> parameter (s<>"_4") w
+
+class Parameter p => ParamWithDefault p where
+  defaultInitializer :: p
