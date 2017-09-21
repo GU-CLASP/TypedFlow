@@ -93,8 +93,9 @@ reduceAll :: String -> Tensor s t -> Tensor '[] t
 reduceAll op = unOp ("tf.reduce_" ++ op)
 
 -- | Mean value of the input tensor.
-reduceMeanAll :: ∀ (s :: Shape) t. Tensor s t -> Tensor '[] t
+reduceMeanAll, reduceSumAll :: ∀ (s :: Shape) t. Tensor s t -> Tensor '[] t
 reduceMeanAll = reduceAll "mean"
+reduceSumAll = reduceAll "sum"
 
 -- | Internal. Use 'reduceSum', etc. instead.
 reduce :: ∀ s s' n t. KnownLen s' => String -> Tensor (s ++ (n ': s')) t -> Tensor (s ++ s') t
@@ -431,10 +432,12 @@ matvecmul m v = matmul v (transpose m)
 -- | Product of a matrix of weight with a (batched) vector .
 (∙) :: Tensor '[cols, rows] t -> Tensor '[cols,batchSize] t -> Tensor '[rows,batchSize] t
 m ∙ v = matvecmul m v
+infixl 7 ∙
 
 -- | Dot product between two batched vectors.
 (·) :: ∀ cols batchSize t. Tensor '[cols,batchSize] t -> Tensor '[cols,batchSize] t -> Tensor '[batchSize] t
 x · y = reduceSum0 (x ⊙ y)
+infixl 7 ·
 
 -- mapT' :: forall s t r u n. KnownLen r => KnownLen s => KnownNat n => (T s t -> T r u) ->  T (n ': s) t -> Gen (T (n ': r) u)
 -- mapT' f t = do

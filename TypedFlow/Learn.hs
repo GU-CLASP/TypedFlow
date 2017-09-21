@@ -78,7 +78,7 @@ timedCategorical targetWeights logits' y = do
   let y_ = argmax1 logits
       modelY = softmax1 logits
   correctPrediction <- assign (equal y_ y)
-  modelAccuracy <- assign (reduceMeanAll (flatten2 (cast @Float32 correctPrediction)))
+  modelAccuracy <- assign (reduceSumAll (flatten2 (cast @Float32 correctPrediction ⊙ targetWeights)) ⊘ reduceSumAll targetWeights) --   does not work
   let crossEntropies = sparseSoftmaxCrossEntropyWithLogits y (transpose01 logits)
   modelLoss <- assign (reduceMeanAll (crossEntropies ⊙ targetWeights))
   return ModelOutput{..}
