@@ -245,7 +245,8 @@ withBypass cell (s,x) = do
 -- | An attention scoring function. We assume that each portion of the
 -- input has size @e@. @d@ is typically the size of the current state
 -- of the output RNN.
-type AttentionScoring batchSize e d = Tensor '[e,batchSize] Float32 -> Tensor '[d,batchSize] Float32 -> Tensor '[batchSize] Float32
+type AttentionScoring t batchSize keySize valueSize =
+  Tensor '[keySize,batchSize] ('Typ 'Float t) -> Tensor '[valueSize,batchSize] ('Typ 'Float t) -> Tensor '[batchSize] ('Typ 'Float t)
 
 
 -- | @attnExample1 θ h st@ combines each element of the vector h with
@@ -253,7 +254,7 @@ type AttentionScoring batchSize e d = Tensor '[e,batchSize] Float32 -> Tensor '[
 -- element of h (using softmax) is returned.
 uniformAttn :: ∀ d m e batchSize. KnownNat m => 
                T '[batchSize] Int32 ->
-               AttentionScoring batchSize e d ->
+               AttentionScoring 'B32 batchSize e d ->
                T '[m,d,batchSize] Float32 -> T '[e,batchSize] Float32 -> Gen (T '[d,batchSize] Float32)
 uniformAttn lengths score hs_ ht = do
   xx <- mapT (score ht) hs_
@@ -312,7 +313,7 @@ uniformAttn lengths score hs_ ht = do
 -- commit 75aa22dfb159f10a1a5b4557777d9ff547c1975a)
 luongAttention :: ∀ attnSize d m e batchSize. KnownNat m => ( KnownNat batchSize) =>
                Tensor '[batchSize] Int32 ->
-               AttentionScoring batchSize e d ->
+               AttentionScoring 'B32 batchSize e d ->
                Tensor '[d+e,attnSize] Float32 ->
                T '[m,d,batchSize] Float32 -> T '[e,batchSize] Float32 -> Gen (T '[attnSize,batchSize] Float32)
 luongAttention lens score w hs_ ht = do
@@ -323,12 +324,25 @@ luongAttention lens score w hs_ ht = do
 -- | A multiplicative scoring function. See 
 -- https://github.com/tensorflow/nmt#background-on-the-attention-mechanism
 -- commit 75aa22dfb159f10a1a5b4557777d9ff547c1975a)
-luongMultiplicativeScoring :: forall e d batchSize. T [e,d] Float32 ->  AttentionScoring batchSize e d
-luongMultiplicativeScoring w ht hs = hs · ir
-  where ir :: T '[d,batchSize] Float32
-        ir = w ∙ ht
+multiplicativeScoring :: forall valueSize keySize batchSize.
+  T [keySize,valueSize] Float32 ->  AttentionScoring 'B32 batchSize keySize valueSize
+multiplicativeScoring w dt h = h · ir
+  where ir :: T '[valueSize,batchSize] Float32
+        ir = (w ∙ dt)
 
--- luongWrapper score w1 w2 θ hs = addAttentionWithFeedback (luongAttention (luongMultiplicativeScoring w1) w2 hs) (lstm θ)
+-- | An additive scoring function. See https://arxiv.org/pdf/1412.7449.pdf
+data AdditiveScoringP keySize valueSize nValues t = AdditiveScoringP
+  (Tensor '[nValues, 1]         ('Typ 'Float t))
+  (Tensor '[keySize, nValues]   ('Typ 'Float t))
+  (Tensor '[valueSize, nValues] ('Typ 'Float t))
+
+instance (KnownNat n, KnownNat k, KnownNat v, KnownBits t) => Parameter (AdditiveScoringP k v n t) where
+  parameter s (AdditiveScoringP x y z) = AdditiveScoringP <$> parameter (s<>"_v") x <*> parameter (s<>"_w1") y <*> parameter (s<>"_w2") z
+instance (KnownNat n, KnownNat k, KnownNat v, KnownBits t) => ParamWithDefault (AdditiveScoringP k v n t) where
+  defaultInitializer = AdditiveScoringP glorotUniform glorotUniform glorotUniform
+
+additiveScoring :: AdditiveScoringP keySize valueSize nValues t -> AttentionScoring t batchSize valueSize keySize
+additiveScoring (AdditiveScoringP v w1 w2) dt h = squeeze0 (v ∙ tanh ((w1 ∙ h) ⊕ (w2 ∙ dt)))
 
 
 -- | A cell in an rnn. @state@ is the state propagated through time.
