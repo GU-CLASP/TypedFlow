@@ -43,7 +43,7 @@ import Data.Monoid ((<>))
 type (a ⊸ b) = DenseP Float32 a b
 
 data DenseP t a b = DenseP {denseWeights :: Tensor '[a,b] t
-                           ,denseBiases :: Tensor '[b] t}
+                           ,denseBiases  :: Tensor '[b] t}
 
 -----------------------
 -- Feed-forward layers
@@ -70,7 +70,7 @@ instance (KnownNat n, KnownNat m) => ParamWithDefault (n ⊸ m) where
 
 -- | Apply a linear function
 (#) :: (a ⊸ b) -> T '[a,batchSize] Float32 -> Tensor '[b,batchSize] Float32
-(DenseP weightMatrix bias) # v = weightMatrix ∙ v + bias
+(DenseP weightMatrix bias) # v = (weightMatrix ∙ v) + bias
 
 -- | Dense layer
 dense :: ∀m n batchSize. (n ⊸ m) -> Tensor '[n, batchSize] Float32 -> (Tensor '[m, batchSize] Float32)
@@ -249,8 +249,9 @@ withBypass cell (s,x) = do
 -- of the output RNN.
 type AttentionScoring t batchSize keySize valueSize =
   Tensor '[keySize,batchSize] ('Typ 'Float t) -> Tensor '[valueSize,batchSize] ('Typ 'Float t) -> Tensor '[batchSize] ('Typ 'Float t)
--- TODO: may be more optimal to use the type
--- Tensor '[keySize,batchSize] ('Typ 'Float t) -> Tensor '[valueSize,batchSize,nValues] ('Typ 'Float t) -> Tensor '[batchSize,nValues] ('Typ 'Float t)
+
+type AttentionScoring' t batchSize keySize valueSize nValues = 
+  Tensor '[keySize,batchSize] ('Typ 'Float t) -> Tensor '[nValues,valueSize,batchSize] ('Typ 'Float t) -> Tensor '[nValues,batchSize] ('Typ 'Float t)
 
 type AttentionFunction batchSize keySize valueSize =
   T '[keySize,batchSize] Float32 -> Gen (T '[valueSize,batchSize] Float32)
@@ -265,6 +266,23 @@ uniformAttn :: ∀ valueSize m keySize batchSize. KnownNat m =>
 uniformAttn lengths score hs_ ht = do
   xx <- mapT (score ht) hs_
   let   αt :: T '[m,batchSize] Float32
+        αt = softmax0 (mask ⊙ xx)
+        ct :: T '[valueSize,batchSize] Float32
+        ct = squeeze0 (matmul hs_ (expandDim0 αt))
+        mask = cast (sequenceMask @m lengths) -- mask according to length
+  return ct
+
+
+-- | @attnExample1 θ h st@ combines each element of the vector h with
+-- s, and applies a dense layer with parameters θ. The "winning"
+-- element of h (using softmax) is returned.
+uniformAttn' :: ∀ valueSize m keySize batchSize. KnownNat m => 
+               T '[batchSize] Int32 ->
+               AttentionScoring' 'B32 batchSize keySize valueSize m ->
+               T '[m,valueSize,batchSize] Float32 -> AttentionFunction batchSize keySize valueSize
+uniformAttn' lengths score hs_ ht = do
+  let   αt :: T '[m,batchSize] Float32
+        xx = score ht hs_
         αt = softmax0 (mask ⊙ xx)
         ct :: T '[valueSize,batchSize] Float32
         ct = squeeze0 (matmul hs_ (expandDim0 αt))
@@ -331,11 +349,18 @@ luongAttention lens score w hs_ ht = do
 -- | A multiplicative scoring function. See 
 -- https://github.com/tensorflow/nmt#background-on-the-attention-mechanism
 -- commit 75aa22dfb159f10a1a5b4557777d9ff547c1975a
-multiplicativeScoring :: forall valueSize keySize batchSize.
-  T [keySize,valueSize] Float32 ->  AttentionScoring 'B32 batchSize keySize valueSize
+multiplicativeScoring :: forall valueSize keySize batchSize t.
+  T [keySize,valueSize] ('Typ 'Float t) ->  AttentionScoring t batchSize keySize valueSize
 multiplicativeScoring w dt h = h · ir
-  where ir :: T '[valueSize,batchSize] Float32
+  where ir :: T '[valueSize,batchSize] ('Typ 'Float t)
         ir = w ∙ dt
+
+multiplicativeScoring' :: forall valueSize keySize batchSize nValues t.
+  KnownNat batchSize => T [keySize,valueSize] ('Typ 'Float t) ->  AttentionScoring' t batchSize keySize valueSize nValues 
+multiplicativeScoring' w dt hs = squeeze1 (matmul (expandDim1 ir) hs)
+  where ir :: T '[valueSize,batchSize] ('Typ 'Float t)
+        ir = w ∙ dt
+
 
 -- | An additive scoring function. See https://arxiv.org/pdf/1412.7449.pdf
 data AdditiveScoringP sz keySize valueSize t = AdditiveScoringP
@@ -351,6 +376,15 @@ instance (KnownNat n, KnownNat k, KnownNat v, KnownBits t) => ParamWithDefault (
 additiveScoring :: AdditiveScoringP sz keySize valueSize t -> AttentionScoring t batchSize valueSize keySize
 additiveScoring (AdditiveScoringP v w1 w2) dt h = squeeze0 (v ∙ tanh ((w1 ∙ h) ⊕ (w2 ∙ dt)))
 
+additiveScoring' :: forall sz keySize valueSize t nValues batchSize. KnownNat sz => KnownNat keySize => (KnownNat nValues, KnownNat batchSize) =>
+  AdditiveScoringP sz keySize valueSize t -> AttentionScoring' t batchSize valueSize keySize nValues
+additiveScoring' (AdditiveScoringP v w1 w2) dt h = transpose r''
+  where w1h :: Tensor '[sz,batchSize, nValues] ('Typ 'Float t)
+        w1h = transposeN01 @'[sz] (reshape @'[sz,nValues, batchSize] w1h')
+        w1h' = matmul (reshape @'[keySize, nValues*batchSize] (transpose01 h)) (transpose01 w1)
+        w2dt = w2 ∙ dt
+        z' = reshape @'[sz,batchSize*nValues] (tanh (w1h + w2dt))
+        r'' = reshape @[batchSize,nValues] (matmul z' (transpose v))
 
 -- | A cell in an rnn. @state@ is the state propagated through time.
 type RnnCell states input output = (HTV Float32 states , input) -> Gen (HTV Float32 states , output)

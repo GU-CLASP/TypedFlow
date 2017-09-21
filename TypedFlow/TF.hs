@@ -299,6 +299,10 @@ transpose01 :: ∀ s m n t. KnownLen s => T (m ': n ': s) t -> T (n ': m ': s) t
 transpose01 (T x) = T (funcall "tf.transpose" [x, named "perm" (list (map integer ([0..l-1] ++ [l Prelude.+ 1,l])))])
   where l = listLen @s
 
+-- | Transposition. See the type for the permutation of dimensions.
+transposeN01 :: ∀ s m n t. T (s ++ [m,n]) t -> T (s ++ [n,m]) t
+transposeN01 (T x) = T (funcall "tf.transpose" [x, named "perm" (list (map integer [1,0]))])
+
 class LastEqual x xs
 instance                   LastEqual x (x ': '[])
 instance LastEqual x (y2 ': xs) => LastEqual x (y ': (y2 ': xs))
