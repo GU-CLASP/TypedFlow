@@ -194,13 +194,15 @@ lstm (LSTMP wf wi wc wo) (VecPair ht1 ct1, input) = do
   return (VecPair h c, h)
 
 -- | LSTM for an attention model. Takes an attention function.
-attentiveLstm :: forall x n a bs. KnownNat bs =>
-  (Tensor '[n,bs] Float32 -> Tensor '[x,bs] Float32 -> Gen (Tensor '[a,bs] Float32)) ->
-  LSTMP n (a+x) ->
+attentiveLstm :: forall x n bs. KnownNat bs =>
+  AttentionFunction bs n n ->
+  LSTMP n x ->
   RnnCell '[ '[n,bs], '[n,bs]] (Tensor '[x,bs] Float32) (Tensor '[n,bs] Float32)
-attentiveLstm att w (VecPair ht1 ct1, input) = do
-  a <- att ct1 input
-  lstm w (VecPair ht1  ct1, concat0 a input)
+attentiveLstm att w x = do
+  (VecPair ht ct, _ht) <- lstm w x
+  a <- att ht
+  let ht' = ht ⊕ a -- alternatively add a dense layer to combine
+  return (VecPair ht' ct, ht')
 
 -- | Parameter for a GRU
 data GRUP n x = GRUP ((n + x) ⊸ n)  ((n + x) ⊸ n)  ((n + x) ⊸ n)
@@ -247,20 +249,24 @@ withBypass cell (s,x) = do
 -- of the output RNN.
 type AttentionScoring t batchSize keySize valueSize =
   Tensor '[keySize,batchSize] ('Typ 'Float t) -> Tensor '[valueSize,batchSize] ('Typ 'Float t) -> Tensor '[batchSize] ('Typ 'Float t)
+-- TODO: may be more optimal to use the type
+-- Tensor '[keySize,batchSize] ('Typ 'Float t) -> Tensor '[valueSize,batchSize,nValues] ('Typ 'Float t) -> Tensor '[batchSize,nValues] ('Typ 'Float t)
 
+type AttentionFunction batchSize keySize valueSize =
+  T '[keySize,batchSize] Float32 -> Gen (T '[valueSize,batchSize] Float32)
 
 -- | @attnExample1 θ h st@ combines each element of the vector h with
 -- s, and applies a dense layer with parameters θ. The "winning"
 -- element of h (using softmax) is returned.
-uniformAttn :: ∀ d m e batchSize. KnownNat m => 
+uniformAttn :: ∀ valueSize m keySize batchSize. KnownNat m => 
                T '[batchSize] Int32 ->
-               AttentionScoring 'B32 batchSize e d ->
-               T '[m,d,batchSize] Float32 -> T '[e,batchSize] Float32 -> Gen (T '[d,batchSize] Float32)
+               AttentionScoring 'B32 batchSize keySize valueSize ->
+               T '[m,valueSize,batchSize] Float32 -> AttentionFunction batchSize keySize valueSize
 uniformAttn lengths score hs_ ht = do
   xx <- mapT (score ht) hs_
   let   αt :: T '[m,batchSize] Float32
         αt = softmax0 (mask ⊙ xx)
-        ct :: T '[d,batchSize] Float32
+        ct :: T '[valueSize,batchSize] Float32
         ct = squeeze0 (matmul hs_ (expandDim0 αt))
         mask = cast (sequenceMask @m lengths) -- mask according to length
   return ct
@@ -319,11 +325,12 @@ luongAttention :: ∀ attnSize d m e batchSize. KnownNat m => ( KnownNat batchSi
 luongAttention lens score w hs_ ht = do
   ct <- uniformAttn lens score hs_ ht
   return (tanh (w ∙ (concat0 ct ht)))
+-- This is essentially a dense layer on top of uniform attention; consider removing it.
 
 
 -- | A multiplicative scoring function. See 
 -- https://github.com/tensorflow/nmt#background-on-the-attention-mechanism
--- commit 75aa22dfb159f10a1a5b4557777d9ff547c1975a)
+-- commit 75aa22dfb159f10a1a5b4557777d9ff547c1975a
 multiplicativeScoring :: forall valueSize keySize batchSize.
   T [keySize,valueSize] Float32 ->  AttentionScoring 'B32 batchSize keySize valueSize
 multiplicativeScoring w dt h = h · ir
@@ -331,17 +338,17 @@ multiplicativeScoring w dt h = h · ir
         ir = (w ∙ dt)
 
 -- | An additive scoring function. See https://arxiv.org/pdf/1412.7449.pdf
-data AdditiveScoringP keySize valueSize nValues t = AdditiveScoringP
-  (Tensor '[nValues, 1]         ('Typ 'Float t))
-  (Tensor '[keySize, nValues]   ('Typ 'Float t))
-  (Tensor '[valueSize, nValues] ('Typ 'Float t))
+data AdditiveScoringP sz keySize valueSize t = AdditiveScoringP
+  (Tensor '[sz, 1]         ('Typ 'Float t))
+  (Tensor '[keySize, sz]   ('Typ 'Float t))
+  (Tensor '[valueSize, sz] ('Typ 'Float t))
 
 instance (KnownNat n, KnownNat k, KnownNat v, KnownBits t) => Parameter (AdditiveScoringP k v n t) where
   parameter s (AdditiveScoringP x y z) = AdditiveScoringP <$> parameter (s<>"_v") x <*> parameter (s<>"_w1") y <*> parameter (s<>"_w2") z
 instance (KnownNat n, KnownNat k, KnownNat v, KnownBits t) => ParamWithDefault (AdditiveScoringP k v n t) where
   defaultInitializer = AdditiveScoringP glorotUniform glorotUniform glorotUniform
 
-additiveScoring :: AdditiveScoringP keySize valueSize nValues t -> AttentionScoring t batchSize valueSize keySize
+additiveScoring :: AdditiveScoringP sz keySize valueSize t -> AttentionScoring t batchSize valueSize keySize
 additiveScoring (AdditiveScoringP v w1 w2) dt h = squeeze0 (v ∙ tanh ((w1 ∙ h) ⊕ (w2 ∙ dt)))
 
 
