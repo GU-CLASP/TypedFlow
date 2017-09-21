@@ -132,7 +132,7 @@ def predict (session, model, xs, result="y_"):
                     chunks[k] = list(chunks[k]) + [zeros[k]] * (bs - origLen) # pad the last chunk
             else:
                 origLen = bs
-            print (".")
+            # print (".")
             yield (session.run(model[result],
                                dict([(model["training_phase"],False)] +
                                     [(model[k],chunks[k]) for k in xs])))[:origLen]

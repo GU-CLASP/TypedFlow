@@ -1,4 +1,7 @@
-import TypedFlow.typedflow_rts as tyf
+import sys
+sys.path.append('../..') # so we can see the rts.
+
+import typedflow_rts as tyf
 import tensorflow as tf
 import numpy as np
 from s2s import mkModel
@@ -6,7 +9,7 @@ import os
 import math
 import random
 
-tyf.cuda_pref_device(2)
+tyf.cuda_pref_device(0)
 
 chars = sorted(list("()01234abcde^$ "))
 
@@ -17,14 +20,17 @@ indices_char = dict((i, c) for i, c in enumerate(chars))
 MAXLEN = 22
 def pad(ws): return (ws + ' '*(MAXLEN - len(ws)))
 
-def encode(s): return np.array([char_indices[c] for c in s])
+def encode(s):
+    # print ("proun", s)
+    return np.array([char_indices[c] for c in s])
+
 def decode(s): return "".join([indices_char[c] for c in list(s)])
 
 def pad_right(sentence): return (MAXLEN - len(sentence)) * " " + sentence
 def pad_left(sentence): return  sentence + (MAXLEN - len(sentence)) * " "
 
 def source_input_conversion(s):
-    return encode(pad_left((reversed(s))))
+    return encode(pad_left(s))
 
 def target_input_conversion(sentence):
     return encode(pad_left("^"+sentence))
@@ -37,13 +43,11 @@ def sentence_target_weights(sentence):
     w = (l + 1) * [1] + (MAXLEN - (l + 1)) * [0]
     return np.array(w)
 
-encode = lambda ws: [char_indices[w] for w in ws]
-
 def map(f,l):
     return [f(x) for x in l]
 
 def make_examples(l):
-    (l1,l2) = zip(*)
+    (l1,l2) = zip(*l)
     return {"src_in":map(source_input_conversion,l1),
             "src_len":map(len,l1),
             "tgt_in":map(target_input_conversion,l2),
@@ -66,7 +70,7 @@ def my_sample(l,n):
     return list(random.sample(l,min(n,len(l))))
 
 print("Reading sentences...")
-all_sentences = [l.split("\t") for l in open("synthtrees.txt").lines()]
+all_sentences = [l.strip().split("\t") for l in open("synthtrees.txt").readlines()]
 
 val_set = make_examples(all_sentences[:2000])
 train_set = make_examples(all_sentences[2000:])
@@ -148,8 +152,8 @@ def translate(values):
 tyf.initialize_params(sess,model)
 train_stats = tyf.train(sess,
                         model,
-                        s2s_generator(**train_sentences),
-                        valid_generator = s2s_generator(**val_sentences),
+                        s2s_generator(**train_set),
+                        valid_generator = s2s_generator(**val_set),
                         epochs=5000,
-                        callbacks=[translate])
+                        callbacks=[tyf.StopWhenAccurate(.95)])
 
