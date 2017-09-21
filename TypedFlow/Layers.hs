@@ -202,7 +202,7 @@ attentiveLstm att w x = do
   (VecPair ht ct, _ht) <- lstm w x
   a <- att ht
   let ht' = ht ⊕ a -- alternatively add a dense layer to combine
-  return (VecPair ht' ct, ht')
+  return (VecPair ht' ct, a)
 
 -- | Parameter for a GRU
 data GRUP n x = GRUP ((n + x) ⊸ n)  ((n + x) ⊸ n)  ((n + x) ⊸ n)
@@ -335,7 +335,7 @@ multiplicativeScoring :: forall valueSize keySize batchSize.
   T [keySize,valueSize] Float32 ->  AttentionScoring 'B32 batchSize keySize valueSize
 multiplicativeScoring w dt h = h · ir
   where ir :: T '[valueSize,batchSize] Float32
-        ir = (w ∙ dt)
+        ir = w ∙ dt
 
 -- | An additive scoring function. See https://arxiv.org/pdf/1412.7449.pdf
 data AdditiveScoringP sz keySize valueSize t = AdditiveScoringP
