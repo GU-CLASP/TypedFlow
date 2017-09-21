@@ -120,7 +120,6 @@ add = binOp "tf.add"
 (+) :: ∀ (d :: Shape) (s :: Shape) t. Tensor (d ++ s) t -> Tensor d t -> Tensor (d ++ s) t
 (+) = add @s @d
 
-
 -- | Indexwise equality test.
 equal :: Tensor d t -> Tensor d t -> Tensor d TFBool
 equal = binOp "tf.equal"
@@ -131,6 +130,9 @@ equal = binOp "tf.equal"
 (⊙) = binOp "tf.multiply"
 (⊘) = binOp "tf.divide"
 (⊕) = binOp "tf.add"
+
+infixl 7 ⊙,⊘
+infixl 6 ⊕,⊝
 
 -- | Matrix multiplication (note that shape @s@ is preserved)
 matmul :: Tensor (o ': n ': s) t -> Tensor (m ': o ': s) t -> Tensor (m ': n ': s) t
@@ -428,7 +430,7 @@ matvecmul m v = matmul v (transpose m)
 
 -- | Product of a matrix of weight with a (batched) vector .
 (∙) :: Tensor '[cols, rows] t -> Tensor '[cols,batchSize] t -> Tensor '[rows,batchSize] t
-x ∙ y = matvecmul x y
+m ∙ v = matvecmul m v
 
 -- | Dot product between two batched vectors.
 (·) :: ∀ cols batchSize t. Tensor '[cols,batchSize] t -> Tensor '[cols,batchSize] t -> Tensor '[batchSize] t
