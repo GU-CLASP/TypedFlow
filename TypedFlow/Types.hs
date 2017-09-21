@@ -27,7 +27,7 @@
 
 module TypedFlow.Types where
 
-import Text.PrettyPrint.Compact hiding (All,Last)
+import Text.PrettyPrint.Compact hiding (All,Last,Product)
 import GHC.TypeLits
 import Unsafe.Coerce
 import Data.Proxy
@@ -44,6 +44,10 @@ type DOC = Doc ()
 
 type i < j = CmpNat i j ~ 'LT
 -- type i <= j = (i <=? j) ~ 'True
+
+type family Product xs where
+  Product '[] = 0
+  Product (x ': xs) = x * Product xs
 
 type family (++) xs ys where
    '[] ++  xs       = xs
@@ -65,8 +69,21 @@ type family Init xs where
 -- initLast' :: forall s k. ((Init s ++ '[Last s]) ~ s => k) -> k
 -- initLast' k = unsafeCoerce# k -- why not?
 
-plusAssoc :: forall x y z. (x + y) + z :~: x + (y + z)
-plusAssoc = unsafeCoerce Refl
+plusAssoc' :: forall x y z. (x + y) + z :~: x + (y + z)
+plusAssoc' = unsafeCoerce Refl
+
+prodAssoc' :: forall x y z. (x * y) * z :~: x * (y * z)
+prodAssoc' = unsafeCoerce Refl
+
+prodAssoc :: forall x y z k. (((x * y) * z) ~ (x * (y * z)) => k) -> k
+prodAssoc k = case prodAssoc' @x @y @z of
+  Refl -> k
+
+prodHomo' ::  forall x y. Product (x ++ y) :~: Product x * Product y
+prodHomo' = unsafeCoerce Refl
+
+prodHomo ::  forall x y k. ((Product (x ++ y) ~ (Product x * Product y)) => k) -> k
+prodHomo k = case prodHomo' @x @y of Refl -> k
 
 initLast' :: forall s k. SList s -> ((Init s ++ '[Last s]) ~ s => k) -> k
 initLast' LZ _ = error "initLast': does not hold on empty lists"

@@ -26,7 +26,7 @@ module TypedFlow.TF where
 import Prelude hiding (tanh,Num(..),Floating(..))
 import qualified Prelude
 import Prelude ((-))
-import Text.PrettyPrint.Compact hiding (Last, All)
+import Text.PrettyPrint.Compact hiding (Last, All,Product)
 import GHC.TypeLits
 import Data.Proxy
 import TypedFlow.Types
@@ -120,6 +120,7 @@ add = binOp "tf.add"
 -- | Add two tensors, broacasting along shape @s@
 (+) :: ∀ (d :: Shape) (s :: Shape) t. Tensor (d ++ s) t -> Tensor d t -> Tensor (d ++ s) t
 (+) = add @s @d
+infixl 6 +
 
 -- | Indexwise equality test.
 equal :: Tensor d t -> Tensor d t -> Tensor d TFBool
@@ -211,25 +212,42 @@ squeeze0 = squeeze @ '[]
 squeeze1 :: ∀ n s t. KnownLen s => Tensor (n ': 1 ': s) t -> Tensor (n ': s) t
 squeeze1 = squeeze @ '[n]
 
+reshape :: ∀ s2 s1 t. KnownShape s2 => Product s1 ~ Product s2 => Tensor s1 t -> Tensor s2 t
+reshape (T t) = T (funcall "tf.reshape" [t, showShapeMinus @s2])
+
 -- | Reshape a tensor so that the first two dimensions are collapsed
 flatten2 :: ∀ m n s t. (KnownNat m, KnownNat n, KnownShape s) => Tensor (m ': n ': s) t -> Tensor (m*n ': s) t
-flatten2 (T t) = T (funcall "tf.reshape" [t, showShapeMinus @(m*n ': s)])
+flatten2 = prodAssoc @m @n @(Product s) reshape
 
 -- | Reshape a tensor so that the last two dimensions are collapsed
 flattenN2 :: ∀ s m n t. (KnownNat m, KnownNat n, KnownShape s) => Tensor (s ++ '[m,n]) t -> Tensor (s ++ '[m*n]) t
-flattenN2 (T t) = knownShapeApp @s @'[m*n] $ T (funcall "tf.reshape" [t, showShapeMinus @(s ++ '[m*n])])
+flattenN2  = prodHomo @s @'[m,n] $
+             prodHomo @s @'[m*n] $
+             knownShapeApp @s @'[m*n] $
+             reshape
 
 -- | Reshape a tensor so that the first three dimensions are collapsed
 flatten3 :: ∀ m n o s t. (KnownNat m, KnownNat n, KnownNat o, KnownShape s) => Tensor (m ': n ': o ': s) t -> Tensor (m*n*o ': s) t
-flatten3 (T t) = T (funcall "tf.reshape" [t, showShapeMinus @(m*n*o ': s)])
+flatten3  =  -- (m * (n * (o * Product s)))
+             prodAssoc @m @n @(o * Product s) $
+             -- (m * n) * (o * Product s)
+             prodAssoc @(m * n) @o @(Product s) $
+             -- ((m * n) * o) * Product s
+             reshape
+
 
 -- | Reshape a tensor so that the first dimension is expanded into two.
 inflate2 :: ∀ m n s t. (KnownNat m, KnownNat n, KnownShape s) => Tensor (m*n ': s) t -> Tensor (m ': n ': s) t
-inflate2 (T t) = T (funcall "tf.reshape" [t, showShapeMinus @(m ': n ': s)])
+inflate2 = prodAssoc @m @n @(Product s) reshape
 
 -- | Reshape a tensor so that the first dimension is expanded into three.
 inflate3 :: ∀ m n o s t. (KnownNat m, KnownNat n, KnownNat o, KnownShape s) => Tensor (m*n*o ': s) t -> Tensor (m ': n ': o ': s) t
-inflate3 (T t) = T (funcall "tf.reshape" [t, showShapeMinus @(m ': n ': o ': s)])
+inflate3 = -- (m * (n * (o * Product s)))
+           prodAssoc @m @n @(o * Product s) $
+           -- (m * n) * (o * Product s)
+           prodAssoc @(m * n) @o @(Product s) $
+           -- ((m * n) * o) * Product s
+           reshape
 
 -- | Access the last element in a tensor (in the 0th dimension)
 last0 :: ∀ n s t. KnownNat n => KnownLen s => T (n ': s) t -> Tensor s t
