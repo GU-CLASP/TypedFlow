@@ -128,6 +128,7 @@ instance (KnownNat outChannels,KnownNat inChannels, KnownShape filterSpatialShap
 -- | Size-preserving convolution layer
 conv :: forall outChannels filterSpatialShape inChannels s t.
                   ((1 + Length filterSpatialShape) ~ Length s,
+                   Length filterSpatialShape <= 3,
                    KnownLen filterSpatialShape) => -- the last dim of s is the batch size
                   ConvP t outChannels inChannels filterSpatialShape ->
                   T ('[inChannels] ++ s) ('Typ 'Float t) -> (T ('[outChannels] ++ s) ('Typ 'Float t))

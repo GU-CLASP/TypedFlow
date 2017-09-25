@@ -152,7 +152,7 @@ negate :: ∀ s t. T s t -> T s t
 negate = unOp "-"
 
 -- | Split a tensor on the first dimension
-split0 :: ∀ m n batchShape t. (KnownNat n, KnownNat m, KnownLen batchShape) =>
+split0 :: ∀ n m batchShape t. (KnownNat n, KnownNat m, KnownLen batchShape) =>
           Tensor ((n + m) ': batchShape) t -> Gen (Tensor (n ': batchShape) t, Tensor (m ': batchShape) t)
 split0 (T x) = do
   v1 <- newVar
@@ -323,7 +323,9 @@ gather = binOp "tf.gather"
 
 -- | Size-preserving convolution operation.
 convolution :: forall outputChannels filterSpatialShape inChannels s t.
-               KnownLen filterSpatialShape => ((1 + Length filterSpatialShape) ~ Length s) -- the last dim of s is the batch size
+               KnownLen filterSpatialShape
+            => Length filterSpatialShape <= 3
+            => ((1 + Length filterSpatialShape) ~ Length s) -- the last dim of s is the batch size
             => T ('[inChannels] ++ s) t -- ^ input tensor (batched)
             -> T ('[outputChannels,inChannels] ++ filterSpatialShape) t -- ^ filters
             -> T ('[outputChannels] ++ s) t
@@ -335,6 +337,7 @@ convolution (T input) (T filters) = T (funcall "tf.nn.convolution" [input,filter
           2 -> "NHWC"
           3 -> "NDHWC"
           _ -> error "convolution: more than 3 spatial dimensions are not supported!"
+
 
 -- poolNC :: forall dim s inputSpatialShape channels batchSize t.
 --                   (inputSpatialShape ~ Take dim s, '[batchSize] ~ Drop dim s) =>
