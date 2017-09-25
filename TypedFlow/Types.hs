@@ -72,6 +72,10 @@ type family Init xs where
 plusAssoc' :: forall x y z. (x + y) + z :~: x + (y + z)
 plusAssoc' = unsafeCoerce Refl
 
+plusAssoc :: forall x y z k. (((x + y) + z) ~ (x + (y + z)) => k) -> k
+plusAssoc k = case plusAssoc' @x @y @z of
+  Refl -> k
+
 prodAssoc' :: forall x y z. (x * y) * z :~: x * (y * z)
 prodAssoc' = unsafeCoerce Refl
 
