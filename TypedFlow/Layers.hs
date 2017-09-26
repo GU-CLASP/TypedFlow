@@ -51,8 +51,8 @@ data DenseP t a b = DenseP {denseWeights :: Tensor '[a,b] t
 -- | Parameters for the embedding layers
 newtype EmbbeddingP numObjects embeddingSize t = EmbbeddingP (Tensor '[numObjects, embeddingSize] ('Typ 'Float t))
 
-instance (KnownNat numObjects, KnownBits b, KnownNat embeddingSize) => Parameter (EmbbeddingP numObjects embeddingSize b) where
-  parameter s (EmbbeddingP p) = EmbbeddingP <$> parameter s p
+instance (KnownNat numObjects, KnownBits b, KnownNat embeddingSize) => KnownTensors (EmbbeddingP numObjects embeddingSize b) where
+  travTensor f s (EmbbeddingP p) = EmbbeddingP <$> travTensor f s p
 
 instance (KnownNat numObjects, KnownBits b, KnownNat embeddingSize) => ParamWithDefault (EmbbeddingP numObjects embeddingSize b) where
   defaultInitializer = EmbbeddingP (randomUniform (-0.05) 0.05)
@@ -62,8 +62,8 @@ embedding :: ∀ embeddingSize numObjects batchSize t.
              EmbbeddingP numObjects embeddingSize t -> Tensor '[batchSize] Int32 -> Tensor '[embeddingSize,batchSize] ('Typ 'Float t)
 embedding (EmbbeddingP param) input = gather @ '[embeddingSize] (transpose param) input
 
-instance (KnownNat a, KnownNat b, KnownTyp t) => Parameter (DenseP t a b) where
-  parameter s (DenseP x y) = DenseP <$> parameter (s<>"_w") x <*> parameter (s<>"_bias") y
+instance (KnownNat a, KnownNat b, KnownTyp t) => KnownTensors (DenseP t a b) where
+  travTensor f s (DenseP x y) = DenseP <$> travTensor f (s<>"_w") x <*> travTensor f (s<>"_bias") y
 
 instance (KnownNat n, KnownNat m) => ParamWithDefault (n ⊸ m) where
   defaultInitializer = DenseP glorotUniform (truncatedNormal 0.1)
@@ -122,8 +122,8 @@ instance (KnownNat outChannels,KnownNat inChannels, KnownShape filterSpatialShap
   defaultInitializer = ConvP (truncatedNormal 0.1) (constant 0.1)
 
 instance (KnownNat outChannels,KnownNat inChannels, KnownShape filterSpatialShape, KnownBits t) =>
-  Parameter (ConvP t outChannels inChannels filterSpatialShape) where
-  parameter s (ConvP x y) = ConvP <$> parameter (s<>"_filters") x <*> parameter (s <> "_biases") y
+  KnownTensors (ConvP t outChannels inChannels filterSpatialShape) where
+  travTensor f s (ConvP x y) = ConvP <$> travTensor f (s<>"_filters") x <*> travTensor f (s <> "_biases") y
 
 -- | Size-preserving convolution layer
 conv :: forall outChannels filterSpatialShape inChannels s t.
@@ -175,8 +175,8 @@ cellInitializerBit = DenseP (concat0 recurrentInitializer kernelInitializer) bia
 -- | Parameter for an LSTM
 data LSTMP n x = LSTMP ((n + x) ⊸ n) ((n + x) ⊸ n) ((n + x) ⊸ n) ((n + x) ⊸ n)
 
-instance (KnownNat n, KnownNat x) => Parameter (LSTMP n x) where
-  parameter s (LSTMP x y z w) = LSTMP <$> parameter (s<>"_f") x <*> parameter (s<>"_i") y <*> parameter (s<>"_c") z <*> parameter (s<>"_o") w
+instance (KnownNat n, KnownNat x) => KnownTensors (LSTMP n x) where
+  travTensor f s (LSTMP x y z w) = LSTMP <$> travTensor f (s<>"_f") x <*> travTensor f (s<>"_i") y <*> travTensor f (s<>"_c") z <*> travTensor f (s<>"_o") w
 instance (KnownNat n, KnownNat x) => ParamWithDefault (LSTMP n x) where
   defaultInitializer = LSTMP forgetInit cellInitializerBit cellInitializerBit cellInitializerBit
     where forgetInit = DenseP (denseWeights cellInitializerBit) ones
@@ -208,8 +208,8 @@ attentiveLstm att w x = do
 -- | Parameter for a GRU
 data GRUP n x = GRUP ((n + x) ⊸ n)  ((n + x) ⊸ n)  ((n + x) ⊸ n)
 
-instance (KnownNat n, KnownNat x) => Parameter (GRUP n x) where
-  parameter s (GRUP x y z) = GRUP <$> parameter (s<>"_z") x <*> parameter (s<>"_r") y <*> parameter (s<>"_w") z
+instance (KnownNat n, KnownNat x) => KnownTensors (GRUP n x) where
+  travTensor f s (GRUP x y z) = GRUP <$> travTensor f (s<>"_z") x <*> travTensor f (s<>"_r") y <*> travTensor f (s<>"_w") z
 instance (KnownNat n, KnownNat x) => ParamWithDefault (GRUP n x) where
   defaultInitializer = GRUP cellInitializerBit cellInitializerBit cellInitializerBit
 
@@ -369,8 +369,8 @@ data AdditiveScoringP sz keySize valueSize t = AdditiveScoringP
   (Tensor '[keySize, sz]   ('Typ 'Float t))
   (Tensor '[valueSize, sz] ('Typ 'Float t))
 
-instance (KnownNat n, KnownNat k, KnownNat v, KnownBits t) => Parameter (AdditiveScoringP k v n t) where
-  parameter s (AdditiveScoringP x y z) = AdditiveScoringP <$> parameter (s<>"_v") x <*> parameter (s<>"_w1") y <*> parameter (s<>"_w2") z
+instance (KnownNat n, KnownNat k, KnownNat v, KnownBits t) => KnownTensors (AdditiveScoringP k v n t) where
+  travTensor f s (AdditiveScoringP x y z) = AdditiveScoringP <$> travTensor f (s<>"_v") x <*> travTensor f (s<>"_w1") y <*> travTensor f (s<>"_w2") z
 instance (KnownNat n, KnownNat k, KnownNat v, KnownBits t) => ParamWithDefault (AdditiveScoringP k v n t) where
   defaultInitializer = AdditiveScoringP glorotUniform glorotUniform glorotUniform
 

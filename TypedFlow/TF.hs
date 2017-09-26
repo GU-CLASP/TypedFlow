@@ -532,21 +532,24 @@ if_ (T c) (T x) (T y) = T (funcall "tf.cond" [-- named "pred" -- names have chan
 parameterDefault :: forall p. ParamWithDefault p => String -> Gen p
 parameterDefault name = parameter name defaultInitializer
 
-class Parameter p where
-  -- | parameterize over tuples of tensors
-  parameter :: String -> p -> Gen p
+parameter :: forall p. KnownTensors p => String -> p -> Gen p
+parameter = travTensor parameter'
 
-instance (KnownTyp t, KnownShape shape) => Parameter (T shape t) where
-  parameter = parameter'
+class KnownTensors p where
+  -- | traverse all the tensors over tuples of tensors
+  travTensor :: (forall s t. (KnownTyp t, KnownShape s) => String -> T s t -> Gen (T s t)) -> String -> p -> Gen p 
 
-instance (Parameter p, Parameter q) => Parameter (p,q) where
-  parameter s (x,y) = (,) <$> parameter (s<>"_fst") x <*> parameter (s<>"_snd") y
+instance (KnownTyp t, KnownShape shape) => KnownTensors (T shape t) where
+  travTensor f = f
 
-instance (Parameter p1, Parameter p2, Parameter p3) => Parameter (p1,p2,p3) where
-  parameter s (x,y,z) = (,,) <$> parameter (s<>"_1") x <*> parameter (s<>"_2") y <*> parameter (s<>"_3") z
+instance (KnownTensors p, KnownTensors q) => KnownTensors (p,q) where
+  travTensor f s (x,y) = (,) <$> travTensor f (s<>"_fst") x <*> travTensor f (s<>"_snd") y
 
-instance (Parameter p1, Parameter p2, Parameter p3, Parameter p4) => Parameter (p1,p2,p3,p4) where
-  parameter s (x,y,z,w) = (,,,) <$> parameter (s<>"_1") x <*> parameter (s<>"_2") y <*> parameter (s<>"_3") z <*> parameter (s<>"_4") w
+instance (KnownTensors p1, KnownTensors p2, KnownTensors p3) => KnownTensors (p1,p2,p3) where
+  travTensor f s (x,y,z) = (,,) <$> travTensor f (s<>"_1") x <*> travTensor f (s<>"_2") y <*> travTensor f (s<>"_3") z
 
-class Parameter p => ParamWithDefault p where
+instance (KnownTensors p1, KnownTensors p2, KnownTensors p3, KnownTensors p4) => KnownTensors (p1,p2,p3,p4) where
+  travTensor f s (x,y,z,w) = (,,,) <$> travTensor f (s<>"_1") x <*> travTensor f (s<>"_2") y <*> travTensor f (s<>"_3") z <*> travTensor f (s<>"_4") w
+
+class KnownTensors p => ParamWithDefault p where
   defaultInitializer :: p
