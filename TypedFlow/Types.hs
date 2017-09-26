@@ -143,11 +143,13 @@ instance KnownNat n => Applicative (V n) where
 data NP f (xs :: [k]) where
   Unit :: NP f '[]
   (:*) :: f x -> NP f xs -> NP f (x ': xs)
+
 newtype I a = I a
+newtype K a x = K a
 type HList = NP I
 
-pattern HSingle :: a -> HList '[a]
-pattern HSingle x = (I x :* Unit)
+pattern HSingle :: f a -> NP f '[a]
+pattern HSingle x = x :* Unit
 
 pattern VecSing :: Tensor s t -> HTV t '[s]
 pattern VecSing t1 = F t1 :* Unit
@@ -179,11 +181,11 @@ instance Fun c => Fun (FMap c)  where
   type Ap (FMap c) '[] = '[]
   type Ap (FMap c) (x ': xs) = Ap c x ': Ap (FMap c) xs
 
-type family All2 (c :: k -> l -> Constraint) (xs :: [k]) (ys :: [l]) :: Constraint where
-  All2 c '[] '[] = ()
-  All2 c (x ': xs) (y ': ys) = (c x y, All2 c xs ys)
-  All2 c '[] (y ': ys) = 'True ~ 'False
-  All2 c (y ': ys) '[] = 'True ~ 'False
+-- type family All2 (c :: k -> l -> Constraint) (xs :: [k]) (ys :: [l]) :: Constraint where
+--   All2 c '[] '[] = ()
+--   All2 c (x ': xs) (y ': ys) = (c x y, All2 c xs ys)
+--   All2 c '[] (y ': ys) = 'True ~ 'False
+--   All2 c (y ': ys) '[] = 'True ~ 'False
 
 -- | Flip at type level
 newtype F g t s = F {fromF :: g s t}
@@ -192,15 +194,25 @@ newtype F g t s = F {fromF :: g s t}
 type HTV t = NP (F T t)
 type FHTV = HTV Float32
 
+
+data Pair a b = a :& b
+
+type family Fst (x :: Pair a b) where Fst (x ':& y) = x
+type family Snd (x :: Pair a b) where Snd (x ':& y) = y
+
+newtype Uncurry g (s :: Pair a b) = Uncurry {fromUncurry :: g (Fst s) (Snd s)}
+
+type HHTV = NP (Uncurry T)
+
 hhead :: NP f (x ': xs) -> f x
 hhead (x :* _) = x
 
 htail :: NP f (x ': xs) -> NP f xs
 htail (_ :* xs) = xs
 
--- htmap :: forall f ss t u. (forall s. Tensor s t -> Tensor (Ap f s) u) -> HTV t ss -> HTV u (Ap (FMap f) ss)
--- htmap _ Unit = Unit
--- htmap f (F x :* xs) = F (f x) :* htmap @f f xs
+htmap :: forall f ss t u. (forall s. Tensor s t -> Tensor (Ap f s) u) -> HTV t ss -> HTV u (Ap (FMap f) ss)
+htmap _ Unit = Unit
+htmap f (F x :* xs) = F (f x) :* htmap @f f xs
 
 hmap :: (forall x. f x -> g x) -> NP f xs -> NP g xs
 hmap _ Unit = Unit
@@ -293,8 +305,6 @@ data T (shape :: Shape) (t :: Typ) = T {fromTensor :: UntypedExpression}
 
 data SNat (n :: Nat) where
   SNat :: KnownNat n => Proxy n -> SNat n
-
-data Pair f g x = Pair (f x) (g x)
 
 class (KnownLen s, All KnownNat s) => KnownShape s where
 
