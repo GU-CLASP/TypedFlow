@@ -74,10 +74,24 @@ getParameters = do
   v <-- text "tf.trainable_variables()"
   return v
 
+-- TODO: get the parameters from the genParams field
+
+
 -- TODO: gradient wrt. a HTV
 -- | Gradient of wrt. given parameters.
 grad :: T s Float32 -> UntypedExpression -> UntypedExpression
 grad (T y) vars = funcall "tf.gradients" [y, vars]
+
+-- -- | Gradient of wrt. given parameters.
+-- grad' :: KnownLen xs => T s Float32 -> HHTV xs -> Gen (HHTV xs)
+-- grad' (T y) vars = do
+--  v <- newVar
+--  v <-- funcall "tf.gradients" [y, list (htoList (hmap (\(Uncurry (T x)) -> K x) vars)) ]
+--  return (mkArr 0 shapeSList v)
+--   where mkArr :: forall xs. Int -> SList xs -> DOC -> HHTV xs
+--         mkArr _ LZ _ = Unit
+--         mkArr i (LS _ n) v = Uncurry (T (v <> brackets (int i))) :* mkArr (succ i) n v
+
 
 -- | Clip a gradient
 clipByGlobalNorm :: Float -> UntypedExpression -> UntypedExpression

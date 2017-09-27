@@ -250,6 +250,10 @@ happ :: NP f xs -> NP f ys -> NP f (xs ++ ys)
 happ Unit xs = xs
 happ (x :* xs) ys = x :* (happ xs ys)
 
+htoList :: NP (K a) xs -> [a]
+htoList Unit = []
+htoList (K x :* xs) = x : htoList xs
+
 hsplit' :: SPeano n -> NP f xs -> (NP f (Take n xs), NP f (Drop n xs))
 hsplit' SZero xs = (Unit,xs)
 hsplit' (SSucc _n) Unit = (Unit,Unit)
