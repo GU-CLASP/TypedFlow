@@ -181,6 +181,9 @@ pattern VecSing t1 = F t1 :* Unit
 pattern VecPair :: Tensor s t -> Tensor s' t -> HTV t '[s,s']
 pattern VecPair t1 t2 = F t1 :* F t2 :* Unit
 
+pattern VecTriple :: Tensor s t -> Tensor s' t -> Tensor s3 t -> HTV t '[s,s',s3]
+pattern VecTriple t1 t2 t3 = F t1 :* F t2 :* F t3 :* Unit
+
 type family All (c :: k -> Constraint) (xs :: [k]) :: Constraint where
   All c '[] = ()
   All c (x ': xs) = (c x, All c xs)
