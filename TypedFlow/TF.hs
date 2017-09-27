@@ -563,6 +563,15 @@ class KnownTensors p where
 instance (KnownTyp t, KnownShape shape) => KnownTensors (T shape t) where
   travTensor f = f
 
+instance (KnownTyp t, All KnownShape ys) => KnownTensors (HTV t ys) where
+  travTensor f s = ttr 0
+    where ttr :: forall xs. All KnownShape xs => Int -> HTV t xs -> Gen (HTV t xs)
+          ttr _ Unit = return Unit
+          ttr n (F x :* xs) = do
+            x' <- f (s <> "_" <> show n) x
+            xs' <- ttr (n Prelude.+ 1) xs
+            return (F x' :* xs')
+
 instance (KnownTensors p, KnownTensors q) => KnownTensors (p,q) where
   travTensor f s (x,y) = (,) <$> travTensor f (s<>"_fst") x <*> travTensor f (s<>"_snd") y
 
