@@ -27,7 +27,7 @@
 
 module TypedFlow.Types where
 
-import Text.PrettyPrint.Compact hiding (All,Last,Product)
+import Text.PrettyPrint.Compact hiding (All,Last,Product,Sum)
 import GHC.TypeLits
 import Unsafe.Coerce
 import Data.Proxy
@@ -46,8 +46,13 @@ type i < j = CmpNat i j ~ 'LT
 -- type i <= j = (i <=? j) ~ 'True
 
 type family Product xs where
-  Product '[] = 0
+  Product '[] = 1
   Product (x ': xs) = x * Product xs
+
+type family Sum xs where
+  Sum '[] = 0
+  Sum (x ': xs) = x + Sum xs
+
 
 type family (++) xs ys where
    '[] ++  xs       = xs
@@ -89,6 +94,13 @@ prodHomo' = unsafeCoerce Refl
 prodHomo ::  forall x y k. ((Product (x ++ y) ~ (Product x * Product y)) => k) -> k
 prodHomo k = case prodHomo' @x @y of Refl -> k
 
+-- knownProduct' :: forall s k. All KnownNat s => SList s -> (KnownNat (Product s) => k) -> k
+-- knownProduct' LZ k = k
+-- knownProduct' (LS _ n) k = knownProduct' n k
+
+-- knownProduct :: forall s k. KnownShape s => (KnownNat (Product s) => k) -> k
+-- knownProduct = knownProduct' @s shapeSList
+
 initLast' :: forall s k. SList s -> ((Init s ++ '[Last s]) ~ s => k) -> k
 initLast' LZ _ = error "initLast': does not hold on empty lists"
 initLast' (LS _ LZ) k = k
@@ -120,6 +132,18 @@ knownShapeApp' (LS _ n) k = knownShapeApp' @t n k
 
 knownShapeApp :: forall s t k.  (KnownShape s, KnownShape t) => (KnownShape (s ++ t) => k) -> k
 knownShapeApp = knownShapeApp' @t (shapeSList @s)
+
+-- knownCons :: proxy x -> SList xs -> (KnownLen (x ': xs) => k) -> k
+-- knownCons _ LZ k = k
+-- knownCons _ (LS x n) k = knownCons x n k
+
+-- knownFmap' :: forall f xs. SList xs -> SList (Ap (FMap f) xs)
+-- knownFmap' LZ = LZ
+-- knownFmap' (LS x n) = LS Proxy (knownFmap' @f n)
+
+-- knownSList :: SList xs -> (KnownLen xs => k) -> k
+-- knownSList LZ k = k
+-- knownSList (LS _ n) k = knownSList n k
 
 type family Length xs where
   Length '[] = 0
@@ -165,12 +189,9 @@ class Fun (c :: k -> Constraint)  where
   type Ap c (t :: k) :: l
 
 class Cons (x :: k) (xs :: [k])
+instance Fun (Cons x) where type Ap (Cons x) xs = x ': xs
 
 class Snoc (x :: k) (xs :: [k])
-
-instance Fun (Cons x) where
-  type Ap (Cons x) xs = x ': xs
-
 instance Fun (Snoc x) where
   type Ap (Snoc x) '[] = '[x]
   type Ap (Snoc x) (y ': ys) = y ': Ap (Snoc x) ys
@@ -194,7 +215,6 @@ newtype F g t s = F {fromF :: g s t}
 type HTV t = NP (F T t)
 type FHTV = HTV Float32
 
-
 data Pair a b = a :& b
 
 type family Fst (x :: Pair a b) where Fst (x ':& y) = x
@@ -213,6 +233,10 @@ htail (_ :* xs) = xs
 htmap :: forall f ss t u. (forall s. Tensor s t -> Tensor (Ap f s) u) -> HTV t ss -> HTV u (Ap (FMap f) ss)
 htmap _ Unit = Unit
 htmap f (F x :* xs) = F (f x) :* htmap @f f xs
+
+-- htmap' :: forall f ss t u. All KnownShape ss => (forall s. KnownShape s => Tensor (Ap f s) t -> Tensor s u) -> SList ss -> HTV t (Ap (FMap f) ss) -> HTV u ss 
+-- htmap' _ LZ Unit = Unit
+-- htmap' f (LS _ n)(F x :* xs) = F (f x) :* htmap' @f f n xs
 
 hmap :: (forall x. f x -> g x) -> NP f xs -> NP g xs
 hmap _ Unit = Unit
@@ -381,6 +405,8 @@ instance KnownLen xs => KnownLen (x ': xs) where
   shapePeano = SSucc (shapePeano @xs)
   shapeSList = LS Proxy (shapeSList @xs)
 
+shapeSListProxy :: KnownLen xs => proxy xs -> SList xs
+shapeSListProxy _ = shapeSList
 
 shapeToList' :: All KnownNat s => SList s -> [Integer]
 shapeToList' LZ = []
