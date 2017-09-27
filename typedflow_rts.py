@@ -20,6 +20,27 @@ def bilist_generator(l):
     def gen(bs):
       for i in range(0, bs*(len(l0)//bs), bs):
         yield {"x":l0[i:i+bs],"y":l1[i:i+bs]}
+
+
+# Given a pair of l=(x,y) (both x,y being a list or a np array) and a
+# batch size, return a generator function which will yield the input
+# in bs*maxlen-sized chunks. This generator is intended to be used for
+# stateful language models. That is, batch sequencing corresponds to 
+def bilist_generator_transposed(model,l):
+    (batch_size,maxlen) = model["x"].shape
+    (xs,ys) = l
+    num_items = len(xs) // (batch_size*maxlen)
+    x = np.zeros(shape=(num_items,batch_size,maxlen))
+    y = np.zeros(shape=(num_items,batch_size,maxlen))
+    for i in range(num_items):
+        for j in range(batch_size):
+            for k in range(maxlen):
+                x[i][j][k] = xs[k+j*(num_items*maxlen)+i*maxlen]
+                y[i][j][k] = ys[k+j*(num_items*maxlen)+i*maxlen]
+    def gen(_bs):
+        nonlocal num_items, x, y
+        for i in range(num_items):
+            yield {"x":x[i],"y":y[i]}
     return gen
 
 def dict_generator (xs):
