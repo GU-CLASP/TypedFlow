@@ -94,12 +94,12 @@ prodHomo' = unsafeCoerce Refl
 prodHomo ::  forall x y k. ((Product (x ++ y) ~ (Product x * Product y)) => k) -> k
 prodHomo k = case prodHomo' @x @y of Refl -> k
 
--- knownProduct' :: forall s k. All KnownNat s => SList s -> (KnownNat (Product s) => k) -> k
--- knownProduct' LZ k = k
--- knownProduct' (LS _ n) k = knownProduct' n k
+knownProduct' :: forall s k. All KnownNat s => SList s -> (KnownNat (Product s) => k) -> k
+knownProduct' LZ k = k
+knownProduct' (LS _ n) k = knownProduct' n k
 
--- knownProduct :: forall s k. KnownShape s => (KnownNat (Product s) => k) -> k
--- knownProduct = knownProduct' @s shapeSList
+knownProduct :: forall s k. KnownShape s => (KnownNat (Product s) => k) -> k
+knownProduct = knownProduct' @s shapeSList
 
 initLast' :: forall s k. SList s -> ((Init s ++ '[Last s]) ~ s => k) -> k
 initLast' LZ _ = error "initLast': does not hold on empty lists"
@@ -453,7 +453,7 @@ str = text . show
 data ParamInfo = ParamInfo {paramName :: String
                            ,paramShape :: [Integer]
                            ,paramDType :: Typ
-                           ,paramVar   :: forall s t. Tensor s t}
+                           ,paramVar   :: forall s t. (KnownShape s, KnownTyp t) => Tensor s t}
 data GState = GState {nextVar :: Integer, -- ^ next free variable
                       genText :: DOC,
                       genParams :: [ParamInfo], -- ^ optimizable parameters

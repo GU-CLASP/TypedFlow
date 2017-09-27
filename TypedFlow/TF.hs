@@ -26,7 +26,7 @@ module TypedFlow.TF where
 import Prelude hiding (tanh,Num(..),Floating(..))
 import qualified Prelude
 import Prelude ((-))
-import Text.PrettyPrint.Compact hiding (Last, All,Product)
+import Text.PrettyPrint.Compact hiding (Last, All,Product,Sum)
 import GHC.TypeLits
 import Data.Proxy
 import TypedFlow.Types
@@ -213,7 +213,10 @@ squeeze1 :: ∀ n s t. KnownLen s => Tensor (n ': 1 ': s) t -> Tensor (n ': s) t
 squeeze1 = squeeze @ '[n]
 
 reshape :: ∀ s2 s1 t. KnownShape s2 => Product s1 ~ Product s2 => Tensor s1 t -> Tensor s2 t
-reshape (T t) = T (funcall "tf.reshape" [t, showShapeMinus @s2])
+reshape = unsafeReshape
+
+unsafeReshape :: ∀ s2 s1 t. KnownShape s2 => Tensor s1 t -> Tensor s2 t
+unsafeReshape (T t) = T (funcall "tf.reshape" [t, showShapeMinus @s2])
 
 -- | Reshape a tensor so that the first two dimensions are collapsed
 flatten2 :: ∀ m n s t. (KnownNat m, KnownNat n, KnownShape s) => Tensor (m ': n ': s) t -> Tensor (m*n ': s) t
@@ -553,3 +556,34 @@ instance (KnownTensors p1, KnownTensors p2, KnownTensors p3, KnownTensors p4) =>
 
 class KnownTensors p => ParamWithDefault p where
   defaultInitializer :: p
+
+
+flattenAll :: forall s t. KnownShape s => Tensor s t -> Tensor '[Product s] t
+flattenAll = knownProduct @s reshape
+
+
+flattenHTV :: All KnownShape xs => HTV t xs -> Tensor '[Sum (Ap (FMap CProduct) xs)] t
+flattenHTV Unit = zeros
+flattenHTV (F x :* xs) = concat0 (flattenAll x) (flattenHTV xs)
+
+inflateAll :: forall s t. KnownShape s => Tensor '[Product s] t -> Tensor s t
+inflateAll = knownProduct @s reshape
+
+class CProduct (xs :: [Nat])
+instance Fun CProduct where type Ap CProduct xs = Product xs
+
+inflateHTV :: ∀ xs s t. (All KnownShape xs, KnownLen s, KnownLen xs) =>
+          Tensor '[Sum (Ap (FMap CProduct) xs)] t -> Gen (HTV t xs)
+inflateHTV (T x) = do
+  v <- newVar
+  gen (v <> text " = " <> funcall "tf.split" [x, showShape' (prodshape @xs shapeSList), text "axis=0"])
+  return (mkArr @xs 0 shapeSList  v)
+  where mkArr :: forall xs. All KnownShape xs => Int -> SList xs -> DOC -> HTV t xs
+        mkArr _ LZ v = Unit
+        mkArr i (LS _ n) v = F (unsafeReshape (T (v <> brackets (int i)) )):* mkArr (succ i) n v
+
+        prodshape :: forall xs. All KnownShape xs => SList xs -> [Integer]
+        prodshape LZ = []
+        prodshape (LS x xs) = product (shapeToList' (shapeSListProxy x)) : prodshape xs
+
+
