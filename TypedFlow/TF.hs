@@ -51,8 +51,9 @@ ones = T (funcall "tf.ones" [showShape @shape])
 constant :: forall s w. KnownShape s => Float -> T s ('Typ 'Float w)
 constant c = T (funcall "tf.constant" [float c, named "shape" (showShape @s)])
 
+-- TODO: use a different type for persistent?
 -- | Declare variable which persists between calls to session.run.
-persistent :: ∀ (shape :: Shape) t. (KnownTyp t,KnownShape shape) => Bool -> String -> T shape t -> Gen (T shape t) 
+persistent :: ∀ (shape :: Shape) t. (KnownTyp t,KnownShape shape) => Bool -> String -> T shape t -> Gen (T shape t)
 persistent trainable name (T initial) = do
   v <- newVar
   when trainable (newParameter (ParamInfo name (shapeToList @shape) (typVal @t) (T v)))
@@ -65,6 +66,10 @@ persistent trainable name (T initial) = do
 -- batch size.
 parameter' :: ∀ (shape :: Shape) t. (KnownTyp t,KnownShape shape) => String -> T shape t -> Gen (T shape t)
 parameter' = persistent True
+
+modifyPersistent :: T s t -> T shape t -> Gen ()
+modifyPersistent (T ref) (T value) = gen (funcall "tf.assign" [ref,value])
+
 
 -- TODO: get the parameters from the genParams field
 -- | Return a list of parameters.
