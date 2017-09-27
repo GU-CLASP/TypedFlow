@@ -43,7 +43,7 @@ def initialize_params (session,model):
     session.run(tf.global_variables_initializer())
 
 def train (session, model,
-           train_generator,
+           train_generator=bilist_generator(([],[])),
            valid_generator=bilist_generator(([],[])),
            epochs=100,
            callbacks=[]):
