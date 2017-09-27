@@ -15,7 +15,7 @@ model = typedflow_example.mkModel()
 from tensorflow.examples.tutorials.mnist import input_data
 mnist = input_data.read_data_sets('MNIST_data', one_hot=True)
 
-def train_generator():
+def train_generator(batch_size):
     for _ in range(1000):
         yield mnist.train.next_batch(100)
 
@@ -24,4 +24,5 @@ def valid_generator():
 
 sess = tf.Session()
 
-typedflow_rts.train(sess,model,tf.train.AdamOptimizer(1e-4),train_generator,valid_generator,10)
+typedflow_rts.initialize_params(sess,model)
+typedflow_rts.train(sess,model,optimizer=tf.train.AdamOptimizer(1e-4),train_generator)
