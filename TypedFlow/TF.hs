@@ -30,7 +30,7 @@ import Text.PrettyPrint.Compact hiding (Last, All,Product,Sum)
 import GHC.TypeLits
 import Data.Proxy
 import TypedFlow.Types
-
+import Control.Monad (when)
 
 -- | Repeat a flexible-shape constant vector to form a heterogeneous tensor vector.
 repeatT :: forall (ss :: [Shape]) t. All KnownShape ss => KnownLen ss => (forall s. KnownShape s => T s t) -> HTV t ss
@@ -51,16 +51,20 @@ ones = T (funcall "tf.ones" [showShape @shape])
 constant :: forall s w. KnownShape s => Float -> T s ('Typ 'Float w)
 constant c = T (funcall "tf.constant" [float c, named "shape" (showShape @s)])
 
+-- | Declare variable which persists between calls to session.run.
+persistent :: ∀ (shape :: Shape) t. (KnownTyp t,KnownShape shape) => Bool -> String -> T shape t -> Gen (T shape t) 
+persistent trainable name (T initial) = do
+  v <- newVar
+  when trainable (newParameter (ParamInfo name (shapeToList @shape) (typVal @t) (T v)))
+  v <-- funcall "tf.Variable" [initial, named "name" (string (show (name))), named "trainable" (bool trainable)]
+  return (T v)
+
 
 -- | Declare a parameter to optimize. The shape of parameter should
 -- not depend on dimensions which can change between runs, such as the
 -- batch size.
 parameter' :: ∀ (shape :: Shape) t. (KnownTyp t,KnownShape shape) => String -> T shape t -> Gen (T shape t)
-parameter' name (T initial) = do
-  v <- newVar
-  newParameter (ParamInfo name (shapeToList @shape) (typVal @t) (T v))
-  v <-- funcall "tf.Variable" [initial, named "name" (string (show (name)))]
-  return (T v)
+parameter' = persistent True
 
 -- TODO: get the parameters from the genParams field
 -- | Return a list of parameters.
