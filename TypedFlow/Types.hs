@@ -260,9 +260,9 @@ hzip Unit Unit = Unit
 hzip (x :* xs) (y :* ys) = Both x y :* hzip xs ys
 
 
-hfor_ :: Monad m => (forall x. f x -> m a) -> NP f xs -> m ()
-hfor_ _ Unit  = return ()
-hfor_ f (x :* xs) = f x >> hfor_ f xs
+hfor_ :: Monad m => NP f xs -> (forall x. f x -> m a) -> m ()
+hfor_ Unit _  = return ()
+hfor_ (x :* xs) f = f x >> hfor_ xs f
 
 htoList :: NP (K a) xs -> [a]
 htoList Unit = []

@@ -71,14 +71,14 @@ parameter' = persistent True
 peekAt :: String -> Tensor s t -> Gen ()
 peekAt p (T v) = peekAtAny p v
 
-peekAtMany :: String -> HVT t xs -> Gen ()
-peekAtMany p htv = peekAtAny p (list $ htoList $ hmap (\F (T x) -> x) htv)
+peekAtMany :: String -> HTV t xs -> Gen ()
+peekAtMany p htv = peekAtAny p (list $ htoList $ hmap (\(F (T x)) -> K x) htv)
 
 
 -- | Modify a mutable tensor. Attention: for the assignment to happen,
 -- the resulting tensor must be evaluated!
 modifyPersistent :: T s t -> T s t -> T s t
-modifyPersistent (T ref) (T value) = funcall "tf.assign" [ref,value]
+modifyPersistent (T ref) (T value) = T (funcall "tf.assign" [ref,value])
 
 -- TODO: get the parameters from the genParams field
 -- | Return a list of parameters.
