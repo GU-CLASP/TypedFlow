@@ -259,6 +259,7 @@ hzip :: NP f xs -> NP g xs -> NP (Both f g) xs
 hzip Unit Unit = Unit
 hzip (x :* xs) (y :* ys) = Both x y :* hzip xs ys
 
+
 hfor_ :: Monad m => (forall x. f x -> m a) -> NP f xs -> m ()
 hfor_ _ Unit  = return ()
 hfor_ f (x :* xs) = f x >> hfor_ f xs
@@ -481,9 +482,11 @@ newtype Gen x = Gen {fromGen :: State GState x} deriving (Monad, MonadState GSta
 newParameter :: MonadState GState m => ParamInfo -> m ()
 newParameter p =   modify $ \GState{..} -> GState{genParams = p:genParams,..}
 
--- | Name a tensor so that it is made available for session.run. (See the )
-peekAt :: String -> Tensor s t -> Gen ()
-peekAt p (T v) = modify $ \GState{..} -> GState{genPeeks = (p,v):genPeeks,..}
+
+-- | Name an expression so that it is made available for session.run.
+peekAtAny :: String -> UntypedExpression -> Gen ()
+peekAtAny p v = modify $ \GState{..} -> GState{genPeeks = (p,v):genPeeks,..}
+
 
 newVar :: Gen DOC
 newVar = do

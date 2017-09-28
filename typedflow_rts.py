@@ -67,7 +67,8 @@ def train (session, model,
            train_generator=bilist_generator(([],[])),
            valid_generator=bilist_generator(([],[])),
            epochs=100,
-           callbacks=[]):
+           callbacks=[],
+           extraVectors):
     batch_size = model["batch_size"]
     stats = []
     def halfEpoch(isTraining):
@@ -79,9 +80,11 @@ def train (session, model,
         for inputs in train_generator(batch_size) if isTraining else valid_generator(batch_size):
             print(".",end="")
             sys.stdout.flush()
-            _,loss,accur = session.run([model["train"],model["loss"],model["accuracy"]],
-                                       feed_dict=dict([(model["training_phase"],isTraining)] +
-                                                      [(model[k],inputs[k]) for k in inputs]))
+            results = session.run([model["loss"],model["accuracy"],model["train"]] + extraVectors,
+                                  feed_dict=dict([(model["training_phase"],isTraining)] +
+                                                 [(model[k],inputs[k]) for k in inputs]))
+            loss = results[0]
+            accur = results[1]
             n+=1
             totalLoss += loss
             totalAccur += accur

@@ -67,9 +67,18 @@ persistent trainable name (T initial) = do
 parameter' :: ∀ (shape :: Shape) t. (KnownTyp t,KnownShape shape) => String -> T shape t -> Gen (T shape t)
 parameter' = persistent True
 
-modifyPersistent :: T s t -> T shape t -> Gen ()
-modifyPersistent (T ref) (T value) = gen (funcall "tf.assign" [ref,value])
+-- | Name a tensor so that it is made available for session.run.
+peekAt :: String -> Tensor s t -> Gen ()
+peekAt p (T v) = peekAtAny p v
 
+peekAtMany :: String -> HVT t xs -> Gen ()
+peekAtMany p htv = peekAtAny p (list $ htoList $ hmap (\F (T x) -> x) htv)
+
+
+-- | Modify a mutable tensor. Attention: for the assignment to happen,
+-- the resulting tensor must be evaluated!
+modifyPersistent :: T s t -> T s t -> T s t
+modifyPersistent (T ref) (T value) = funcall "tf.assign" [ref,value]
 
 -- TODO: get the parameters from the genParams field
 -- | Return a list of parameters.
