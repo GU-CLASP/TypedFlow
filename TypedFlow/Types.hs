@@ -253,6 +253,16 @@ happ :: NP f xs -> NP f ys -> NP f (xs ++ ys)
 happ Unit xs = xs
 happ (x :* xs) ys = x :* (happ xs ys)
 
+data Both f g x = Both (f x) (g x)
+
+hzip :: NP f xs -> NP g xs -> NP (Both f g) xs
+hzip Unit Unit = Unit
+hzip (x :* xs) (y :* ys) = Both x y :* hzip xs ys
+
+hfor_ :: Monad m => (forall x. f x -> m a) -> NP f xs -> m ()
+hfor_ _ Unit  = return ()
+hfor_ f (x :* xs) = f x >> hfor_ f xs
+
 htoList :: NP (K a) xs -> [a]
 htoList Unit = []
 htoList (K x :* xs) = x : htoList xs
