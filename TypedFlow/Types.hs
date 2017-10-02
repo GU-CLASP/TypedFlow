@@ -256,9 +256,11 @@ happ (x :* xs) ys = x :* (happ xs ys)
 data Both f g x = Both (f x) (g x)
 
 hzip :: NP f xs -> NP g xs -> NP (Both f g) xs
-hzip Unit Unit = Unit
-hzip (x :* xs) (y :* ys) = Both x y :* hzip xs ys
+hzip = hzipWith Both
 
+hzipWith :: (forall x. f x -> g x -> h x) -> NP f xs -> NP g xs -> NP h xs
+hzipWith _ Unit Unit = Unit
+hzipWith f (x :* xs) (y :* ys) = f x y :* hzipWith f xs ys
 
 hfor_ :: Monad m => NP f xs -> (forall x. f x -> m a) -> m ()
 hfor_ Unit _  = return ()
