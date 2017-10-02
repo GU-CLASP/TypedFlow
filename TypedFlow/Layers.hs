@@ -163,12 +163,12 @@ timeDistribute' stateLess (Unit,a) = do
 
 -- | Standard RNN gate initializer. (The recurrent kernel is
 -- orthogonal to avoid divergence; the input kernel is glorot)
-cellInitializerBit :: ∀ n x. (KnownNat n, KnownNat x) => DenseP Float32 (n + x) n
+cellInitializerBit :: ∀ n x t. (KnownNat n, KnownNat x, KnownBits t) => DenseP ('Typ 'Float t) (n + x) n
 cellInitializerBit = DenseP (concat0 recurrentInitializer kernelInitializer) biasInitializer
   where
-        recurrentInitializer :: Tensor '[n, n] Float32
+        recurrentInitializer :: Tensor '[n, n] ('Typ 'Float t)
         recurrentInitializer = randomOrthogonal
-        kernelInitializer :: Tensor '[x, n] Float32
+        kernelInitializer :: Tensor '[x, n] ('Typ 'Float t)
         kernelInitializer = glorotUniform
         biasInitializer = zeros
 
@@ -206,22 +206,22 @@ attentiveLstm att w x = do
   return (VecPair ht' ct, a)
 
 -- | Parameter for a GRU
-data GRUP n x = GRUP ((n + x) ⊸ n)  ((n + x) ⊸ n)  ((n + x) ⊸ n)
+data GRUP t n x = GRUP (T [n+x,n] ('Typ 'Float t)) (T [n+x,n] ('Typ 'Float t)) (T [n+x,n] ('Typ 'Float t))
 
-instance (KnownNat n, KnownNat x) => KnownTensors (GRUP n x) where
+instance (KnownNat n, KnownNat x, KnownBits t) => KnownTensors (GRUP t n x) where
   travTensor f s (GRUP x y z) = GRUP <$> travTensor f (s<>"_z") x <*> travTensor f (s<>"_r") y <*> travTensor f (s<>"_w") z
-instance (KnownNat n, KnownNat x) => ParamWithDefault (GRUP n x) where
-  defaultInitializer = GRUP cellInitializerBit cellInitializerBit cellInitializerBit
+instance (KnownNat n, KnownNat x, KnownBits t) => ParamWithDefault (GRUP t n x) where
+  defaultInitializer = GRUP (denseWeights cellInitializerBit) (denseWeights cellInitializerBit) (denseWeights cellInitializerBit)
 
 
 -- | Standard GRU cell
-gru :: ∀ n x bs. (KnownNat bs, KnownNat n) => GRUP n x ->
+gru :: ∀ n x bs. (KnownNat bs, KnownNat n) => GRUP 'B32 n x ->
         RnnCell '[ '[n,bs] ] (Tensor '[x,bs] Float32) (Tensor '[n,bs] Float32)
 gru (GRUP wz wr w) (VecSing ht1, xt) = do
   hx <- assign (concat0 ht1 xt)
-  let zt = sigmoid (wz # hx)
-      rt = sigmoid (wr # hx)
-      hTilda = tanh (w # (concat0 (rt ⊙ ht1) xt))
+  let zt = sigmoid (wz ∙ hx)
+      rt = sigmoid (wr ∙ hx)
+      hTilda = tanh (w ∙ (concat0 (rt ⊙ ht1) xt))
   ht <- assign ((ones ⊝ zt) ⊙ ht1 + zt ⊙ hTilda)
   return (VecSing ht, ht)
 
