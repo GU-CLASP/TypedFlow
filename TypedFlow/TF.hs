@@ -40,16 +40,16 @@ repeatT f = zs (shapeSList @ss)
         zs (LS _ n) = F f :* zs n
 
 -- | Zeros
-zeros :: ∀ t (shape :: Shape). KnownShape shape => (T shape t)
-zeros = T (funcall "tf.zeros" [showShape @shape])
+zeros :: ∀ t (shape :: Shape). KnownShape shape => KnownTyp t => (T shape t)
+zeros = T (funcall "tf.zeros" [showShape @shape, named "dtype" (showTyp @t)])
 
 -- | Ones
-ones :: ∀ t (shape :: Shape). KnownShape shape => (T shape t)
-ones = T (funcall "tf.ones" [showShape @shape])
+ones :: ∀ t (shape :: Shape). KnownShape shape => KnownTyp t => (T shape t)
+ones = T (funcall "tf.ones" [showShape @shape, named "dtype" (showTyp @t)])
 
 -- | Constant
-constant :: forall s w. KnownShape s => Float -> T s ('Typ 'Float w)
-constant c = T (funcall "tf.constant" [float c, named "shape" (showShape @s)])
+constant :: forall s w. KnownShape s => KnownBits w => Float -> T s ('Typ 'Float w)
+constant c = T (funcall "tf.constant" [float c, named "shape" (showShape @s), named "dtype" (showTyp @(Flt w))])
 
 -- TODO: use a different type for persistent?
 -- | Declare variable which persists between calls to session.run.
@@ -604,7 +604,7 @@ flattenAll :: forall s t. KnownShape s => Tensor s t -> Tensor '[Product s] t
 flattenAll = knownProduct @s reshape
 
 
-flattenHTV :: All KnownShape xs => HTV t xs -> Tensor '[Sum (Ap (FMap CProduct) xs)] t
+flattenHTV :: KnownTyp t => All KnownShape xs => HTV t xs -> Tensor '[Sum (Ap (FMap CProduct) xs)] t
 flattenHTV Unit = zeros
 flattenHTV (F x :* xs) = concat0 (flattenAll x) (flattenHTV xs)
 
