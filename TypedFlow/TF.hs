@@ -438,8 +438,8 @@ oneHot1 = oneHot @Dim1
 
 -- | Generate a random tensor where each individual element is picked
 -- in a normal distribution with given standard deviation.
-truncatedNormal :: forall s w. KnownShape s => Float -> T s ('Typ 'Float w)
-truncatedNormal stddev = T (funcall "tf.truncated_normal" [showShape @s, named "stddev" (float stddev)])
+truncatedNormal :: forall s w. KnownShape s => KnownBits w => Float -> T s ('Typ 'Float w)
+truncatedNormal stddev = T (funcall "tf.truncated_normal" [showShape @s, named "stddev" (float stddev), named "dtype" (showTyp @(Flt w))])
 
 -- | Generate a random tensor where each individual element is picked
 -- in a uniform distribution with given bounds.
