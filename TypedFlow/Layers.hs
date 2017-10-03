@@ -215,7 +215,7 @@ instance (KnownNat n, KnownNat x, KnownBits t) => ParamWithDefault (GRUP t n x) 
 
 
 -- | Standard GRU cell
-gru :: ∀ n x bs t. (KnownNat bs, KnownNat n) => GRUP t n x ->
+gru :: ∀ n x bs t. (KnownNat bs, KnownNat n, KnownBits t) => GRUP t n x ->
         RnnCell t '[ '[n,bs] ] (Tensor '[x,bs] (Flt t)) (Tensor '[n,bs] (Flt t))
 gru (GRUP wz wr w) (VecSing ht1, xt) = do
   hx <- assign (concat0 ht1 xt)
