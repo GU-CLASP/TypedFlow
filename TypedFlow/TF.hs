@@ -112,6 +112,10 @@ clipByGlobalNorm :: Float -> UntypedExpression -> UntypedExpression
 clipByGlobalNorm maxNorm x = funcall "tf.clip_by_global_norm" [x,float maxNorm] <> brackets (int 0)
  -- clip_by_global_norm returns a couple (clipped grads, global_norm)
 
+-- | Clip a tensor
+clipByValue :: Float -> Float -> T s (Flt t) -> T s (Flt t)
+clipByValue lo hi (T x) = T (funcall "tf.clip_by_value" [x, float lo, float hi])
+
 -- | Placeholder (to fill)
 placeholder :: ∀t s. (KnownShape s, KnownTyp t) => String -> Gen (T s t)
 placeholder n = do
