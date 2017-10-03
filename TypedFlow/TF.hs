@@ -564,6 +564,10 @@ if_ (T c) (T x) (T y) = T (funcall "tf.cond" [-- named "pred" -- names have chan
                                               named "strict" (bool True)])
   where lambda0 z = text "lambda: " <> z
 
+-- | (where_ c x y)[i] = if c[i] then x[i] else y[i]
+where_ :: T s TFBool -> T s t -> T s t -> T s t
+where_ (T c) (T x) (T y) = T (funcall "tf.where" [c, x, y])
+
 -------------------------
 -- Generic parameters
 
