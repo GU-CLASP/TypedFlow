@@ -468,19 +468,17 @@ data Distrib = NormalDistr | UniformDistr
 -- | Random tensor with variance scaling according to deeplearning lore.
 varianceScaling :: forall inDim outDim t. KnownNat inDim => (KnownNat outDim, KnownBits t) =>
    Float -> VarianceScaleMode -> Distrib -> Tensor '[inDim,outDim] ('Typ 'Float t)
-varianceScaling sc0 mode distr = case distr of
-                                   UniformDistr -> randomUniform (-p) p
-                                   NormalDistr -> truncatedNormal p
+varianceScaling factor mode distr = case distr of
+                                   UniformDistr -> randomUniform (-limit) limit
+                                   NormalDistr -> truncatedNormal limit
   where
     fan_in = fromIntegral (natVal (Proxy @inDim))
     fan_out = fromIntegral (natVal (Proxy @outDim))
-    sc = sc0 / max 1 (case mode of
-                         VSFanIn -> fan_in
-                         VSFanOut -> fan_out
-                         VSAvg -> (fan_in Prelude.+ fan_out) / 2)
-    p = Prelude.sqrt $ (/ sc) $ case distr of
-                                  NormalDistr -> 1
-                                  UniformDistr -> 3
+    n = max 1 $ case mode of
+                  VSFanIn -> fan_in
+                  VSFanOut -> fan_out
+                  VSAvg -> (fan_in Prelude.+ fan_out) / 2
+    limit = Prelude.sqrt ((case distr of NormalDistr -> 1.3; UniformDistr -> 3) Prelude.* factor / n)
 
 
 glorotUniform :: forall inDim outDim t. KnownNat inDim => (KnownNat outDim, KnownBits t) => Tensor '[inDim,outDim] ('Typ 'Float t)
