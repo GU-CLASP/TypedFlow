@@ -216,7 +216,6 @@ newtype F g t s = F {fromF :: g s t}
 
 -- | Heterogeneous tensor vector with the same kind of elements
 type HTV t = NP (F T t)
-type FHTV = HTV Float32
 
 data Pair a b = a :& b
 
@@ -329,6 +328,7 @@ data Kind = Float | Int | Bool deriving Show
 data NBits = B32 | B64 | B1 deriving Show
 data Typ = Typ Kind NBits
 
+type Flt t = 'Typ 'Float t
 type Float32 = 'Typ 'Float 'B32
 type Int32 = 'Typ 'Int 'B32
 type Int64 = 'Typ 'Int 'B64

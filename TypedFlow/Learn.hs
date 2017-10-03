@@ -32,7 +32,7 @@ import Control.Monad.State (modify, gets)
 
 
 binaryCrossEntropy :: KnownNat bs => Tensor '[bs] Float32 -> Tensor '[bs] Float32 -> Tensor '[bs] Float32
-binaryCrossEntropy t y = negate (t ⊙ log y) ⊝ (ones ⊝ t) ⊙ log (ones ⊝ y)
+binaryCrossEntropy t y = negate (t ⊙ log y) ⊝ (ones ⊝ t) ⊙ log (ones ⊝ y) -- FIXME: add epsilon to avoid NaN
 
 --------------------------------
 -- Model maker.
@@ -71,16 +71,16 @@ categoricalDistribution logits' y = do
 -- decoder_outputs. It is intended to mask padding positions outside
 -- of the target sequence lengths with values 0.
 
-timedCategorical :: forall len nCat bs. KnownNat nCat => KnownNat bs => KnownNat len =>
-  Tensor '[len,bs] Float32 -> Tensor '[len,nCat,bs] Float32 -> Tensor '[len,bs] Int32 -> Gen (ModelOutput '[len,nCat,bs] Float32)
+timedCategorical :: forall len nCat bs bits. KnownNat nCat => KnownNat bs => KnownNat len => KnownBits bits =>
+  Tensor '[len,bs] (Flt bits) -> Tensor '[len,nCat,bs] (Flt bits) -> Tensor '[len,bs] Int32 -> Gen (ModelOutput '[len,nCat,bs] (Flt bits))
 timedCategorical targetWeights logits' y = do
   logits <- assign logits'
   let y_ = argmax1 logits
       modelY = softmax1 logits
   correctPrediction <- assign (equal y_ y)
-  modelAccuracy <- assign (reduceSumAll (flatten2 (cast @Float32 correctPrediction ⊙ targetWeights)) ⊘ reduceSumAll targetWeights) --   does not work
+  modelAccuracy <- assign (cast @Float32 (reduceSumAll (flatten2 (cast @(Flt bits) correctPrediction ⊙ targetWeights)) ⊘ reduceSumAll targetWeights)) --   does not work
   let crossEntropies = sparseSoftmaxCrossEntropyWithLogits y (transpose01 logits)
-  modelLoss <- assign (reduceMeanAll (crossEntropies ⊙ targetWeights))
+  modelLoss <- assign (cast @Float32 (reduceMeanAll (crossEntropies ⊙ targetWeights)))
   return ModelOutput{..}
 
 -- | Triple of values that are always output in a model: prediction, loss and accuracy.

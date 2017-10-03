@@ -39,11 +39,11 @@ import Data.Monoid ((<>))
 -- Linear functions
 
 
--- A linear function form a to b is a matrix and a bias.
-type (a ⊸ b) = DenseP Float32 a b
+-- type (a ⊸ b) = DenseP Float32 a b
 
-data DenseP t a b = DenseP {denseWeights :: Tensor '[a,b] t
-                           ,denseBiases  :: Tensor '[b] t}
+-- | A dense layer is a linear function form a to b: a transformation matrix and a bias.
+data DenseP t a b = DenseP {denseWeights :: Tensor '[a,b] (Flt t)
+                           ,denseBiases  :: Tensor '[b] (Flt t)}
 
 -----------------------
 -- Feed-forward layers
@@ -62,18 +62,18 @@ embedding :: ∀ embeddingSize numObjects batchSize t.
              EmbbeddingP numObjects embeddingSize t -> Tensor '[batchSize] Int32 -> Tensor '[embeddingSize,batchSize] ('Typ 'Float t)
 embedding (EmbbeddingP param) input = gather @ '[embeddingSize] (transpose param) input
 
-instance (KnownNat a, KnownNat b, KnownTyp t) => KnownTensors (DenseP t a b) where
+instance (KnownNat a, KnownNat b, KnownBits t) => KnownTensors (DenseP t a b) where
   travTensor f s (DenseP x y) = DenseP <$> travTensor f (s<>"_w") x <*> travTensor f (s<>"_bias") y
 
-instance (KnownNat n, KnownNat m) => ParamWithDefault (n ⊸ m) where
+instance (KnownNat n, KnownNat m, KnownBits b) => ParamWithDefault (DenseP b n m) where
   defaultInitializer = DenseP glorotUniform (truncatedNormal 0.1)
 
 -- | Apply a linear function
-(#) :: (a ⊸ b) -> T '[a,batchSize] Float32 -> Tensor '[b,batchSize] Float32
+(#) :: DenseP t a b -> T '[a,batchSize] (Flt t) -> Tensor '[b,batchSize] (Flt t)
 (DenseP weightMatrix bias) # v = (weightMatrix ∙ v) + bias
 
 -- | Dense layer
-dense :: ∀m n batchSize. (n ⊸ m) -> Tensor '[n, batchSize] Float32 -> (Tensor '[m, batchSize] Float32)
+dense :: ∀m n batchSize t. DenseP t n m -> Tensor '[n, batchSize] (Flt t) -> Tensor '[m, batchSize] (Flt t)
 dense lf t = lf # t
 
 -- | A drop probability. (This type is used to make sure one does not
@@ -136,9 +136,9 @@ conv (ConvP filters bias) input = convolution input filters + bias
 
 
 -- | 2 by 2 maxpool layer.
-maxPool2D :: forall stridex (stridey::Nat) batch height width channels.
+maxPool2D :: forall stridex (stridey::Nat) batch height width channels t.
              (KnownNat stridex, KnownNat stridey) =>
-             T '[channels,width*stridex,height*stridex,batch] Float32 -> T '[channels,width,height,batch] Float32
+             T '[channels,width*stridex,height*stridex,batch] (Flt t) -> T '[channels,width,height,batch] (Flt t)
 maxPool2D (T value) = T (funcall "tf.nn.max_pool" [value
                                                   ,showShape @'[1,stridex,stridey,1]
                                                   ,showShape @'[1,stridex,stridey,1]
@@ -151,19 +151,19 @@ maxPool2D (T value) = T (funcall "tf.nn.max_pool" [value
 
 -- | Convert a pure function (feed-forward layer) to an RNN cell by
 -- ignoring the RNN state.
-timeDistribute :: (a -> b) -> RnnCell '[] a b
+timeDistribute :: (a -> b) -> RnnCell t '[] a b
 timeDistribute pureLayer = timeDistribute' (return . pureLayer)
 
 -- | Convert a stateless generator into an RNN cell by ignoring the
 -- RNN state.
-timeDistribute' :: (a -> Gen b) -> RnnCell '[] a b
+timeDistribute' :: (a -> Gen b) -> RnnCell t '[] a b
 timeDistribute' stateLess (Unit,a) = do
   b <- stateLess a
   return (Unit,b)
 
 -- | Standard RNN gate initializer. (The recurrent kernel is
 -- orthogonal to avoid divergence; the input kernel is glorot)
-cellInitializerBit :: ∀ n x t. (KnownNat n, KnownNat x, KnownBits t) => DenseP ('Typ 'Float t) (n + x) n
+cellInitializerBit :: ∀ n x t. (KnownNat n, KnownNat x, KnownBits t) => DenseP t (n + x) n
 cellInitializerBit = DenseP (concat0 recurrentInitializer kernelInitializer) biasInitializer
   where
         recurrentInitializer :: Tensor '[n, n] ('Typ 'Float t)
@@ -173,17 +173,17 @@ cellInitializerBit = DenseP (concat0 recurrentInitializer kernelInitializer) bia
         biasInitializer = zeros
 
 -- | Parameter for an LSTM
-data LSTMP n x = LSTMP ((n + x) ⊸ n) ((n + x) ⊸ n) ((n + x) ⊸ n) ((n + x) ⊸ n)
+data LSTMP t n x = LSTMP (DenseP t (n+x) n) (DenseP t (n+x) n) (DenseP t (n+x) n) (DenseP t (n+x) n)
 
-instance (KnownNat n, KnownNat x) => KnownTensors (LSTMP n x) where
+instance (KnownNat n, KnownNat x, KnownBits t) => KnownTensors (LSTMP t n x) where
   travTensor f s (LSTMP x y z w) = LSTMP <$> travTensor f (s<>"_f") x <*> travTensor f (s<>"_i") y <*> travTensor f (s<>"_c") z <*> travTensor f (s<>"_o") w
-instance (KnownNat n, KnownNat x) => ParamWithDefault (LSTMP n x) where
+instance (KnownNat n, KnownNat x, KnownBits t) => ParamWithDefault (LSTMP t n x) where
   defaultInitializer = LSTMP forgetInit cellInitializerBit cellInitializerBit cellInitializerBit
     where forgetInit = DenseP (denseWeights cellInitializerBit) ones
 
 -- | Standard LSTM
-lstm :: ∀ n x bs. (KnownNat bs) => LSTMP n x ->
-        RnnCell '[ '[n,bs], '[n,bs]] (Tensor '[x,bs] Float32) (Tensor '[n,bs] Float32)
+lstm :: ∀ n x bs t. (KnownNat bs) => LSTMP t n x ->
+        RnnCell t '[ '[n,bs], '[n,bs]] (Tensor '[x,bs] (Flt t)) (Tensor '[n,bs] (Flt t))
 lstm (LSTMP wf wi wc wo) (VecPair ht1 ct1, input) = do
   hx <- assign (concat0 ht1 input)
   let f = sigmoid (wf # hx)
@@ -195,10 +195,10 @@ lstm (LSTMP wf wi wc wo) (VecPair ht1 ct1, input) = do
   return (VecPair h c, h)
 
 -- | LSTM for an attention model. Takes an attention function.
-attentiveLstm :: forall x n bs. KnownNat bs =>
-  AttentionFunction bs n n ->
-  LSTMP n x ->
-  RnnCell '[ '[n,bs], '[n,bs]] (Tensor '[x,bs] Float32) (Tensor '[n,bs] Float32)
+attentiveLstm :: forall x n bs t. KnownNat bs =>
+  AttentionFunction t bs n n ->
+  LSTMP t n x ->
+  RnnCell t '[ '[n,bs], '[n,bs]] (Tensor '[x,bs] (Flt t)) (Tensor '[n,bs] (Flt t))
 attentiveLstm att w x = do
   (VecPair ht ct, _ht) <- lstm w x
   a <- att ht
@@ -215,8 +215,8 @@ instance (KnownNat n, KnownNat x, KnownBits t) => ParamWithDefault (GRUP t n x) 
 
 
 -- | Standard GRU cell
-gru :: ∀ n x bs. (KnownNat bs, KnownNat n) => GRUP 'B32 n x ->
-        RnnCell '[ '[n,bs] ] (Tensor '[x,bs] Float32) (Tensor '[n,bs] Float32)
+gru :: ∀ n x bs t. (KnownNat bs, KnownNat n) => GRUP t n x ->
+        RnnCell t '[ '[n,bs] ] (Tensor '[x,bs] (Flt t)) (Tensor '[n,bs] (Flt t))
 gru (GRUP wz wr w) (VecSing ht1, xt) = do
   hx <- assign (concat0 ht1 xt)
   let zt = sigmoid (wz ∙ hx)
@@ -226,12 +226,12 @@ gru (GRUP wz wr w) (VecSing ht1, xt) = do
   return (VecSing ht, ht)
 
 -- | Apply a function on the cell state(s) before running the cell itself.
-onStates ::  (HTV Float32 xs -> HTV Float32 xs) -> RnnCell xs a b -> RnnCell xs a b
+onStates ::  (HTV (Flt t) xs -> HTV (Flt t) xs) -> RnnCell t xs a b -> RnnCell t xs a b
 onStates f cell (h,x) = do
   cell (f h, x)
 
 -- | Stack two RNN cells (LHS is run first)
-stackRnnCells, (.-.) :: forall s0 s1 a b c. KnownLen s0 => RnnCell s0 a b -> RnnCell s1 b c -> RnnCell (s0 ++ s1) a c
+stackRnnCells, (.-.) :: forall s0 s1 a b c t. KnownLen s0 => RnnCell t s0 a b -> RnnCell t s1 b c -> RnnCell t (s0 ++ s1) a c
 stackRnnCells l1 l2 (hsplit @s0 -> (s0,s1),x) = do
   (s0',y) <- l1 (s0,x)
   (s1',z) <- l2 (s1,y)
@@ -240,7 +240,7 @@ stackRnnCells l1 l2 (hsplit @s0 -> (s0,s1),x) = do
 (.-.) = stackRnnCells
 
 -- | Run the cell, and forward the input to the output, by concatenation with the output of the cell.
-withBypass :: KnownNat bs => RnnCell s0 (T '[x,bs] t) (T '[y,bs] t) -> RnnCell s0 (T '[x,bs] t) (T '[x+y,bs] t)
+withBypass :: KnownNat bs => RnnCell b s0 (T '[x,bs] t) (T '[y,bs] t) -> RnnCell b s0 (T '[x,bs] t) (T '[x+y,bs] t)
 withBypass cell (s,x) = do
   (s',y) <- cell (s,x)
   return (s',concat0 x y)
@@ -254,21 +254,21 @@ type AttentionScoring t batchSize keySize valueSize =
 type AttentionScoring' t batchSize keySize valueSize nValues = 
   Tensor '[keySize,batchSize] ('Typ 'Float t) -> Tensor '[nValues,valueSize,batchSize] ('Typ 'Float t) -> Tensor '[nValues,batchSize] ('Typ 'Float t)
 
-type AttentionFunction batchSize keySize valueSize =
-  T '[keySize,batchSize] Float32 -> Gen (T '[valueSize,batchSize] Float32)
+type AttentionFunction t batchSize keySize valueSize =
+  T '[keySize,batchSize] (Flt t) -> Gen (T '[valueSize,batchSize] (Flt t))
 
 -- | @attnExample1 θ h st@ combines each element of the vector h with
 -- s, and applies a dense layer with parameters θ. The "winning"
 -- element of h (using softmax) is returned.
-uniformAttn :: ∀ valueSize m keySize batchSize. KnownNat m => 
+uniformAttn :: ∀ valueSize m keySize batchSize t. KnownNat m => KnownBits t =>
                T '[batchSize] Int32 ->
-               AttentionScoring 'B32 batchSize keySize valueSize ->
-               T '[m,valueSize,batchSize] Float32 -> AttentionFunction batchSize keySize valueSize
+               AttentionScoring t batchSize keySize valueSize ->
+               T '[m,valueSize,batchSize] (Flt t) -> AttentionFunction t batchSize keySize valueSize
 uniformAttn lengths score hs_ ht = do
   xx <- mapT (score ht) hs_
-  let   αt :: T '[m,batchSize] Float32
+  let   αt :: T '[m,batchSize] (Flt t)
         αt = softmax0 (mask ⊙ xx)
-        ct :: T '[valueSize,batchSize] Float32
+        ct :: T '[valueSize,batchSize] (Flt t)
         ct = squeeze0 (matmul hs_ (expandDim0 αt))
         mask = cast (sequenceMask @m lengths) -- mask according to length
   return ct
@@ -277,15 +277,15 @@ uniformAttn lengths score hs_ ht = do
 -- | @attnExample1 θ h st@ combines each element of the vector h with
 -- s, and applies a dense layer with parameters θ. The "winning"
 -- element of h (using softmax) is returned.
-uniformAttn' :: ∀ valueSize m keySize batchSize. KnownNat m => 
+uniformAttn' :: ∀ valueSize m keySize batchSize t. KnownNat m => KnownBits t =>
                T '[batchSize] Int32 ->
-               AttentionScoring' 'B32 batchSize keySize valueSize m ->
-               T '[m,valueSize,batchSize] Float32 -> AttentionFunction batchSize keySize valueSize
+               AttentionScoring' t batchSize keySize valueSize m ->
+               T '[m,valueSize,batchSize] (Flt t) -> AttentionFunction t batchSize keySize valueSize
 uniformAttn' lengths score hs_ ht = do
-  let   αt :: T '[m,batchSize] Float32
+  let   αt :: T '[m,batchSize] (Flt t)
         xx = score ht hs_
         αt = softmax0 (mask ⊙ xx)
-        ct :: T '[valueSize,batchSize] Float32
+        ct :: T '[valueSize,batchSize] (Flt t)
         ct = squeeze0 (matmul hs_ (expandDim0 αt))
         mask = cast (sequenceMask @m lengths) -- mask according to length
   return ct
@@ -388,15 +388,15 @@ additiveScoring' (AdditiveScoringP v w1 w2) dt h = transpose r''
         r'' = reshape @[batchSize,nValues] (matmul z' (transpose v))
 
 -- | A cell in an rnn. @state@ is the state propagated through time.
-type RnnCell states input output = (HTV Float32 states , input) -> Gen (HTV Float32 states , output)
+type RnnCell t states input output = (HTV (Flt t) states , input) -> Gen (HTV (Flt t) states , output)
 
 -- | A layer in an rnn. @n@ is the length of the time sequence. @state@ is the state propagated through time.
-type RnnLayer n state input t output u = FHTV state -> Tensor (n ': input) t -> Gen (FHTV state , Tensor (n ': output) u)
+type RnnLayer b n state input t output u = HTV (Flt b) state -> Tensor (n ': input) t -> Gen (HTV (Flt b) state , Tensor (n ': output) u)
 
 -- | Build a RNN by repeating a cell @n@ times.
-rnn :: ∀ n state input output t u.
+rnn :: ∀ n state input output t u b.
        (KnownNat n, KnownShape input, KnownShape output) =>
-       RnnCell state (T input t) (T output u) -> RnnLayer n state input t output u
+       RnnCell b state (T input t) (T output u) -> RnnLayer b n state input t output u
 rnn cell s0 t = do
   xs <- unstack t
   (sFin,us) <- chainForward cell (s0,xs)
@@ -408,9 +408,9 @@ rnn cell s0 t = do
 -- | Build a RNN by repeating a cell @n@ times. However the state is
 -- propagated in the right-to-left direction (decreasing indices in
 -- the time dimension of the input and output tensors)
-rnnBackward :: ∀ n state input output t u.
+rnnBackward :: ∀ n state input output t u b.
        (KnownNat n, KnownShape input, KnownShape output) =>
-       RnnCell state (T input t) (T output u) -> RnnLayer n state input t output u
+       RnnCell b state (T input t) (T output u) -> RnnLayer b n state input t output u
 
 rnnBackward cell s0 t = do
   xs <- unstack t
@@ -425,8 +425,8 @@ rnnBackward cell s0 t = do
 
 -- | Compose two rnn layers. This is useful for example to combine
 -- forward and backward layers.
-(.--.),stackRnnLayers :: forall s1 s2 a t b u c v n. KnownLen s1 =>
-                  RnnLayer n s1 a t b u -> RnnLayer n s2 b u c v -> RnnLayer n (s1 ++ s2) a t c v
+(.--.),stackRnnLayers :: forall s1 s2 a t b u c v n bits. KnownLen s1 =>
+                  RnnLayer bits n s1 a t b u -> RnnLayer bits n s2 b u c v -> RnnLayer bits n (s1 ++ s2) a t c v
 stackRnnLayers f g (hsplit @s1 -> (s0,s1)) x = do
   (s0',y) <- f s0 x
   (s1',z) <- g s1 y
@@ -437,8 +437,8 @@ infixr .--.
 
 
 -- | Compose two rnn layers in parallel.
-bothRnnLayers,(.++.)  :: forall s1 s2 a t b u c n bs. KnownNat bs => KnownLen s1 =>
-                  RnnLayer n s1 a t '[b,bs] u -> RnnLayer n s2 a t '[c,bs] u -> RnnLayer n (s1 ++ s2) a t '[b+c,bs] u
+bothRnnLayers,(.++.)  :: forall s1 s2 a t b u c n bs bits. KnownNat bs => KnownLen s1 =>
+                  RnnLayer bits n s1 a t '[b,bs] u -> RnnLayer bits n s2 a t '[c,bs] u -> RnnLayer bits n (s1 ++ s2) a t '[b+c,bs] u
 bothRnnLayers f g (hsplit @s1 -> (s0,s1)) x = do
   (s0',y) <- f s0 x
   (s1',z) <- g s1 x
@@ -483,8 +483,8 @@ chainBackwardWithState f (s0 , V (x:xs)) = do
   return (sFin,V (x':xs'),V (sFin:ss'))
 
 -- | RNN helper
-transposeV :: forall n xs. All KnownLen xs =>
-               SList xs -> V n (HTV Float32 xs) -> HTV Float32 (Ap (FMap (Cons n)) xs)
+transposeV :: forall n xs t. All KnownLen xs =>
+               SList xs -> V n (HTV (Flt t) xs) -> HTV (Flt t) (Ap (FMap (Cons n)) xs)
 transposeV LZ _ = Unit
 transposeV (LS _ n) xxs  = F ys' :* yys'
   where (ys,yys) = help @(Tail xs) xxs
@@ -503,17 +503,17 @@ gatherFinalStates dynLen states = nth0 0 (reverseSequences dynLen states)
 -- gatherFinalStates' (T dynLen)t = gather (flattenN2 @x @n @bs t) indexInFlat
 --  where indexInFlat = (dynLen - 1) + tf.range(0, bs) * n
 
-gathers :: forall n bs xs. All (LastEqual bs) xs => All KnownLen xs => KnownNat n =>
-            SList xs -> T '[bs] Int32 -> FHTV (Ap (FMap (Cons n)) xs) -> FHTV xs
+gathers :: forall n bs xs t. All (LastEqual bs) xs => All KnownLen xs => KnownNat n =>
+            SList xs -> T '[bs] Int32 -> HTV (Flt t) (Ap (FMap (Cons n)) xs) -> HTV (Flt t) xs
 gathers LZ _ Unit = Unit
 gathers (LS _ n) ixs (F x :* xs) = F (gatherFinalStates ixs x) :* gathers @n n ixs xs
 
 -- | @rnnWithCull dynLen@ constructs an RNN as normal, but returns the
 -- state after step @dynLen@ only.
-rnnWithCull :: forall n bs x y t u ls.
+rnnWithCull :: forall n bs x y t u ls b.
   KnownLen ls => KnownNat n => KnownLen x  => KnownLen y => All KnownLen ls =>
   All (LastEqual bs) ls =>
-  T '[bs] Int32 -> RnnCell ls (T x t) (T y u) -> RnnLayer n ls x t y u
+  T '[bs] Int32 -> RnnCell b ls (T x t) (T y u) -> RnnLayer b n ls x t y u
 rnnWithCull dynLen cell s0 t = do
   xs <- unstack t
   (us,ss) <- chainForwardWithState cell (s0,xs)
@@ -521,10 +521,10 @@ rnnWithCull dynLen cell s0 t = do
   return (gathers @n (shapeSList @ls) dynLen sss,stack us)
 
 -- | Like @rnnWithCull@, but states are threaded backwards.
-rnnBackwardsWithCull :: forall n bs x y t u ls.
+rnnBackwardsWithCull :: forall n bs x y t u ls b.
   KnownLen ls => KnownNat n => KnownLen x  => KnownLen y => All KnownLen ls =>
   All (LastEqual bs) ls => LastEqual bs x => LastEqual bs y =>
-  T '[bs] Int32 -> RnnCell ls (T x t) (T y u) -> RnnLayer n ls x t y u
+  T '[bs] Int32 -> RnnCell b ls (T x t) (T y u) -> RnnLayer b n ls x t y u
 rnnBackwardsWithCull dynLen cell s0 t = do
   (sFin,hs) <- rnnWithCull dynLen cell s0 (reverseSequences dynLen t)
   hs' <- assign (reverseSequences dynLen hs)

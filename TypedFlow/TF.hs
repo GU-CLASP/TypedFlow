@@ -418,8 +418,8 @@ softmaxCrossEntropyWithLogits (T labels) (T logits) =
 
 -- | sparse softmax cross entropy with logits.
 sparseSoftmaxCrossEntropyWithLogits :: Tensor s Int32                   -- ^ desired labels
-                                    -> Tensor (numClasses ': s) Float32 -- ^ predictions
-                                    -> Tensor s Float32
+                                    -> Tensor (numClasses ': s) (Flt t) -- ^ predictions
+                                    -> Tensor s (Flt t)
 sparseSoftmaxCrossEntropyWithLogits (T labels) (T logits) =
   T (funcall "tf.nn.sparse_softmax_cross_entropy_with_logits" [named "labels" labels,named "logits" logits])
 
