@@ -68,7 +68,7 @@ def train (session, model,
            valid_generator=bilist_generator(([],[])),
            epochs=100,
            callbacks=[],
-           extraVectors):
+           extraVectors=[]):
     batch_size = model["batch_size"]
     stats = []
     def halfEpoch(isTraining):
