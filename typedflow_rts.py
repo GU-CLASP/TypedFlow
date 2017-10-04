@@ -20,6 +20,7 @@ def bilist_generator(l):
     def gen(bs):
       for i in range(0, bs*(len(l0)//bs), bs):
         yield {"x":l0[i:i+bs],"y":l1[i:i+bs]}
+    return gen
 
 
 # Given a pair of l=(x,y) (both x,y being a list or a np array) and a
