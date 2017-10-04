@@ -136,19 +136,16 @@ compileGen Options{..} model = knownLast @sy $ do
     loss <- assign modelLoss
     accuracy <- assign modelAccuracy
     params <- getParameters
-    gradients <- newVar
-    let clipping = case maxGradientNorm of
-                     Nothing -> id
-                     Just clip -> clipByGlobalNorm clip
-    gradients <-- clipping (grad modelLoss params)
+    trainStep <- assign $ case maxGradientNorm of
+      Nothing -> T (funcall "optimizer.minimize" [fromTensor loss])
+      Just clip -> T (funcall "optimizer.apply_gradients" [funcall "zip" [clipByGlobalNorm clip (grad loss params),params]])
     peekAt "accuracy" accuracy
     peekAt "loss" loss
     peekAt "y_" y_
+    peekAt "train" trainStep
     peeks <- gets genPeeks
-    trainStep <- newVar
-    trainStep <-- funcall "optimizer.apply_gradients" [funcall "zip" [gradients,params]]
-    gen (text "return " <> dict ([("train",trainStep)
-                                 ,("params",params)
+    gen (text "return " <> dict ([("params",params)
                                  ,("optimizer",text "optimizer")
                                  ,("batch_size",showDim @ (Last sy))
-                                 ,("gradients",gradients)] <> peeks))
+                                 -- ,("gradients",gradients)
+                                 ] <> peeks))
