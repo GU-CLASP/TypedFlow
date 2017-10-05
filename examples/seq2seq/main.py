@@ -80,69 +80,23 @@ model = mkModel(tf.train.AdamOptimizer())
 sess = tf.Session()
 saver = tf.train.Saver()
 
-def beam_translate(session, model, k, x, xlen, start_symbol, out_len, voc_size):
-    print ("Translating", decode(x), xlen)
-    xs = np.array ([x] * k) # The input is always the same
-    xs_len = np.array ([xlen]*k)
-    ys = [[start_symbol]]  # start with a single thing; otherwise the minimum will be repeated k times
-    probs = [1]
-    hist = [[]]
+def printer(x):
+    (p,y,h) = x
+    print("Prob", p, decode(y),h)
 
-    def pad(z):
-        return np.array(z + [0] * (out_len - len(z)))
-    for i in range(out_len-1):
-        print ("beam search at:", i)
-        inputs = {"src_len":xs_len[:len(ys)], "src_in":xs[:len(ys)], "tgt_in":np.array([pad(y) for y in ys])}
-        y_s = tyf.predict(session,model,inputs)
-        all_words = sorted([(y_s[j][w][i] * probs[j], ys[j] + [w], hist[j] + [y_s[j][w][i]])
-                            for j in range(len(y_s))
-                            for w in range(voc_size)])
-        best = all_words[-k:]
-        for (p,y,h) in best:
-            print("Prob", p, decode(y),h)
-        (probs,ys,hist) = zip(*best)
-
-    return ys
-
-def beam_translate_with_stop(session, model, k, x, xlen, start_symbol, stop_symbol, out_len, voc_size):
-    xs = np.array ([x] * k) # The input is always the same
-    xs_len = np.array ([xlen]*k) # it is VERY important to get the length right
-    ys = [[start_symbol]]  # start with a single thing; otherwise the minimum will be repeated k times
-    probs = [1]
-    results = []
-    hist = [[]]
-
-    def pad(z):
-        return np.array(z + [0] * (out_len - len(z)))
-    for i in range(out_len-1):
-        print ("beam search at:", i)
-        inputs = {"src_len":xs_len[:len(ys)], "src_in":xs[:len(ys)], "tgt_in":np.array([pad(y) for y in ys])}
-        y_s = tyf.predict(session,model,inputs)
-        all_words = sorted([(y_s[j][w][i] * probs[j], ys[j] + [w], hist[j] + [y_s[j][w][i]])
-                            for j in range(len(y_s))
-                            for w in range(voc_size)])
-        best = all_words[-k:]
-        for (p,y,h) in best: print("Prob", p, decode(y),h)
-        results  += [(p,y,h) for (p,y,h) in best if y[i+1] == stop_symbol]
-        continued = [(p,y,h) for (p,y,h) in best if y[i+1] != stop_symbol]
-        if len(continued) == 0: break
-        (probs,ys,hist) = zip(*continued)
-    return results
 
 def translate(s):
-    r = beam_translate_with_stop(sess,model,14,
-                                 source_input_conversion(s),
-                                 len(s),
-                                 char_indices["^"], char_indices["$"],
-                                 MAXLEN,
-                                 len(chars))
-    for (p,y,h) in sorted(r):
-        print("Prob", p, decode(y),h)
+    r = tyf.beam_translate(sess,model,14,
+                           source_input_conversion(s),
+                           len(s),
+                           char_indices["^"], char_indices["$"],
+                           printer)
+    for x in r: printer(x)
 
 def translate_cb(values):
     if values["epoch"] % 10 == 0:
         save_path = saver.save(sess, "model.ckpt")
-        translate("(1(3cb)b)") 
+        translate("(1(3cb)b)")
         print ("Desired:", "((3cb)b1)")
         return False
 

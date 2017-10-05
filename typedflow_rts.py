@@ -172,15 +172,14 @@ def predict (session, model, xs, result="y_"):
                                     [(model[k],chunks[k]) for k in xs])))[:origLen]
     return np.concatenate(list(run()))
 
-
-def beam_translate(session, model, k, x, xlen, start_symbol):
+def beam_translate(session, model, k, x, xlen, start_symbol, stop_symbol, debug=None):
     (_,voc_size,out_len) = model["y_"].shape
     xs = np.array ([x] * k) # The input is always the same
-    xs_len = np.array ([xlen]*k) # this is very important to get right
+    xs_len = np.array ([xlen]*k) # it is VERY important to get the length right
     ys = [[start_symbol]]  # start with a single thing; otherwise the minimum will be repeated k times
     probs = [1]
+    results = []
     hist = [[]]
-
     def pad(z):
         return np.array(z + [0] * (out_len - len(z)))
     for i in range(out_len-1):
@@ -191,7 +190,11 @@ def beam_translate(session, model, k, x, xlen, start_symbol):
                             for j in range(len(y_s))
                             for w in range(voc_size)])
         best = all_words[-k:]
-        # for (p,y,h) in best: print("Prob", p, decode(y),h)
-        (probs,ys,hist) = zip(*best)
+        if debug is not None:
+            for x in best: debug(x)
+        results  += [(p,y,h) for (p,y,h) in best if y[i+1] == stop_symbol]
+        continued = [(p,y,h) for (p,y,h) in best if y[i+1] != stop_symbol]
+        if len(continued) == 0: break
+        (probs,ys,hist) = zip(*continued)
+    return sorted(results)
 
-    return ys
