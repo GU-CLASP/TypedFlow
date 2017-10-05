@@ -132,6 +132,15 @@ def StopWhenAccurate(error_rate = .01):
         return values["val"]["error_rate"] < error_rate
     return callback
 
+def Every(n,f):
+    def callback(values):
+        nonlocal n,f
+        if values["epoch"] % n == (n-1):
+            return f(values)
+        else:
+            return False
+    return callback
+
 
 def s2s_generator(src_in,tgt_in,tgt_out,tgt_weights):
     def gen(bs):

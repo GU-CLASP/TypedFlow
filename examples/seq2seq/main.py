@@ -9,7 +9,7 @@ import os
 import math
 import random
 
-tyf.cuda_pref_device(0)
+tyf.cuda_pref_device(2)
 
 chars = sorted(list("()01234abcde^$ "))
 
@@ -75,9 +75,10 @@ all_sentences = [l.strip().split("\t") for l in open("synthtrees.txt").readlines
 val_set = make_examples(all_sentences[:2000])
 train_set = make_examples(all_sentences[2000:])
 
-sess = tf.Session()
 print("Loading model")
 model = mkModel(tf.train.AdamOptimizer())
+sess = tf.Session()
+saver = tf.train.Saver()
 
 def beam_translate(session, model, k, x, xlen, start_symbol, out_len, voc_size):
     print ("Translating", decode(x), xlen)
@@ -128,17 +129,7 @@ def beam_translate_with_stop(session, model, k, x, xlen, start_symbol, stop_symb
         (probs,ys,hist) = zip(*continued)
     return results
 
-def translate(values):
-    s = "(0ed)"
-    # y_ = tyf.predict(sess,model,
-    #                  {"src_len":[len(s)],
-    #                   "src_in":[source_input_conversion(s)],
-    #                   "tgt_in":[target_input_conversion(s)]})
-    # for i in range(len(s)+1):
-    #     print ("after",t[i])
-    #     for w in range(len(chars)):
-    #         print (w,indices_char[w],y_[0][w][i])
-
+def translate(s):
     r = beam_translate_with_stop(sess,model,14,
                                  source_input_conversion(s),
                                  len(s),
@@ -147,7 +138,13 @@ def translate(values):
                                  len(chars))
     for (p,y,h) in sorted(r):
         print("Prob", p, decode(y),h)
-    return False
+
+def translate_cb(values):
+    if values["epoch"] % 10 == 0:
+        save_path = saver.save(sess, "model.ckpt")
+        translate("(1(3cb)b)") 
+        print ("Desired:", "((3cb)b1)")
+        return False
 
 tyf.initialize_params(sess,model)
 train_stats = tyf.train(sess,
@@ -155,5 +152,7 @@ train_stats = tyf.train(sess,
                         s2s_generator(**train_set),
                         valid_generator = s2s_generator(**val_set),
                         epochs=5000,
-                        callbacks=[tyf.StopWhenAccurate(.95)])
+                        callbacks=[tyf.StopWhenAccurate(.01), tyf.StopWhenValidationGetsWorse(2), translate_cb])
 
+translate("(1(3cb)b)")
+translate("(1(2c(3e(4(1cb)b)))c)")
