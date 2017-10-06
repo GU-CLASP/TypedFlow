@@ -1,3 +1,24 @@
+#+TITLE: TypedFlow: The HOT parts
+#+AUTHOR: Jean-Philippe Bernardy, University of Gothenburg
+
+TensorFlow™ is an open source software library for numerical
+computation using data flow graphs. Nodes in the graph represent
+mathematical operations, while the graph edges represent the
+multidimensional data arrays (tensors) communicated between them.
+TensorFlow graphs can be efficiently evaluated on GPUs and is a
+popular choice to implement deep learning applications.
+
+TypedFlow is a higher-order and typed (HOT) frontend to tensorflow,
+written in (Glasgow) Haskell.
+
+ In this talk I will:
+   - briefly explain what TensorFlow is and how it applies to deep learning
+   - recall the advantages of a HOT approach
+   - expose some example programs written using TypedFlow
+   - demonstrate how tensorflow functions can be given precise types,
+     using GHC extensions
+   - discuss some the difficulties of doing so
+
 * Machine learning in 45 seconds:
 
 - a vector of training inputs X :: [A]
@@ -5,9 +26,11 @@
 
 Task:
 
-Given X, find θ such that f(θ,x) is as small as possible for an
-unknown x (suitable generalisation of X).
+Given X, find θ such that f(θ,x) < ε, if
+x is considered similar to points in X.
 
+Commentary: Every point in X line on a manyfold. We want to find what
+this manyfold is. (Interpolation problem.)
 
 * "Deep" learning in 45 seconds
 
@@ -17,20 +40,20 @@ unknown x (suitable generalisation of X).
 
 - Typically, compute the gradient of f wrt. θ using AD.
 
-
 * Tensorflow
 
 - A (meta) programming language to define f. AD is builtin.
 
-- Restricted (tensor-generalisations of +, *, -, /, ^ and
-  trigonometric operations)
+- Restricted control flow (mostly, tensor-generalisations of +, *, -,
+  /, ^)
 
-- Typically programmed using python (the standard in scientific
-  computing)
+- Typically programmed using python (standard in scientific computing)
 
 - "Strongly typed".
   - but: "brodcasting"
-  - but: running the metaprogram can be quite slow ~1 minute
+  - but: running the metaprogram can be quite slow ~1 minute (so type
+    errors can happen after 1 minute of loading the model --- and
+    programs can do other things before ...)
   - but: types are typically not written as such. Given any two
     functions, weather they compose (and what the composition does) is
     a mistery unless one examines their code.
@@ -39,7 +62,7 @@ unknown x (suitable generalisation of X).
 
 - An typed, higher-order frontend to tensorflow (basic tensor operations)
 - A library to construct neural networks
-- Generates python
+- Generates python (yikes)
 
 * Typing tensors
 
@@ -52,14 +75,25 @@ unknown x (suitable generalisation of X).
 
 * Heterogeneous tensors
 
+type HTV
 
 * Example Higher-order stuff
 
 - mapT
 - rnn
+- withBypass
 - Attention model
 
-* Summary TypedFlow
+* Complete examples
+
+- mnist?
+- seq2seq
+
+* GHC woes
+
+- see transposeV
+
+* Summary
 
 - Some NN building blocks are naturally higher-order. Taking an
   example (and simplifying) a recurrent neural network turns a tensor
@@ -94,3 +128,8 @@ unknown x (suitable generalisation of X).
 
 - Long game: integrate cutting edge ideas as they arrive with moderate
   effort.
+
+* FAQ
+- Why not Agda, Idris?  A long term plan is to bypass python, so we'd
+  want a "real" programming language for the programming bits that go
+  around the TF program.
