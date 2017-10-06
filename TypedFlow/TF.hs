@@ -33,7 +33,8 @@ import TypedFlow.Types
 import Control.Monad (when)
 
 -- | Repeat a flexible-shape constant vector to form a heterogeneous tensor vector.
-repeatT :: forall (ss :: [Shape]) t. All KnownShape ss => KnownLen ss => (forall s. KnownShape s => T s t) -> HTV t ss
+repeatT :: forall (ss :: [Shape]) t. All KnownShape ss => KnownLen ss =>
+           (forall s. KnownShape s => T s t) -> HTV t ss
 repeatT f = zs (shapeSList @ss)
   where zs :: forall (s :: [Shape]). All KnownShape s => SList s -> HTV t s
         zs LZ = Unit
@@ -176,7 +177,8 @@ infixl 6 ⊕,⊝
 matmul :: Tensor (o ': n ': s) t -> Tensor (m ': o ': s) t -> Tensor (m ': n ': s) t
 matmul = binOp "tf.matmul"
 
-round, sigmoid, tanh, log, relu, floor :: ∀ s t. Tensor s ('Typ 'Float t) -> Tensor s ('Typ 'Float t)
+round, sigmoid, tanh, log, relu, floor
+   :: ∀ s t. Tensor s ('Typ 'Float t) -> Tensor s ('Typ 'Float t)
 sigmoid = unOp "tf.sigmoid"
 tanh = unOp "tf.tanh"
 log = unOp "tf.log"
@@ -197,24 +199,17 @@ split0 (T x) = do
   return (T v1, T v2)
 
 -- | Concatenate tensors on dimension @n@
-concatT :: ∀ n d1 d2 s t.
-    (KnownPeano n, KnownLen s, (d1+d2) ~ At n s) =>
+concatT :: ∀ n d1 d2 s t. (KnownPeano n, KnownLen s, (d1+d2) ~ At n s) =>
     T (Take n s ++ (d1 ': Drop ('Succ n) s)) t -> T (Take n s ++ (d2 ': Drop ('Succ n) s)) t -> T s t
 concatT (T x) (T y) = T (funcall "tf.concat" [list [x,y], named "axis" (integer (listLen @s - peanoInt @n - 1))])
 
 -- | Concatenate tensors on the first dimension
-concat0 :: ∀ ys d1 d2 t. (KnownShape ys) =>  T (d1 ': ys) t -> T (d2 ': ys) t -> T ((d1 + d2) ': ys) t
+concat0 :: ∀ ys d1 d2 t. (KnownLen ys) => T (d1 ': ys) t -> T (d2 ': ys) t -> T ((d1 + d2) ': ys) t
 concat0 = concatT @Dim0
-  -- let T x = t
-  --     T y = u
-  -- in (T (funcall "tf.concat" [list [x,y], text "axis=" <> integer (listLen @ ys)]))
 
 -- | Concatenate tensors on the second dimension
-concat1 :: ∀ n ys d1 d2 t. (KnownShape ys) =>  T (n ': d1 ': ys) t -> T (n ': d2 ': ys) t -> T (n ': (d1 + d2) ': ys) t
+concat1 :: ∀ n ys d1 d2 t. (KnownLen ys) =>  T (n ': d1 ': ys) t -> T (n ': d2 ': ys) t -> T (n ': (d1 + d2) ': ys) t
 concat1 = concatT @Dim1
-
--- expandDim :: ∀ s0 s t. KnownLen s => Tensor (s0 ++ s) t -> Tensor (s0 ++ (1 ': s)) t
--- expandDim (T x) = (T (funcall "tf.expand_dims" [x, text "axis=" <> integer (listLen @ s)]))
 
 -- | Add an extra dimension at axis (@n@) of size 1.
 expandDim :: forall n s t. (KnownLen s, KnownPeano n) => Tensor s t -> Tensor (Take n s ++ (1 ': Drop n s)) t
