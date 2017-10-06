@@ -29,7 +29,7 @@ Task:
 Given X, find θ such that f(θ,x) < ε, if
 x is considered similar to points in X.
 
-Commentary: Every point in X line on a manyfold. We want to find what
+Commentary: Every point in X lie on a manyfold. We want to find what
 this manyfold is. (Interpolation problem.)
 
 * "Deep" learning in 45 seconds
@@ -42,7 +42,7 @@ this manyfold is. (Interpolation problem.)
 
 * Tensorflow
 
-- A (meta) programming language to define f. AD is builtin.
+- A (meta) programming language to define f. AD is builtin. (there is fineprint)
 
 - Restricted control flow (mostly, tensor-generalisations of +, *, -,
   /, ^)
@@ -57,6 +57,11 @@ this manyfold is. (Interpolation problem.)
   - but: types are typically not written as such. Given any two
     functions, weather they compose (and what the composition does) is
     a mistery unless one examines their code.
+
+* First-order culture
+
+https://github.com/fchollet/keras/blob/master/keras/layers/recurrent.py
+(search "class LSTM")
 
 * TypedFlow
 
@@ -86,7 +91,7 @@ type HTV
 
 * Complete examples
 
-- mnist?
+- mnist
 - seq2seq
 
 * GHC woes
