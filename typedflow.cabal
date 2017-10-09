@@ -23,6 +23,8 @@ library
 
   other-modules:
        TypedFlow.Layers,
+       TypedFlow.Layers.Core,
+       TypedFlow.Layers.RNN,
        TypedFlow.Learn,
        TypedFlow.TF,
        TypedFlow.Types
