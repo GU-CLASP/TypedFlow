@@ -10,12 +10,29 @@ def cuda_pref_device(n):
         os.environ["CUDA_VISIBLE_DEVICES"] = str(n)
 
 
-# Given a pair of x and y (each being a list or a np array) and a
-# batch size, return a generator function which will yield the input
-# in bs-sized chunks. Attention: if the size of the input is not
-# divisible by bs, then the remainer will not be fed. Consider
-# shuffling the input.
+###############################################################
+# Generators
+###############################################################
+
+def s2s_generator(src_in,tgt_in,tgt_out,tgt_weights):
+    def gen(bs):
+      for i in range(0, bs*(len(src_in)//bs), bs):
+        yield {"src_in":src_in[i:i+bs],
+               "tgt_in":tgt_in[i:i+bs],
+               "tgt_out":tgt_out[i:i+bs],
+               "tgt_weights":tgt_weights[i:i+bs]}
+    return gen
+
+
+
 def bilist_generator(l):
+    """
+    Given a pair of x and y (each being a list or a np array) and a
+    batch size, return a generator function which will yield the input
+    in bs-sized chunks. Attention: if the size of the input is not
+    divisible by bs, then the remainer will not be fed. Consider
+    shuffling the input.
+    """
     (l0,l1) = l
     def gen(bs):
       for i in range(0, bs*(len(l0)//bs), bs):
@@ -23,11 +40,13 @@ def bilist_generator(l):
     return gen
 
 
-# Given a pair of l=(x,y) (both x,y being a list or a np array) and a
-# batch size, return a generator function which will yield the input
-# in bs*maxlen-sized chunks. This generator is intended to be used for
-# stateful language models. That is, batch sequencing corresponds to 
 def bilist_generator_transposed(model,l):
+    '''
+    Given a pair of l=(x,y) (both x,y being a list or a np array) and a
+    batch size, return a generator function which will yield the input
+    in bs*maxlen-sized chunks. This generator is intended to be used for
+    stateful language models. That is, batch sequencing corresponds to 
+    '''
     (batch_size,maxlen) = model["x"].shape
     (xs,ys) = l
     num_items = len(xs) // (batch_size*maxlen)
@@ -54,6 +73,7 @@ def dict_generator (xs):
 
 
 def initialize_params (session,model):
+    '''Initialize the learnable parameters of the model'''
     # it'd be nice to do:
 
     # session.run(tf.variables_initializer(model["params"]))
@@ -70,6 +90,25 @@ def train (session, model,
            epochs=100,
            callbacks=[],
            extraVectors=[]):
+    '''
+    Train the given model.
+
+    train_generator: training data
+
+    valid_generator: validation data
+
+    epochs: number of epochs
+
+    callbacks: list of callbacks.
+      Each callback receives an epoch entry (see below). If it returns False then the training is aborted.
+
+    extraVectors: list of extra vectors to pass to session.run when training.
+
+    This function returns a list of epoch entries. Each entry is a dictionary with:
+     - "epoch": current epoch
+     - "val" and "train": dictionaries with
+        - "loss", "accuracy", "error_rate", time", "start_time", "end_time"
+    '''
     batch_size = model["batch_size"]
     stats = []
     def halfEpoch(isTraining):
@@ -111,6 +150,7 @@ def train (session, model,
     return stats
 
 def StopWhenValidationGetsWorse(patience = 1):
+    '''Return a callback which stops training if validation loss gets worse.'''
     bestLoss = 10000000000
     p = patience
     def callback(values):
@@ -127,12 +167,14 @@ def StopWhenValidationGetsWorse(patience = 1):
     return callback
 
 def StopWhenAccurate(error_rate = .01):
+    '''Return a callback which stops training if error rate drops below 1%'''
     def callback(values):
         nonlocal error_rate
         return values["val"]["error_rate"] < error_rate
     return callback
 
 def Every(n,f):
+    '''Return a callback which calls its argument every n epochs'''
     def callback(values):
         nonlocal n,f
         if values["epoch"] % n == (n-1):
@@ -141,17 +183,12 @@ def Every(n,f):
             return False
     return callback
 
-
-def s2s_generator(src_in,tgt_in,tgt_out,tgt_weights):
-    def gen(bs):
-      for i in range(0, bs*(len(src_in)//bs), bs):
-        yield {"src_in":src_in[i:i+bs],
-               "tgt_in":tgt_in[i:i+bs],
-               "tgt_out":tgt_out[i:i+bs],
-               "tgt_weights":tgt_weights[i:i+bs]}
-    return gen
+################################################################################################
+# Prediction and evaluation
 
 def predict (session, model, xs, result="y_"):
+    '''Evaluate the model for given input and result.
+    Input is given as a dictionary of lists to pass to session.run'''
     bs = model["batch_size"]
     k0 = next (iter (xs.keys())) # at least one key is needed
     total_len = len(xs[k0])
@@ -173,6 +210,7 @@ def predict (session, model, xs, result="y_"):
     return np.concatenate(list(run()))
 
 def beam_translate(session, model, k, x, xlen, start_symbol, stop_symbol, debug=None):
+    '''Beam translation of ONE input sentence.'''
     (_,voc_size,out_len) = model["y_"].shape
     xs = np.array ([x] * k) # The input is always the same
     xs_len = np.array ([xlen]*k) # it is VERY important to get the length right
