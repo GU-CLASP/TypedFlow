@@ -36,10 +36,63 @@ import TypedFlow.Layers.Core (DenseP(..),(#))
 import Data.Monoid ((<>))
 
 
--------------------------------
--- RNN layers and combinators
+-- | A cell in an rnn. @state@ is the state propagated through time.
+type RnnCell t states input output = (HTV (Flt t) states , input) -> Gen (HTV (Flt t) states , output)
+
+-- | A layer in an rnn. @n@ is the length of the time sequence. @state@ is the state propagated through time.
+type RnnLayer b n state input t output u = HTV (Flt b) state -> Tensor (n ': input) t -> Gen (HTV (Flt b) state , Tensor (n ': output) u)
 
 
+--------------------------------------
+-- Combinators
+
+-- | Compose two rnn layers. This is useful for example to combine
+-- forward and backward layers.
+(.--.),stackRnnLayers :: forall s1 s2 a t b u c v n bits. KnownLen s1 =>
+                  RnnLayer bits n s1 a t b u -> RnnLayer bits n s2 b u c v -> RnnLayer bits n (s1 ++ s2) a t c v
+stackRnnLayers f g (hsplit @s1 -> (s0,s1)) x = do
+  (s0',y) <- f s0 x
+  (s1',z) <- g s1 y
+  return (happ s0' s1',z)
+
+infixr .--.
+(.--.) = stackRnnLayers
+
+
+-- | Compose two rnn layers in parallel.
+bothRnnLayers,(.++.)  :: forall s1 s2 a t b u c n bs bits. KnownNat bs => KnownLen s1 =>
+                  RnnLayer bits n s1 a t '[b,bs] u -> RnnLayer bits n s2 a t '[c,bs] u -> RnnLayer bits n (s1 ++ s2) a t '[b+c,bs] u
+bothRnnLayers f g (hsplit @s1 -> (s0,s1)) x = do
+  (s0',y) <- f s0 x
+  (s1',z) <- g s1 x
+  return (happ s0' s1',concat1 y z)
+
+
+infixr .++.
+(.++.) = bothRnnLayers
+
+-- | Apply a function on the cell state(s) before running the cell itself.
+onStates ::  (HTV (Flt t) xs -> HTV (Flt t) xs) -> RnnCell t xs a b -> RnnCell t xs a b
+onStates f cell (h,x) = do
+  cell (f h, x)
+
+-- | Stack two RNN cells (LHS is run first)
+stackRnnCells, (.-.) :: forall s0 s1 a b c t. KnownLen s0 => RnnCell t s0 a b -> RnnCell t s1 b c -> RnnCell t (s0 ++ s1) a c
+stackRnnCells l1 l2 (hsplit @s0 -> (s0,s1),x) = do
+  (s0',y) <- l1 (s0,x)
+  (s1',z) <- l2 (s1,y)
+  return ((happ s0' s1'),z)
+
+(.-.) = stackRnnCells
+
+-- | Run the cell, and forward the input to the output, by concatenation with the output of the cell.
+withBypass :: KnownNat bs => RnnCell b s0 (T '[x,bs] t) (T '[y,bs] t) -> RnnCell b s0 (T '[x,bs] t) (T '[x+y,bs] t)
+withBypass cell (s,x) = do
+  (s',y) <- cell (s,x)
+  return (s',concat0 x y)
+
+--------------------------------------
+-- Cells
 
 -- | Convert a pure function (feed-forward layer) to an RNN cell by
 -- ignoring the RNN state.
@@ -127,25 +180,8 @@ gru (GRUP wz wr w) (VecSing ht1, xt) = do
   ht <- assign ((ones ⊝ zt) ⊙ ht1 + zt ⊙ hTilda)
   return (VecSing ht, ht)
 
--- | Apply a function on the cell state(s) before running the cell itself.
-onStates ::  (HTV (Flt t) xs -> HTV (Flt t) xs) -> RnnCell t xs a b -> RnnCell t xs a b
-onStates f cell (h,x) = do
-  cell (f h, x)
-
--- | Stack two RNN cells (LHS is run first)
-stackRnnCells, (.-.) :: forall s0 s1 a b c t. KnownLen s0 => RnnCell t s0 a b -> RnnCell t s1 b c -> RnnCell t (s0 ++ s1) a c
-stackRnnCells l1 l2 (hsplit @s0 -> (s0,s1),x) = do
-  (s0',y) <- l1 (s0,x)
-  (s1',z) <- l2 (s1,y)
-  return ((happ s0' s1'),z)
-
-(.-.) = stackRnnCells
-
--- | Run the cell, and forward the input to the output, by concatenation with the output of the cell.
-withBypass :: KnownNat bs => RnnCell b s0 (T '[x,bs] t) (T '[y,bs] t) -> RnnCell b s0 (T '[x,bs] t) (T '[x+y,bs] t)
-withBypass cell (s,x) = do
-  (s',y) <- cell (s,x)
-  return (s',concat0 x y)
+----------------------------------------------
+-- "Attention" layers
 
 -- | An attention scoring function. We assume that each portion of the
 -- input has size @e@. @d@ is typically the size of the current state
@@ -232,8 +268,6 @@ uniformAttn' lengths score hs_ ht = do
 --   (s',y) <- cell (s,concat0 a focus)
 --   return ((F y :* s'),y)
 
- 
-
 
 -- | Luong attention model (following
 -- https://github.com/tensorflow/nmt#background-on-the-attention-mechanism
@@ -289,11 +323,9 @@ additiveScoring' (AdditiveScoringP v w1 w2) dt h = transpose r''
         z' = reshape @'[sz,batchSize*nValues] (tanh (w1h + w2dt))
         r'' = reshape @[batchSize,nValues] (matmul z' (transpose v))
 
--- | A cell in an rnn. @state@ is the state propagated through time.
-type RnnCell t states input output = (HTV (Flt t) states , input) -> Gen (HTV (Flt t) states , output)
+---------------------------------------------------------
+-- RNN unfolding
 
--- | A layer in an rnn. @n@ is the length of the time sequence. @state@ is the state propagated through time.
-type RnnLayer b n state input t output u = HTV (Flt b) state -> Tensor (n ': input) t -> Gen (HTV (Flt b) state , Tensor (n ': output) u)
 
 -- | Build a RNN by repeating a cell @n@ times.
 rnn :: ∀ n state input output t u b.
@@ -319,36 +351,6 @@ rnnBackward cell s0 t = do
   (sFin,us) <- chainBackward cell (s0,xs)
   return (sFin,stack us)
 
--- note: an alternative design would be to reverse the input and
--- output tensors instead. (thus we could make 'backwards' a
--- completely separate function that does not do any chaining.)
--- Reversing the tensors in TF may be slow though, so we should change
--- the in/out from tensors to vectors of tensors.
-
--- | Compose two rnn layers. This is useful for example to combine
--- forward and backward layers.
-(.--.),stackRnnLayers :: forall s1 s2 a t b u c v n bits. KnownLen s1 =>
-                  RnnLayer bits n s1 a t b u -> RnnLayer bits n s2 b u c v -> RnnLayer bits n (s1 ++ s2) a t c v
-stackRnnLayers f g (hsplit @s1 -> (s0,s1)) x = do
-  (s0',y) <- f s0 x
-  (s1',z) <- g s1 y
-  return (happ s0' s1',z)
-
-infixr .--.
-(.--.) = stackRnnLayers
-
-
--- | Compose two rnn layers in parallel.
-bothRnnLayers,(.++.)  :: forall s1 s2 a t b u c n bs bits. KnownNat bs => KnownLen s1 =>
-                  RnnLayer bits n s1 a t '[b,bs] u -> RnnLayer bits n s2 a t '[c,bs] u -> RnnLayer bits n (s1 ++ s2) a t '[b+c,bs] u
-bothRnnLayers f g (hsplit @s1 -> (s0,s1)) x = do
-  (s0',y) <- f s0 x
-  (s1',z) <- g s1 x
-  return (happ s0' s1',concat1 y z)
-
-
-infixr .++.
-(.++.) = bothRnnLayers
 
 
 -- | RNN helper
