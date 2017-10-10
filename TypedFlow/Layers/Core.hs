@@ -136,7 +136,11 @@ data ConvP t outChannels inChannels filterSpatialShape
 
 instance (KnownNat outChannels,KnownNat inChannels, KnownShape filterSpatialShape, KnownBits t) =>
   ParamWithDefault (ConvP t outChannels inChannels filterSpatialShape) where
-  defaultInitializer = ConvP (truncatedNormal 0.1) (constant 0.1)
+  defaultInitializer = prodHomo @filterSpatialShape @'[outChannels] $
+                       knownAppend @filterSpatialShape @'[outChannels] $
+                       ConvP (transposeN' (reshape i)) (constant 0.1)
+    where i :: T '[inChannels,Product filterSpatialShape* outChannels] (Flt t)
+          i = knownProduct @filterSpatialShape glorotUniform
 
 instance (KnownNat outChannels,KnownNat inChannels, KnownShape filterSpatialShape, KnownBits t) =>
   KnownTensors (ConvP t outChannels inChannels filterSpatialShape) where

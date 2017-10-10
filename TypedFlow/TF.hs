@@ -269,7 +269,7 @@ flatten2 = prodAssoc @m @n @(Product s) reshape
 flattenN2 :: ∀ s m n t. (KnownNat m, KnownNat n, KnownShape s) => Tensor (s ++ '[m,n]) t -> Tensor (s ++ '[m*n]) t
 flattenN2  = prodHomo @s @'[m,n] $
              prodHomo @s @'[m*n] $
-             knownShapeApp @s @'[m*n] $
+             knownAppend @s @'[m*n] $
              reshape
 
 -- | Reshape a tensor so that the first three dimensions are collapsed

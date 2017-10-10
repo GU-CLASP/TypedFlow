@@ -126,12 +126,12 @@ splitApp :: forall xs ys k. KnownLen xs => ((Take (PeanoLength xs) (xs ++ ys) ~ 
                                              Drop (PeanoLength xs) (xs ++ ys) ~ ys) => k) -> k
 splitApp = splitApp' @ys (shapeSList @xs)
 
-knownShapeApp' :: forall t s k. (All KnownNat s, KnownShape t) => SList s -> (KnownShape (s ++ t) => k) -> k
-knownShapeApp' LZ k = k
-knownShapeApp' (LS _ n) k = knownShapeApp' @t n k
+knownAppend' :: forall t s k. (All KnownNat s, KnownShape t) => SList s -> (KnownShape (s ++ t) => k) -> k
+knownAppend' LZ k = k
+knownAppend' (LS _ n) k = knownAppend' @t n k
 
-knownShapeApp :: forall s t k.  (KnownShape s, KnownShape t) => (KnownShape (s ++ t) => k) -> k
-knownShapeApp = knownShapeApp' @t (shapeSList @s)
+knownAppend :: forall s t k.  (KnownShape s, KnownShape t) => (KnownShape (s ++ t) => k) -> k
+knownAppend = knownAppend' @t (shapeSList @s)
 
 -- knownCons :: proxy x -> SList xs -> (KnownLen (x ': xs) => k) -> k
 -- knownCons _ LZ k = k
