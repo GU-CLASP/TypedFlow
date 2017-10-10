@@ -5,11 +5,5 @@ local-packages:
 nix-deps:
     - QuickCheck
 
-source-deps:
-  pretty-compact:
-    location: git@github.com:jyp/prettiest.git
-    revision: a36f4ea19eed4ece78f7c939a1bc73a3393386a2
-    # location: ~/repo/prettiest
-
 nixpkgs:
-  url: https://github.com/NixOS/nixpkgs-channels/archive/nixos-17.03.tar.gz
+  url: https://github.com/NixOS/nixpkgs-channels/archive/nixos-17.09.tar.gz
