@@ -9,6 +9,9 @@ author:         Jean-Philippe Bernardy
 maintainer:     jean-philippe.bernardy@gu.se
 Cabal-Version:  >= 1.12
 build-type:     Simple
+source-repository head
+  type:     git
+  location: git@github.com:GU-CLASP/TypedFlow.git
 
 library
   default-language: Haskell2010
