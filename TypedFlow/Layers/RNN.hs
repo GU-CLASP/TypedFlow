@@ -1,3 +1,12 @@
+{-|
+Module      : TypedFlow.Layers.RNN
+Description : RNN cells, layers and combinators.
+Copyright   : (c) Jean-Philippe Bernardy, 2017
+License     : LGPL-3
+Maintainer  : jean-philippe.bernardy@gu.se
+Stability   : experimental
+-}
+
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE RankNTypes #-}
@@ -23,7 +32,41 @@
 {-# LANGUAGE UnicodeSyntax #-}
 {-# LANGUAGE PatternSynonyms #-}
 
-module TypedFlow.Layers.RNN where
+module TypedFlow.Layers.RNN (
+  -- * Types
+  RnnCell, RnnLayer,
+  -- * Combinators
+  stackRnnCells, (.-.),
+  stackRnnLayers, (.--.),
+  bothRnnLayers,(.++.),
+  withBypass,
+  onStates,
+  timeDistribute, timeDistribute',
+  -- * RNN Cells
+  cellInitializerBit,
+  LSTMP(..),
+  lstm,
+  GRUP(..),
+  gru,
+  -- * RNN unfolding functions
+  rnn,
+  rnnBackward,
+  rnnBackwardsWithCull,
+  rnnWithCull,
+  -- * Attention mechanisms
+  -- ** Scoring functions
+  AttentionScoring,
+  multiplicativeScoring,
+  additiveScoring,
+  -- ** Attention functions
+  AttentionFunction,
+  uniformAttn,
+  luongAttention,
+  -- ** Attention combinators
+  attentiveLstm
+  )
+
+where
 
 import Prelude hiding (tanh,Num(..),Floating(..),floor)
 import GHC.TypeLits
@@ -42,9 +85,9 @@ type RnnCell t states input output = (HTV (Flt t) states , input) -> Gen (HTV (F
 -- | A layer in an rnn. @n@ is the length of the time sequence. @state@ is the state propagated through time.
 type RnnLayer b n state input t output u = HTV (Flt b) state -> Tensor (n ': input) t -> Gen (HTV (Flt b) state , Tensor (n ': output) u)
 
-
 --------------------------------------
 -- Combinators
+
 
 -- | Compose two rnn layers. This is useful for example to combine
 -- forward and backward layers.
@@ -183,17 +226,24 @@ gru (GRUP wz wr w) (VecSing ht1, xt) = do
 ----------------------------------------------
 -- "Attention" layers
 
--- | An attention scoring function. We assume that each portion of the
--- input has size @e@. @d@ is typically the size of the current state
--- of the output RNN.
+
+-- | An attention scoring function. This function should produce a
+-- score (between 0 and 1) for each of the @nValues@ entries of size
+-- @valueSize@.
+type AttentionScoring t batchSize keySize valueSize nValues = 
+  Tensor '[keySize,batchSize] ('Typ 'Float t) -> Tensor '[nValues,valueSize,batchSize] ('Typ 'Float t) -> Tensor '[nValues,batchSize] ('Typ 'Float t)
+
+-- | A function which attends to an external input. Typically a
+-- function of this type is a closure which has the attended input in
+-- its environment.
+type AttentionFunction t batchSize keySize valueSize =
+  T '[keySize,batchSize] (Flt t) -> Gen (T '[valueSize,batchSize] (Flt t))
+
+{- NICER, SLOW
+
 type AttentionScoring t batchSize keySize valueSize =
   Tensor '[keySize,batchSize] ('Typ 'Float t) -> Tensor '[valueSize,batchSize] ('Typ 'Float t) -> Tensor '[batchSize] ('Typ 'Float t)
 
-type AttentionScoring' t batchSize keySize valueSize nValues = 
-  Tensor '[keySize,batchSize] ('Typ 'Float t) -> Tensor '[nValues,valueSize,batchSize] ('Typ 'Float t) -> Tensor '[nValues,batchSize] ('Typ 'Float t)
-
-type AttentionFunction t batchSize keySize valueSize =
-  T '[keySize,batchSize] (Flt t) -> Gen (T '[valueSize,batchSize] (Flt t))
 
 -- | @attnExample1 θ h st@ combines each element of the vector h with
 -- s, and applies a dense layer with parameters θ. The "winning"
@@ -212,14 +262,30 @@ uniformAttn lengths score hs_ ht = do
   return ct
 
 
+
+-- | A multiplicative scoring function. See 
+-- https://github.com/tensorflow/nmt#background-on-the-attention-mechanism
+-- commit 75aa22dfb159f10a1a5b4557777d9ff547c1975a
+multiplicativeScoring :: forall valueSize keySize batchSize t.
+  T [keySize,valueSize] ('Typ 'Float t) ->  AttentionScoring t batchSize keySize valueSize
+multiplicativeScoring w dt h = h · ir
+  where ir :: T '[valueSize,batchSize] ('Typ 'Float t)
+        ir = w ∙ dt
+
+
+additiveScoring :: AdditiveScoringP sz keySize valueSize t -> AttentionScoring t batchSize valueSize keySize
+additiveScoring (AdditiveScoringP v w1 w2) dt h = squeeze0 (v ∙ tanh ((w1 ∙ h) ⊕ (w2 ∙ dt)))
+
+-}
+
 -- | @attnExample1 θ h st@ combines each element of the vector h with
 -- s, and applies a dense layer with parameters θ. The "winning"
 -- element of h (using softmax) is returned.
-uniformAttn' :: ∀ valueSize m keySize batchSize t. KnownNat m => KnownBits t =>
+uniformAttn :: ∀ valueSize m keySize batchSize t. KnownNat m => KnownBits t =>
                T '[batchSize] Int32 ->
-               AttentionScoring' t batchSize keySize valueSize m ->
+               AttentionScoring t batchSize keySize valueSize m ->
                T '[m,valueSize,batchSize] (Flt t) -> AttentionFunction t batchSize keySize valueSize
-uniformAttn' lengths score hs_ ht = do
+uniformAttn lengths score hs_ ht = do
   let   αt :: T '[m,batchSize] (Flt t)
         xx = score ht hs_
         αt = softmax0 (mask ⊙ xx)
@@ -227,7 +293,6 @@ uniformAttn' lengths score hs_ ht = do
         ct = squeeze0 (matmul hs_ (expandDim0 αt))
         mask = cast (sequenceMask @m lengths) -- mask according to length
   return ct
-
 
 -- -- | Add some attention, but feed back the attention vector back to
 -- -- the next iteration in the rnn. (This follows the diagram at
@@ -274,7 +339,7 @@ uniformAttn' lengths score hs_ ht = do
 -- commit 75aa22dfb159f10a1a5b4557777d9ff547c1975a)
 luongAttention :: ∀ attnSize d m e batchSize. KnownNat m => ( KnownNat batchSize) =>
                Tensor '[batchSize] Int32 ->
-               AttentionScoring 'B32 batchSize e d ->
+               AttentionScoring 'B32 batchSize e d m ->
                Tensor '[d+e,attnSize] Float32 ->
                T '[m,d,batchSize] Float32 -> T '[e,batchSize] Float32 -> Gen (T '[attnSize,batchSize] Float32)
 luongAttention lens score w hs_ ht = do
@@ -282,24 +347,14 @@ luongAttention lens score w hs_ ht = do
   return (tanh (w ∙ (concat0 ct ht)))
 -- This is essentially a dense layer on top of uniform attention; consider removing it.
 
-
--- | A multiplicative scoring function. See 
--- https://github.com/tensorflow/nmt#background-on-the-attention-mechanism
--- commit 75aa22dfb159f10a1a5b4557777d9ff547c1975a
-multiplicativeScoring :: forall valueSize keySize batchSize t.
-  T [keySize,valueSize] ('Typ 'Float t) ->  AttentionScoring t batchSize keySize valueSize
-multiplicativeScoring w dt h = h · ir
-  where ir :: T '[valueSize,batchSize] ('Typ 'Float t)
-        ir = w ∙ dt
-
-multiplicativeScoring' :: forall valueSize keySize batchSize nValues t.
-  KnownNat batchSize => T [keySize,valueSize] ('Typ 'Float t) ->  AttentionScoring' t batchSize keySize valueSize nValues 
-multiplicativeScoring' w dt hs = squeeze1 (matmul (expandDim1 ir) hs)
+-- | Multiplicative scoring function
+multiplicativeScoring :: forall valueSize keySize batchSize nValues t.
+  KnownNat batchSize => T [keySize,valueSize] ('Typ 'Float t) ->  AttentionScoring t batchSize keySize valueSize nValues 
+multiplicativeScoring w dt hs = squeeze1 (matmul (expandDim1 ir) hs)
   where ir :: T '[valueSize,batchSize] ('Typ 'Float t)
         ir = w ∙ dt
 
 
--- | An additive scoring function. See https://arxiv.org/pdf/1412.7449.pdf
 data AdditiveScoringP sz keySize valueSize t = AdditiveScoringP
   (Tensor '[sz, 1]         ('Typ 'Float t))
   (Tensor '[keySize, sz]   ('Typ 'Float t))
@@ -310,12 +365,10 @@ instance (KnownNat n, KnownNat k, KnownNat v, KnownBits t) => KnownTensors (Addi
 instance (KnownNat n, KnownNat k, KnownNat v, KnownBits t) => ParamWithDefault (AdditiveScoringP k v n t) where
   defaultInitializer = AdditiveScoringP glorotUniform glorotUniform glorotUniform
 
-additiveScoring :: AdditiveScoringP sz keySize valueSize t -> AttentionScoring t batchSize valueSize keySize
-additiveScoring (AdditiveScoringP v w1 w2) dt h = squeeze0 (v ∙ tanh ((w1 ∙ h) ⊕ (w2 ∙ dt)))
-
-additiveScoring' :: forall sz keySize valueSize t nValues batchSize. KnownNat sz => KnownNat keySize => (KnownNat nValues, KnownNat batchSize) =>
-  AdditiveScoringP sz keySize valueSize t -> AttentionScoring' t batchSize valueSize keySize nValues
-additiveScoring' (AdditiveScoringP v w1 w2) dt h = transpose r''
+-- | An additive scoring function. See https://arxiv.org/pdf/1412.7449.pdf
+additiveScoring :: forall sz keySize valueSize t nValues batchSize. KnownNat sz => KnownNat keySize => (KnownNat nValues, KnownNat batchSize) =>
+  AdditiveScoringP sz keySize valueSize t -> AttentionScoring t batchSize valueSize keySize nValues
+additiveScoring (AdditiveScoringP v w1 w2) dt h = transpose r''
   where w1h :: Tensor '[sz,batchSize, nValues] ('Typ 'Float t)
         w1h = transposeN01 @'[sz] (reshape @'[sz,nValues, batchSize] w1h')
         w1h' = matmul (reshape @'[keySize, nValues*batchSize] (transpose01 h)) (transpose01 w1)
@@ -377,14 +430,14 @@ chainForwardWithState f (s0 , V (x:xs)) = do
   (V xs',V ss) <- chainForwardWithState f (s1 , V xs)
   return (V (x':xs'), V (s1:ss) )
 
--- | RNN helper
-chainBackwardWithState ::
-  ∀ state a b n. ((state , a) -> Gen (state , b)) → (state , V n a) -> Gen (state , V n b, V n state)
-chainBackwardWithState _ (s0 , V []) = return (s0 , V [], V [])
-chainBackwardWithState f (s0 , V (x:xs)) = do
-  (s1,V xs',V ss') <- chainBackwardWithState f (s0,V xs)
-  (sFin, x') <- f (s1,x)
-  return (sFin,V (x':xs'),V (sFin:ss'))
+-- -- | RNN helper
+-- chainBackwardWithState ::
+--   ∀ state a b n. ((state , a) -> Gen (state , b)) → (state , V n a) -> Gen (state , V n b, V n state)
+-- chainBackwardWithState _ (s0 , V []) = return (s0 , V [], V [])
+-- chainBackwardWithState f (s0 , V (x:xs)) = do
+--   (s1,V xs',V ss') <- chainBackwardWithState f (s0,V xs)
+--   (sFin, x') <- f (s1,x)
+--   return (sFin,V (x':xs'),V (sFin:ss'))
 
 -- | RNN helper
 transposeV :: forall n xs t. All KnownLen xs =>

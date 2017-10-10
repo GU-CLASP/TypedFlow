@@ -1,3 +1,15 @@
+{-|
+Module      : TypedFlow.TF
+Description : Binding to tensorflow functions
+Copyright   : (c) Jean-Philippe Bernardy, 2017
+License     : LGPL-3
+Maintainer  : jean-philippe.bernardy@gu.se
+Stability   : experimental
+
+This module provides direct access to the most commonly used
+TensorFlow functions. Higher-level functions are not defined here.
+-}
+
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# OPTIONS_GHC -fplugin GHC.TypeLits.KnownNat.Solver #-}

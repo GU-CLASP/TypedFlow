@@ -4,6 +4,7 @@ local-packages:
 
 nix-deps:
     - QuickCheck
+    - hscolour
 
 nixpkgs:
   url: https://github.com/NixOS/nixpkgs-channels/archive/nixos-17.09.tar.gz

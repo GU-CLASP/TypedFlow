@@ -19,9 +19,7 @@ library
     mtl
 
   exposed-modules:
-       TypedFlow
-
-  other-modules:
+       TypedFlow,
        TypedFlow.Layers,
        TypedFlow.Layers.Core,
        TypedFlow.Layers.RNN,

@@ -1,3 +1,11 @@
+{-|
+Module      : TypedFlow.Layers.Core
+Description : Core layers and combinators.
+Copyright   : (c) Jean-Philippe Bernardy, 2017
+License     : LGPL-3
+Maintainer  : jean-philippe.bernardy@gu.se
+Stability   : experimental
+-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE RankNTypes #-}
