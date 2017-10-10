@@ -12,10 +12,10 @@ import TypedFlow
 
 agreement :: KnownNat batchSize => Model '[20,batchSize] Int32 '[batchSize] Int32
 agreement input gold = do
-  embs <- parameter "embs" embeddingInitializer
-  lstm1 <- parameter "w1" lstmInitializer
-  lstm2 <- parameter "w2" lstmInitializer
-  w <- parameter "dense" denseInitialiser
+  embs <- parameterDefault "embs"
+  lstm1 <- parameterDefault "w1"
+  lstm2 <- parameterDefault "w2"
+  w <- parameterDefault "dense"
   (_sFi,predictions) <-
     rnn (timeDistribute (embedding @50 @100000 embs)
           .-.
@@ -24,13 +24,13 @@ agreement input gold = do
           (lstm @150 lstm2)
           .-.
           timeDistribute (sigmoid . squeeze0 . dense  w))
-        (I (zeros,zeros) :* I (zeros,zeros) :* Unit) input
+        (repeatT zeros) input
   binary (last0 predictions) gold
 
 
 main :: IO ()
 main = do
-  writeFile "aggr_model.py" (generate $ compile (defaultOptions {maxGradientNorm = Just 1}) (agreement @1024))
+  generateFile "aggr_model.py" (compile (defaultOptions {maxGradientNorm = Just 1}) (agreement @1024))
   putStrLn "done!"
 
 (|>) :: ∀ a b. a -> b -> (a, b)
@@ -44,4 +44,8 @@ done!
 -}
 
 
+
+-- Local Variables:
+-- dante-repl-command-line: ("nix-shell" ".styx/shell.nix" "--pure" "--run" "cabal repl")
+-- End:
 

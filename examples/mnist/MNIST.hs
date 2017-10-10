@@ -46,4 +46,7 @@ main = do
 
 -}
 
+-- Local Variables:
+-- dante-repl-command-line: ("nix-shell" ".styx/shell.nix" "--pure" "--run" "cabal repl")
+-- End:
 
