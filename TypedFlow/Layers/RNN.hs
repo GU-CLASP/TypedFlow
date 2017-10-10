@@ -57,7 +57,7 @@ module TypedFlow.Layers.RNN (
   -- ** Scoring functions
   AttentionScoring,
   multiplicativeScoring,
-  additiveScoring,
+  AdditiveScoringP(..), additiveScoring,
   -- ** Attention functions
   AttentionFunction,
   uniformAttn,
@@ -272,10 +272,11 @@ additiveScoring (AdditiveScoringP v w1 w2) dt h = squeeze0 (v ∙ tanh ((w1 ∙ 
 -- s, and applies a dense layer with parameters θ. The "winning"
 -- element of h (using softmax) is returned.
 uniformAttn :: ∀ valueSize m keySize batchSize t. KnownNat m => KnownBits t =>
-               T '[batchSize] Int32 ->
-               AttentionScoring t batchSize keySize valueSize m ->
-               T '[m,valueSize,batchSize] (Flt t) -> AttentionFunction t batchSize keySize valueSize
-uniformAttn lengths score hs_ ht = do
+               AttentionScoring t batchSize keySize valueSize m -> -- ^ scoring function
+               T '[batchSize] Int32 -> -- ^ lengths of the inputs
+               T '[m,valueSize,batchSize] (Flt t) -> -- ^ inputs
+               AttentionFunction t batchSize keySize valueSize
+uniformAttn score lengths hs_ ht = do
   let   αt :: T '[m,batchSize] (Flt t)
         xx = score ht hs_
         αt = softmax0 (mask ⊙ xx)
@@ -305,18 +306,19 @@ attentiveWithFeedback attn cell ((F prevAttnVector :* s),x) = do
 -- attentiveLstm att w = attentiveWithFeedback att (lstm w)
 
 
--- | Luong attention model (following
+-- | Luong attention function (following
 -- https://github.com/tensorflow/nmt#background-on-the-attention-mechanism
--- commit 75aa22dfb159f10a1a5b4557777d9ff547c1975a)
-luongAttention :: ∀ attnSize d m e batchSize. KnownNat m =>
-               Tensor '[batchSize] Int32 ->
-               AttentionScoring 'B32 batchSize e d m ->
-               Tensor '[d+e,attnSize] Float32 ->
-               T '[m,d,batchSize] Float32 -> T '[e,batchSize] Float32 -> Gen (T '[attnSize,batchSize] Float32)
-luongAttention lens score w hs_ ht = do
-  ct <- uniformAttn lens score hs_ ht
+-- commit 75aa22dfb159f10a1a5b4557777d9ff547c1975a).
+-- Essentially a dense layer with tanh activation, on top of uniform attention.
+luongAttention :: ∀ attnSize d m e batchSize w. KnownNat m => KnownBits w =>
+               Tensor '[d+e,attnSize] (Flt w) -> -- ^ weights for the dense layer
+               AttentionScoring w batchSize e d m -> -- ^ scoring function
+               Tensor '[batchSize] Int32 -> -- ^ length of the input
+               T '[m,d,batchSize] (Flt w) -> -- ^ inputs
+               AttentionFunction w batchSize e attnSize
+luongAttention w scoring lens hs_ ht = do
+  ct <- uniformAttn scoring lens hs_ ht
   return (tanh (w ∙ (concat0 ct ht)))
--- This is essentially a dense layer on top of uniform attention; consider removing it.
 
 -- | Multiplicative scoring function
 multiplicativeScoring :: forall valueSize keySize batchSize nValues t.
@@ -419,7 +421,7 @@ transposeV (LS _ n) xxs  = F ys' :* yys'
         ys' = stack ys
         yys' = transposeV n yys
 
-        help :: forall ys x t. V n (HTV t (x ': ys)) -> (V n (T x t) , V n (HTV t ys))
+        help :: forall ys x tt. V n (HTV tt (x ': ys)) -> (V n (T x tt) , V n (HTV tt ys))
         help (V xs) = (V (map (fromF . hhead) xs),V (map htail xs))
 
 -- | @(gatherFinalStates dynLen states)[i] = states[dynLen[i]]@
