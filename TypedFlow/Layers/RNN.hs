@@ -63,7 +63,7 @@ module TypedFlow.Layers.RNN (
   uniformAttn,
   luongAttention,
   -- ** Attention combinators
-  attentiveLstm
+  attentiveWithFeedback
   )
 
 where
@@ -103,7 +103,7 @@ infixr .--.
 
 
 -- | Compose two rnn layers in parallel.
-bothRnnLayers,(.++.)  :: forall s1 s2 a t b u c n bs bits. KnownNat bs => KnownLen s1 =>
+bothRnnLayers,(.++.)  :: forall s1 s2 a t b u c n bs bits. KnownLen s1 =>
                   RnnLayer bits n s1 a t '[b,bs] u -> RnnLayer bits n s2 a t '[c,bs] u -> RnnLayer bits n (s1 ++ s2) a t '[b+c,bs] u
 bothRnnLayers f g (hsplit @s1 -> (s0,s1)) x = do
   (s0',y) <- f s0 x
@@ -129,7 +129,7 @@ stackRnnCells l1 l2 (hsplit @s0 -> (s0,s1),x) = do
 (.-.) = stackRnnCells
 
 -- | Run the cell, and forward the input to the output, by concatenation with the output of the cell.
-withBypass :: KnownNat bs => RnnCell b s0 (T '[x,bs] t) (T '[y,bs] t) -> RnnCell b s0 (T '[x,bs] t) (T '[x+y,bs] t)
+withBypass :: RnnCell b s0 (T '[x,bs] t) (T '[y,bs] t) -> RnnCell b s0 (T '[x,bs] t) (T '[x+y,bs] t)
 withBypass cell (s,x) = do
   (s',y) <- cell (s,x)
   return (s',concat0 x y)
@@ -170,7 +170,7 @@ instance (KnownNat n, KnownNat x, KnownBits t) => ParamWithDefault (LSTMP t n x)
     where forgetInit = DenseP (denseWeights cellInitializerBit) ones
 
 -- | Standard LSTM
-lstm :: ∀ n x bs t. (KnownNat bs) => LSTMP t n x ->
+lstm :: ∀ n x bs t. LSTMP t n x ->
         RnnCell t '[ '[n,bs], '[n,bs]] (Tensor '[x,bs] (Flt t)) (Tensor '[n,bs] (Flt t))
 lstm (LSTMP wf wi wc wo) (VecPair ht1 ct1, input) = do
   hx <- assign (concat0 ht1 input)
@@ -192,16 +192,6 @@ lstm (LSTMP wf wi wc wo) (VecPair ht1 ct1, input) = do
 --   a <- att ht
 --   let ht' = ht ⊕ a -- alternatively add a dense layer to combine
 --   return (VecPair ht' ct, a)
-
--- | LSTM for an attention model. The result of attention is fed to the next step.
-attentiveLstm :: forall attSize n x bs t. KnownNat bs =>
-  AttentionFunction t bs n attSize ->
-  LSTMP t n (x+attSize) ->
-  RnnCell t '[ '[n,bs], '[n,bs], '[attSize,bs] ] (Tensor '[x,bs] (Flt t)) (Tensor '[attSize,bs] (Flt t))
-attentiveLstm att w (VecTriple ht1 ct1 at1,x) = do
-  (VecPair ht ct, _ht) <- lstm w (VecPair ht1 ct1,concat0 x at1)
-  at <- att ht
-  return (VecTriple ht ct at, at)
 
 -- | Parameter for a GRU
 data GRUP t n x = GRUP (T [n+x,n] ('Typ 'Float t)) (T [n+x,n] ('Typ 'Float t)) (T [n+x,n] ('Typ 'Float t))
@@ -294,50 +284,31 @@ uniformAttn lengths score hs_ ht = do
         mask = cast (sequenceMask @m lengths) -- mask according to length
   return ct
 
--- -- | Add some attention, but feed back the attention vector back to
--- -- the next iteration in the rnn. (This follows the diagram at
--- -- https://github.com/tensorflow/nmt#background-on-the-attention-mechanism
--- -- commit 75aa22dfb159f10a1a5b4557777d9ff547c1975a).  The main
--- -- difference with 'addAttention' above is that the attn function is
--- -- that the final result depends on the attention vector rather than the output of the underlying cell.
--- -- (This yields to exploding loss in my tests.)
--- addAttentionWithFeedback ::KnownShape s => 
---                 ((T (b ': s) t) -> Gen (T (x ': s) t)) ->
---                 RnnCell state                    (T ((a+x) ': s) t) (T (b ': s) t) ->
---                 RnnCell (T (x ': s) t ': state)  (T ( a    ': s) t) (T (x ': s) t)
--- addAttentionWithFeedback attn cell ((I prevAttnVector :* s),a) = do
---   (s',y) <- cell (s,concat0 a prevAttnVector)
---   focus <- attn y
---   return ((I focus :* s'),focus)
+-- | Add some attention to an RnnCell, and feed the attention vector to
+-- the next iteration in the rnn. (This follows the diagram at
+-- https://github.com/tensorflow/nmt#background-on-the-attention-mechanism
+-- commit 75aa22dfb159f10a1a5b4557777d9ff547c1975a).
+attentiveWithFeedback ::forall attSize cellSize inputSize bs w ss.
+  AttentionFunction w bs cellSize attSize ->
+  RnnCell w ss                      (T '[inputSize+attSize,bs] (Flt w)) (T '[cellSize,bs] (Flt w)) ->
+  RnnCell w ('[attSize,bs] ': ss)   (T '[inputSize        ,bs] (Flt w)) (T '[attSize,bs] (Flt w))
+attentiveWithFeedback attn cell ((F prevAttnVector :* s),x) = do
+  (s',y) <- cell (s,concat0 x prevAttnVector)
+  focus <- attn y
+  return ((F focus :* s'),focus)
 
--- -- | @addAttention attn cell@ adds the attention function @attn@ to the
--- -- rnn cell @cell@.  Note that @attn@ can depend in particular on a
--- -- constant external value @h@ which is the complete input to pay
--- -- attention to.
--- addAttentionAbove :: KnownShape s =>
---                 ((T (b ': s) t) -> Gen (T (x ': s) t)) ->
---                 RnnCell states (T (a ': s) t) (T (b ': s) t) ->
---                 RnnCell states (T (a ': s) t) (T (b+x ': s) t)
--- addAttentionAbove attn cell (s,a) = do
---   (s',y) <- cell (s,a)
---   focus <- attn y
---   return (s',concat0 y focus)
-
-
--- addAttentionBelow ::KnownShape s => (t ~ Float32) =>
---                 ((T (b ': s) t) -> Gen (T (x ': s) t)) ->
---                 RnnCell state                    (T ((a+x) ': s) t) (T (b ': s) t) ->
---                 RnnCell ((b ': s) ': state)  (T ( a    ': s) t) (T (b ': s) t)
--- addAttentionBelow attn cell ((F prevY :* s),a) = do
---   focus <- attn prevY
---   (s',y) <- cell (s,concat0 a focus)
---   return ((F y :* s'),y)
+-- -- | LSTM for an attention model. The result of attention is fed to the next step.
+-- attentiveLstm :: forall attSize n x bs t. KnownNat bs =>
+--   AttentionFunction t bs n attSize ->
+--   LSTMP t n (x+attSize) ->
+--   RnnCell t '[ '[attSize,bs], '[n,bs], '[n,bs] ] (Tensor '[x,bs] (Flt t)) (Tensor '[attSize,bs] (Flt t))
+-- attentiveLstm att w = attentiveWithFeedback att (lstm w)
 
 
 -- | Luong attention model (following
 -- https://github.com/tensorflow/nmt#background-on-the-attention-mechanism
 -- commit 75aa22dfb159f10a1a5b4557777d9ff547c1975a)
-luongAttention :: ∀ attnSize d m e batchSize. KnownNat m => ( KnownNat batchSize) =>
+luongAttention :: ∀ attnSize d m e batchSize. KnownNat m =>
                Tensor '[batchSize] Int32 ->
                AttentionScoring 'B32 batchSize e d m ->
                Tensor '[d+e,attnSize] Float32 ->
