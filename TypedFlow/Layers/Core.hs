@@ -31,7 +31,18 @@ Stability   : experimental
 {-# LANGUAGE UnicodeSyntax #-}
 {-# LANGUAGE PatternSynonyms #-}
 
-module TypedFlow.Layers.Core where
+module TypedFlow.Layers.Core
+  (
+    -- * Dense
+    DenseP(..), dense, (#),
+    -- * Dropout
+    DropProb(..), mkDropout, mkDropouts,
+    -- * Embedding
+    EmbeddingP(..), embedding,
+    -- * Convolutional
+    ConvP(..), conv, maxPool2D)
+
+where
 
 import Prelude hiding (tanh,Num(..),Floating(..),floor)
 import qualified Prelude
@@ -57,18 +68,18 @@ data DenseP t a b = DenseP {denseWeights :: Tensor '[a,b] (Flt t)
 -- Feed-forward layers
 
 -- | Parameters for the embedding layers
-newtype EmbbeddingP numObjects embeddingSize t = EmbbeddingP (Tensor '[numObjects, embeddingSize] ('Typ 'Float t))
+newtype EmbeddingP numObjects embeddingSize t = EmbeddingP (Tensor '[numObjects, embeddingSize] ('Typ 'Float t))
 
-instance (KnownNat numObjects, KnownBits b, KnownNat embeddingSize) => KnownTensors (EmbbeddingP numObjects embeddingSize b) where
-  travTensor f s (EmbbeddingP p) = EmbbeddingP <$> travTensor f s p
+instance (KnownNat numObjects, KnownBits b, KnownNat embeddingSize) => KnownTensors (EmbeddingP numObjects embeddingSize b) where
+  travTensor f s (EmbeddingP p) = EmbeddingP <$> travTensor f s p
 
-instance (KnownNat numObjects, KnownBits b, KnownNat embeddingSize) => ParamWithDefault (EmbbeddingP numObjects embeddingSize b) where
-  defaultInitializer = EmbbeddingP (randomUniform (-0.05) 0.05)
+instance (KnownNat numObjects, KnownBits b, KnownNat embeddingSize) => ParamWithDefault (EmbeddingP numObjects embeddingSize b) where
+  defaultInitializer = EmbeddingP (randomUniform (-0.05) 0.05)
 
 -- | embedding layer
 embedding :: ∀ embeddingSize numObjects batchSize t.
-             EmbbeddingP numObjects embeddingSize t -> Tensor '[batchSize] Int32 -> Tensor '[embeddingSize,batchSize] ('Typ 'Float t)
-embedding (EmbbeddingP param) input = gather @ '[embeddingSize] (transpose param) input
+             EmbeddingP numObjects embeddingSize t -> Tensor '[batchSize] Int32 -> Tensor '[embeddingSize,batchSize] ('Typ 'Float t)
+embedding (EmbeddingP param) input = gather @ '[embeddingSize] (transpose param) input
 
 instance (KnownNat a, KnownNat b, KnownBits t) => KnownTensors (DenseP t a b) where
   travTensor f s (DenseP x y) = DenseP <$> travTensor f (s<>"_w") x <*> travTensor f (s<>"_bias") y
@@ -76,13 +87,11 @@ instance (KnownNat a, KnownNat b, KnownBits t) => KnownTensors (DenseP t a b) wh
 instance (KnownNat n, KnownNat m, KnownBits b) => ParamWithDefault (DenseP b n m) where
   defaultInitializer = DenseP glorotUniform (truncatedNormal 0.1)
 
--- | Apply a linear function
-(#) :: DenseP t a b -> T '[a,batchSize] (Flt t) -> Tensor '[b,batchSize] (Flt t)
+-- | Dense layer (Apply a linear function)
+(#), dense :: ∀m n batchSize t. DenseP t n m -> Tensor '[n, batchSize] (Flt t) -> Tensor '[m, batchSize] (Flt t)
 (DenseP weightMatrix bias) # v = (weightMatrix ∙ v) + bias
 
--- | Dense layer
-dense :: ∀m n batchSize t. DenseP t n m -> Tensor '[n, batchSize] (Flt t) -> Tensor '[m, batchSize] (Flt t)
-dense lf t = lf # t
+dense = (#)
 
 -- | A drop probability. (This type is used to make sure one does not
 -- confuse keep probability and drop probability)
