@@ -271,11 +271,11 @@ additiveScoring (AdditiveScoringP v w1 w2) dt h = squeeze0 (v ∙ tanh ((w1 ∙ 
 -- | @attnExample1 θ h st@ combines each element of the vector h with
 -- s, and applies a dense layer with parameters θ. The "winning"
 -- element of h (using softmax) is returned.
-uniformAttn :: ∀ valueSize m keySize batchSize t. KnownNat m => KnownBits t =>
-               AttentionScoring t batchSize keySize valueSize m -> -- ^ scoring function
-               T '[batchSize] Int32 -> -- ^ lengths of the inputs
-               T '[m,valueSize,batchSize] (Flt t) -> -- ^ inputs
-               AttentionFunction t batchSize keySize valueSize
+uniformAttn :: ∀ valueSize m keySize batchSize t. KnownNat m => KnownBits t
+            => AttentionScoring t batchSize keySize valueSize m -- ^ scoring function
+            -> T '[batchSize] Int32 -- ^ lengths of the inputs
+            -> T '[m,valueSize,batchSize] (Flt t) -- ^ inputs
+            -> AttentionFunction t batchSize keySize valueSize
 uniformAttn score lengths hs_ ht = do
   let   αt :: T '[m,batchSize] (Flt t)
         xx = score ht hs_
@@ -310,12 +310,12 @@ attentiveWithFeedback attn cell ((F prevAttnVector :* s),x) = do
 -- https://github.com/tensorflow/nmt#background-on-the-attention-mechanism
 -- commit 75aa22dfb159f10a1a5b4557777d9ff547c1975a).
 -- Essentially a dense layer with tanh activation, on top of uniform attention.
-luongAttention :: ∀ attnSize d m e batchSize w. KnownNat m => KnownBits w =>
-               Tensor '[d+e,attnSize] (Flt w) -> -- ^ weights for the dense layer
-               AttentionScoring w batchSize e d m -> -- ^ scoring function
-               Tensor '[batchSize] Int32 -> -- ^ length of the input
-               T '[m,d,batchSize] (Flt w) -> -- ^ inputs
-               AttentionFunction w batchSize e attnSize
+luongAttention :: ∀ attnSize d m e batchSize w. KnownNat m => KnownBits w
+  => Tensor '[d+e,attnSize] (Flt w)     -- ^ weights for the dense layer
+  -> AttentionScoring w batchSize e d m -- ^ scoring function
+  -> Tensor '[batchSize] Int32          -- ^ length of the input
+  -> T '[m,d,batchSize] (Flt w)         -- ^ inputs
+  -> AttentionFunction w batchSize e attnSize
 luongAttention w scoring lens hs_ ht = do
   ct <- uniformAttn scoring lens hs_ ht
   return (tanh (w ∙ (concat0 ct ht)))
