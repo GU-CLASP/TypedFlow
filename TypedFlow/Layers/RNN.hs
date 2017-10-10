@@ -322,7 +322,8 @@ luongAttention w scoring lens hs_ ht = do
 
 -- | Multiplicative scoring function
 multiplicativeScoring :: forall valueSize keySize batchSize nValues t.
-  KnownNat batchSize => T [keySize,valueSize] ('Typ 'Float t) ->  AttentionScoring t batchSize keySize valueSize nValues 
+  KnownNat batchSize => T [keySize,valueSize] ('Typ 'Float t) -- ^ weights
+  ->  AttentionScoring t batchSize keySize valueSize nValues
 multiplicativeScoring w dt hs = squeeze1 (matmul (expandDim1 ir) hs)
   where ir :: T '[valueSize,batchSize] ('Typ 'Float t)
         ir = w ∙ dt
