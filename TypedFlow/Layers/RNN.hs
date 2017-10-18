@@ -1,3 +1,12 @@
+{-|
+Module      : TypedFlow.Layers.RNN
+Description : RNN cells, layers and combinators.
+Copyright   : (c) Jean-Philippe Bernardy, 2017
+License     : LGPL-3
+Maintainer  : jean-philippe.bernardy@gu.se
+Stability   : experimental
+-}
+
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE RankNTypes #-}
@@ -23,7 +32,41 @@
 {-# LANGUAGE UnicodeSyntax #-}
 {-# LANGUAGE PatternSynonyms #-}
 
-module TypedFlow.Layers.RNN where
+module TypedFlow.Layers.RNN (
+  -- * Types
+  RnnCell, RnnLayer,
+  -- * Combinators
+  stackRnnCells, (.-.),
+  stackRnnLayers, (.--.),
+  bothRnnLayers,(.++.),
+  withBypass,
+  onStates,
+  timeDistribute, timeDistribute',
+  -- * RNN Cells
+  cellInitializerBit,
+  LSTMP(..),
+  lstm,
+  GRUP(..),
+  gru,
+  -- * RNN unfolding functions
+  rnn,
+  rnnBackward,
+  rnnBackwardsWithCull,
+  rnnWithCull,
+  -- * Attention mechanisms
+  -- ** Scoring functions
+  AttentionScoring,
+  multiplicativeScoring,
+  AdditiveScoringP(..), additiveScoring,
+  -- ** Attention functions
+  AttentionFunction,
+  uniformAttn,
+  luongAttention,
+  -- ** Attention combinators
+  attentiveWithFeedback
+  )
+
+where
 
 import Prelude hiding (tanh,Num(..),Floating(..),floor)
 import GHC.TypeLits
@@ -42,9 +85,9 @@ type RnnCell t states input output = (HTV (Flt t) states , input) -> Gen (HTV (F
 -- | A layer in an rnn. @n@ is the length of the time sequence. @state@ is the state propagated through time.
 type RnnLayer b n state input t output u = HTV (Flt b) state -> Tensor (n ': input) t -> Gen (HTV (Flt b) state , Tensor (n ': output) u)
 
-
 --------------------------------------
 -- Combinators
+
 
 -- | Compose two rnn layers. This is useful for example to combine
 -- forward and backward layers.
@@ -60,7 +103,7 @@ infixr .--.
 
 
 -- | Compose two rnn layers in parallel.
-bothRnnLayers,(.++.)  :: forall s1 s2 a t b u c n bs bits. KnownNat bs => KnownLen s1 =>
+bothRnnLayers,(.++.)  :: forall s1 s2 a t b u c n bs bits. KnownLen s1 =>
                   RnnLayer bits n s1 a t '[b,bs] u -> RnnLayer bits n s2 a t '[c,bs] u -> RnnLayer bits n (s1 ++ s2) a t '[b+c,bs] u
 bothRnnLayers f g (hsplit @s1 -> (s0,s1)) x = do
   (s0',y) <- f s0 x
@@ -86,7 +129,7 @@ stackRnnCells l1 l2 (hsplit @s0 -> (s0,s1),x) = do
 (.-.) = stackRnnCells
 
 -- | Run the cell, and forward the input to the output, by concatenation with the output of the cell.
-withBypass :: KnownNat bs => RnnCell b s0 (T '[x,bs] t) (T '[y,bs] t) -> RnnCell b s0 (T '[x,bs] t) (T '[x+y,bs] t)
+withBypass :: RnnCell b s0 (T '[x,bs] t) (T '[y,bs] t) -> RnnCell b s0 (T '[x,bs] t) (T '[x+y,bs] t)
 withBypass cell (s,x) = do
   (s',y) <- cell (s,x)
   return (s',concat0 x y)
@@ -127,7 +170,7 @@ instance (KnownNat n, KnownNat x, KnownBits t) => ParamWithDefault (LSTMP t n x)
     where forgetInit = DenseP (denseWeights cellInitializerBit) ones
 
 -- | Standard LSTM
-lstm :: ∀ n x bs t. (KnownNat bs) => LSTMP t n x ->
+lstm :: ∀ n x bs t. LSTMP t n x ->
         RnnCell t '[ '[n,bs], '[n,bs]] (Tensor '[x,bs] (Flt t)) (Tensor '[n,bs] (Flt t))
 lstm (LSTMP wf wi wc wo) (VecPair ht1 ct1, input) = do
   hx <- assign (concat0 ht1 input)
@@ -149,16 +192,6 @@ lstm (LSTMP wf wi wc wo) (VecPair ht1 ct1, input) = do
 --   a <- att ht
 --   let ht' = ht ⊕ a -- alternatively add a dense layer to combine
 --   return (VecPair ht' ct, a)
-
--- | LSTM for an attention model. The result of attention is fed to the next step.
-attentiveLstm :: forall attSize n x bs t. KnownNat bs =>
-  AttentionFunction t bs n attSize ->
-  LSTMP t n (x+attSize) ->
-  RnnCell t '[ '[n,bs], '[n,bs], '[attSize,bs] ] (Tensor '[x,bs] (Flt t)) (Tensor '[attSize,bs] (Flt t))
-attentiveLstm att w (VecTriple ht1 ct1 at1,x) = do
-  (VecPair ht ct, _ht) <- lstm w (VecPair ht1 ct1,concat0 x at1)
-  at <- att ht
-  return (VecTriple ht ct at, at)
 
 -- | Parameter for a GRU
 data GRUP t n x = GRUP (T [n+x,n] ('Typ 'Float t)) (T [n+x,n] ('Typ 'Float t)) (T [n+x,n] ('Typ 'Float t))
@@ -183,17 +216,24 @@ gru (GRUP wz wr w) (VecSing ht1, xt) = do
 ----------------------------------------------
 -- "Attention" layers
 
--- | An attention scoring function. We assume that each portion of the
--- input has size @e@. @d@ is typically the size of the current state
--- of the output RNN.
+
+-- | An attention scoring function. This function should produce a
+-- score (between 0 and 1) for each of the @nValues@ entries of size
+-- @valueSize@.
+type AttentionScoring t batchSize keySize valueSize nValues = 
+  Tensor '[keySize,batchSize] ('Typ 'Float t) -> Tensor '[nValues,valueSize,batchSize] ('Typ 'Float t) -> Tensor '[nValues,batchSize] ('Typ 'Float t)
+
+-- | A function which attends to an external input. Typically a
+-- function of this type is a closure which has the attended input in
+-- its environment.
+type AttentionFunction t batchSize keySize valueSize =
+  T '[keySize,batchSize] (Flt t) -> Gen (T '[valueSize,batchSize] (Flt t))
+
+{- NICER, SLOW
+
 type AttentionScoring t batchSize keySize valueSize =
   Tensor '[keySize,batchSize] ('Typ 'Float t) -> Tensor '[valueSize,batchSize] ('Typ 'Float t) -> Tensor '[batchSize] ('Typ 'Float t)
 
-type AttentionScoring' t batchSize keySize valueSize nValues = 
-  Tensor '[keySize,batchSize] ('Typ 'Float t) -> Tensor '[nValues,valueSize,batchSize] ('Typ 'Float t) -> Tensor '[nValues,batchSize] ('Typ 'Float t)
-
-type AttentionFunction t batchSize keySize valueSize =
-  T '[keySize,batchSize] (Flt t) -> Gen (T '[valueSize,batchSize] (Flt t))
 
 -- | @attnExample1 θ h st@ combines each element of the vector h with
 -- s, and applies a dense layer with parameters θ. The "winning"
@@ -212,76 +252,6 @@ uniformAttn lengths score hs_ ht = do
   return ct
 
 
--- | @attnExample1 θ h st@ combines each element of the vector h with
--- s, and applies a dense layer with parameters θ. The "winning"
--- element of h (using softmax) is returned.
-uniformAttn' :: ∀ valueSize m keySize batchSize t. KnownNat m => KnownBits t =>
-               T '[batchSize] Int32 ->
-               AttentionScoring' t batchSize keySize valueSize m ->
-               T '[m,valueSize,batchSize] (Flt t) -> AttentionFunction t batchSize keySize valueSize
-uniformAttn' lengths score hs_ ht = do
-  let   αt :: T '[m,batchSize] (Flt t)
-        xx = score ht hs_
-        αt = softmax0 (mask ⊙ xx)
-        ct :: T '[valueSize,batchSize] (Flt t)
-        ct = squeeze0 (matmul hs_ (expandDim0 αt))
-        mask = cast (sequenceMask @m lengths) -- mask according to length
-  return ct
-
-
--- -- | Add some attention, but feed back the attention vector back to
--- -- the next iteration in the rnn. (This follows the diagram at
--- -- https://github.com/tensorflow/nmt#background-on-the-attention-mechanism
--- -- commit 75aa22dfb159f10a1a5b4557777d9ff547c1975a).  The main
--- -- difference with 'addAttention' above is that the attn function is
--- -- that the final result depends on the attention vector rather than the output of the underlying cell.
--- -- (This yields to exploding loss in my tests.)
--- addAttentionWithFeedback ::KnownShape s => 
---                 ((T (b ': s) t) -> Gen (T (x ': s) t)) ->
---                 RnnCell state                    (T ((a+x) ': s) t) (T (b ': s) t) ->
---                 RnnCell (T (x ': s) t ': state)  (T ( a    ': s) t) (T (x ': s) t)
--- addAttentionWithFeedback attn cell ((I prevAttnVector :* s),a) = do
---   (s',y) <- cell (s,concat0 a prevAttnVector)
---   focus <- attn y
---   return ((I focus :* s'),focus)
-
--- -- | @addAttention attn cell@ adds the attention function @attn@ to the
--- -- rnn cell @cell@.  Note that @attn@ can depend in particular on a
--- -- constant external value @h@ which is the complete input to pay
--- -- attention to.
--- addAttentionAbove :: KnownShape s =>
---                 ((T (b ': s) t) -> Gen (T (x ': s) t)) ->
---                 RnnCell states (T (a ': s) t) (T (b ': s) t) ->
---                 RnnCell states (T (a ': s) t) (T (b+x ': s) t)
--- addAttentionAbove attn cell (s,a) = do
---   (s',y) <- cell (s,a)
---   focus <- attn y
---   return (s',concat0 y focus)
-
-
--- addAttentionBelow ::KnownShape s => (t ~ Float32) =>
---                 ((T (b ': s) t) -> Gen (T (x ': s) t)) ->
---                 RnnCell state                    (T ((a+x) ': s) t) (T (b ': s) t) ->
---                 RnnCell ((b ': s) ': state)  (T ( a    ': s) t) (T (b ': s) t)
--- addAttentionBelow attn cell ((F prevY :* s),a) = do
---   focus <- attn prevY
---   (s',y) <- cell (s,concat0 a focus)
---   return ((F y :* s'),y)
-
-
--- | Luong attention model (following
--- https://github.com/tensorflow/nmt#background-on-the-attention-mechanism
--- commit 75aa22dfb159f10a1a5b4557777d9ff547c1975a)
-luongAttention :: ∀ attnSize d m e batchSize. KnownNat m => ( KnownNat batchSize) =>
-               Tensor '[batchSize] Int32 ->
-               AttentionScoring 'B32 batchSize e d ->
-               Tensor '[d+e,attnSize] Float32 ->
-               T '[m,d,batchSize] Float32 -> T '[e,batchSize] Float32 -> Gen (T '[attnSize,batchSize] Float32)
-luongAttention lens score w hs_ ht = do
-  ct <- uniformAttn lens score hs_ ht
-  return (tanh (w ∙ (concat0 ct ht)))
--- This is essentially a dense layer on top of uniform attention; consider removing it.
-
 
 -- | A multiplicative scoring function. See 
 -- https://github.com/tensorflow/nmt#background-on-the-attention-mechanism
@@ -292,14 +262,73 @@ multiplicativeScoring w dt h = h · ir
   where ir :: T '[valueSize,batchSize] ('Typ 'Float t)
         ir = w ∙ dt
 
-multiplicativeScoring' :: forall valueSize keySize batchSize nValues t.
-  KnownNat batchSize => T [keySize,valueSize] ('Typ 'Float t) ->  AttentionScoring' t batchSize keySize valueSize nValues 
-multiplicativeScoring' w dt hs = squeeze1 (matmul (expandDim1 ir) hs)
+
+additiveScoring :: AdditiveScoringP sz keySize valueSize t -> AttentionScoring t batchSize valueSize keySize
+additiveScoring (AdditiveScoringP v w1 w2) dt h = squeeze0 (v ∙ tanh ((w1 ∙ h) ⊕ (w2 ∙ dt)))
+
+-}
+
+-- | @attnExample1 θ h st@ combines each element of the vector h with
+-- s, and applies a dense layer with parameters θ. The "winning"
+-- element of h (using softmax) is returned.
+uniformAttn :: ∀ valueSize m keySize batchSize t. KnownNat m => KnownBits t
+            => AttentionScoring t batchSize keySize valueSize m -- ^ scoring function
+            -> T '[batchSize] Int32 -- ^ lengths of the inputs
+            -> T '[m,valueSize,batchSize] (Flt t) -- ^ inputs
+            -> AttentionFunction t batchSize keySize valueSize
+uniformAttn score lengths hs_ ht = do
+  let   αt :: T '[m,batchSize] (Flt t)
+        xx = score ht hs_
+        αt = softmax0 (mask ⊙ xx)
+        ct :: T '[valueSize,batchSize] (Flt t)
+        ct = squeeze0 (matmul hs_ (expandDim0 αt))
+        mask = cast (sequenceMask @m lengths) -- mask according to length
+  return ct
+
+-- | Add some attention to an RnnCell, and feed the attention vector to
+-- the next iteration in the rnn. (This follows the diagram at
+-- https://github.com/tensorflow/nmt#background-on-the-attention-mechanism
+-- commit 75aa22dfb159f10a1a5b4557777d9ff547c1975a).
+attentiveWithFeedback ::forall attSize cellSize inputSize bs w ss.
+  AttentionFunction w bs cellSize attSize ->
+  RnnCell w ss                      (T '[inputSize+attSize,bs] (Flt w)) (T '[cellSize,bs] (Flt w)) ->
+  RnnCell w ('[attSize,bs] ': ss)   (T '[inputSize        ,bs] (Flt w)) (T '[attSize,bs] (Flt w))
+attentiveWithFeedback attn cell ((F prevAttnVector :* s),x) = do
+  (s',y) <- cell (s,concat0 x prevAttnVector)
+  focus <- attn y
+  return ((F focus :* s'),focus)
+
+-- -- | LSTM for an attention model. The result of attention is fed to the next step.
+-- attentiveLstm :: forall attSize n x bs t. KnownNat bs =>
+--   AttentionFunction t bs n attSize ->
+--   LSTMP t n (x+attSize) ->
+--   RnnCell t '[ '[attSize,bs], '[n,bs], '[n,bs] ] (Tensor '[x,bs] (Flt t)) (Tensor '[attSize,bs] (Flt t))
+-- attentiveLstm att w = attentiveWithFeedback att (lstm w)
+
+
+-- | Luong attention function (following
+-- https://github.com/tensorflow/nmt#background-on-the-attention-mechanism
+-- commit 75aa22dfb159f10a1a5b4557777d9ff547c1975a).
+-- Essentially a dense layer with tanh activation, on top of uniform attention.
+luongAttention :: ∀ attnSize d m e batchSize w. KnownNat m => KnownBits w
+  => Tensor '[d+e,attnSize] (Flt w)     -- ^ weights for the dense layer
+  -> AttentionScoring w batchSize e d m -- ^ scoring function
+  -> Tensor '[batchSize] Int32          -- ^ length of the input
+  -> T '[m,d,batchSize] (Flt w)         -- ^ inputs
+  -> AttentionFunction w batchSize e attnSize
+luongAttention w scoring lens hs_ ht = do
+  ct <- uniformAttn scoring lens hs_ ht
+  return (tanh (w ∙ (concat0 ct ht)))
+
+-- | Multiplicative scoring function
+multiplicativeScoring :: forall valueSize keySize batchSize nValues t.
+  KnownNat batchSize => T [keySize,valueSize] ('Typ 'Float t) -- ^ weights
+  ->  AttentionScoring t batchSize keySize valueSize nValues
+multiplicativeScoring w dt hs = squeeze1 (matmul (expandDim1 ir) hs)
   where ir :: T '[valueSize,batchSize] ('Typ 'Float t)
         ir = w ∙ dt
 
 
--- | An additive scoring function. See https://arxiv.org/pdf/1412.7449.pdf
 data AdditiveScoringP sz keySize valueSize t = AdditiveScoringP
   (Tensor '[sz, 1]         ('Typ 'Float t))
   (Tensor '[keySize, sz]   ('Typ 'Float t))
@@ -310,12 +339,10 @@ instance (KnownNat n, KnownNat k, KnownNat v, KnownBits t) => KnownTensors (Addi
 instance (KnownNat n, KnownNat k, KnownNat v, KnownBits t) => ParamWithDefault (AdditiveScoringP k v n t) where
   defaultInitializer = AdditiveScoringP glorotUniform glorotUniform glorotUniform
 
-additiveScoring :: AdditiveScoringP sz keySize valueSize t -> AttentionScoring t batchSize valueSize keySize
-additiveScoring (AdditiveScoringP v w1 w2) dt h = squeeze0 (v ∙ tanh ((w1 ∙ h) ⊕ (w2 ∙ dt)))
-
-additiveScoring' :: forall sz keySize valueSize t nValues batchSize. KnownNat sz => KnownNat keySize => (KnownNat nValues, KnownNat batchSize) =>
-  AdditiveScoringP sz keySize valueSize t -> AttentionScoring' t batchSize valueSize keySize nValues
-additiveScoring' (AdditiveScoringP v w1 w2) dt h = transpose r''
+-- | An additive scoring function. See https://arxiv.org/pdf/1412.7449.pdf
+additiveScoring :: forall sz keySize valueSize t nValues batchSize. KnownNat sz => KnownNat keySize => (KnownNat nValues, KnownNat batchSize) =>
+  AdditiveScoringP sz keySize valueSize t -> AttentionScoring t batchSize valueSize keySize nValues
+additiveScoring (AdditiveScoringP v w1 w2) dt h = transpose r''
   where w1h :: Tensor '[sz,batchSize, nValues] ('Typ 'Float t)
         w1h = transposeN01 @'[sz] (reshape @'[sz,nValues, batchSize] w1h')
         w1h' = matmul (reshape @'[keySize, nValues*batchSize] (transpose01 h)) (transpose01 w1)
@@ -377,14 +404,14 @@ chainForwardWithState f (s0 , V (x:xs)) = do
   (V xs',V ss) <- chainForwardWithState f (s1 , V xs)
   return (V (x':xs'), V (s1:ss) )
 
--- | RNN helper
-chainBackwardWithState ::
-  ∀ state a b n. ((state , a) -> Gen (state , b)) → (state , V n a) -> Gen (state , V n b, V n state)
-chainBackwardWithState _ (s0 , V []) = return (s0 , V [], V [])
-chainBackwardWithState f (s0 , V (x:xs)) = do
-  (s1,V xs',V ss') <- chainBackwardWithState f (s0,V xs)
-  (sFin, x') <- f (s1,x)
-  return (sFin,V (x':xs'),V (sFin:ss'))
+-- -- | RNN helper
+-- chainBackwardWithState ::
+--   ∀ state a b n. ((state , a) -> Gen (state , b)) → (state , V n a) -> Gen (state , V n b, V n state)
+-- chainBackwardWithState _ (s0 , V []) = return (s0 , V [], V [])
+-- chainBackwardWithState f (s0 , V (x:xs)) = do
+--   (s1,V xs',V ss') <- chainBackwardWithState f (s0,V xs)
+--   (sFin, x') <- f (s1,x)
+--   return (sFin,V (x':xs'),V (sFin:ss'))
 
 -- | RNN helper
 transposeV :: forall n xs t. All KnownLen xs =>
@@ -395,7 +422,7 @@ transposeV (LS _ n) xxs  = F ys' :* yys'
         ys' = stack ys
         yys' = transposeV n yys
 
-        help :: forall ys x t. V n (HTV t (x ': ys)) -> (V n (T x t) , V n (HTV t ys))
+        help :: forall ys x tt. V n (HTV tt (x ': ys)) -> (V n (T x tt) , V n (HTV tt ys))
         help (V xs) = (V (map (fromF . hhead) xs),V (map htail xs))
 
 -- | @(gatherFinalStates dynLen states)[i] = states[dynLen[i]]@

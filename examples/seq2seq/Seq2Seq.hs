@@ -82,14 +82,12 @@ decoder prefix lens hs thoughtVectors targetInput = do
   embs <- parameterDefault "embs"
   w1 <- parameter (prefix++"att1") glorotUniform
   -- drp <- mkDropout (DropProb 0.1)
-  params <- parameterDefault "attlstm"
+  -- params <- parameterDefault "attlstm"
   -- drp1 <- mkDropout (DropProb 0.05)
   -- rdrp1 <- mkDropouts (DropProb 0.1)
-  let attn = uniformAttn' lens (multiplicativeScoring' w1) hs -- NOTE: attention on the left-part of the input.
+  let attn = uniformAttn lens (multiplicativeScoring w1) hs -- NOTE: attention on the left-part of the input.
   (_sFinal,outFinal) <-
     rnn ⋆ (timeDistribute (embedding @outVocabSize @outVocabSize embs)
-            .-.
-            lstm1
             .-.
             -- lstm2
             -- .-.
@@ -100,10 +98,10 @@ decoder prefix lens hs thoughtVectors targetInput = do
             -- timeDistribute drp1
             -- .-.
             -- (timeDistribute' attn)
-            (attentiveLstm attn params)
+            (attentiveWithFeedback attn lstm1)
             .-.
             timeDistribute (dense projs))
-        ⋆ (thoughtVectors `happ` (VecPair zeros zeros))
+        ⋆ (F zeros :* thoughtVectors)
         ⋆ targetInput
 
      -- TODO: should we use the states for all layers as

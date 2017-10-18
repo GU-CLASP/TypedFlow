@@ -1,3 +1,15 @@
+{-|
+Module      : TypedFlow.TF
+Description : Binding to tensorflow functions
+Copyright   : (c) Jean-Philippe Bernardy, 2017
+License     : LGPL-3
+Maintainer  : jean-philippe.bernardy@gu.se
+Stability   : experimental
+
+This module provides direct access to the most commonly used
+TensorFlow functions. Higher-level functions are not defined here.
+-}
+
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# OPTIONS_GHC -fplugin GHC.TypeLits.KnownNat.Solver #-}
@@ -257,7 +269,7 @@ flatten2 = prodAssoc @m @n @(Product s) reshape
 flattenN2 :: ∀ s m n t. (KnownNat m, KnownNat n, KnownShape s) => Tensor (s ++ '[m,n]) t -> Tensor (s ++ '[m*n]) t
 flattenN2  = prodHomo @s @'[m,n] $
              prodHomo @s @'[m*n] $
-             knownShapeApp @s @'[m*n] $
+             knownAppend @s @'[m*n] $
              reshape
 
 -- | Reshape a tensor so that the first three dimensions are collapsed
