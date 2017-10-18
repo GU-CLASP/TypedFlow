@@ -415,6 +415,18 @@ softmaxCrossEntropyWithLogits :: Tensor '[numClasses,batchSize] Float32 -- ^ lab
 softmaxCrossEntropyWithLogits (T labels) (T logits) =
   T (funcall "tf.nn.softmax_cross_entropy_with_logits" [named "labels" labels,named "logits" logits])
 
+-- | Computes sigmoid cross entropy given logits. Measures the
+-- probability error in discrete classification tasks in which each
+-- class is independent and not mutually exclusive. For instance, one
+-- could perform multilabel classification where a picture can contain
+-- both an elephant and a dog at the same time. See
+-- https://www.tensorflow.org/api_docs/python/tf/nn/sigmoid_cross_entropy_with_logits
+sigmoidCrossEntropyWithLogits :: Tensor s (Flt w) -- ^ labels
+                              -> Tensor s (Flt w) -- ^ logits
+                              -> Tensor s (Flt w)
+sigmoidCrossEntropyWithLogits (T labels) (T logits) =
+  T (funcall "tf.nn.sigmoid_cross_entropy_with_logits" [named "labels" labels,named "logits" logits])
+
 -- | sparse softmax cross entropy with logits.
 sparseSoftmaxCrossEntropyWithLogits :: Tensor s Int32                   -- ^ desired labels
                                     -> Tensor (numClasses ': s) (Flt t) -- ^ predictions

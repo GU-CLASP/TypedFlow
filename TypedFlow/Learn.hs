@@ -24,18 +24,16 @@ module TypedFlow.Learn where
 import TypedFlow.Types
 import TypedFlow.TF
 import qualified Prelude (Float)
-import Prelude (($),return,Maybe(..),id,(=<<))
+import Prelude (($),return,Maybe(..),(=<<))
 import Text.PrettyPrint.Compact (text)
 import Data.Monoid hiding (Last)
 import GHC.TypeLits (KnownNat)
 import Control.Monad.State (modify, gets)
 
 
-binaryCrossEntropy :: KnownNat bs => Tensor '[bs] Float32 -> Tensor '[bs] Float32 -> Tensor '[bs] Float32
-binaryCrossEntropy t y = negate (t ⊙ log y) ⊝ (ones ⊝ t) ⊙ log (ones ⊝ y) -- FIXME: add epsilon to avoid NaN
-
 --------------------------------
 -- Model maker.
+
 
 -- | First type argument is the number of classes.
 -- @categorical logits gold@
@@ -92,15 +90,15 @@ data ModelOutput s t = ModelOutput {modelY :: T s t -- ^ prediction
 -- | A standard modelling function: (input value, gold value) ↦ (prediction, accuracy, loss)
 type Model input tIn output tOut = T input tIn -> T output tOut -> Gen (ModelOutput output tOut)
 
--- | Model with binary output.
-binary :: forall bs. (KnownNat bs) => Model '[bs] Float32 '[bs] Int32
+-- | Model with several binary outputs.
+binary :: forall n bs. (KnownNat bs) => Model '[n,bs] Float32 '[n,bs] Int32
 binary score y = do
   sigy_ <- assign (sigmoid score)
   let y_ = cast @Int32 (round sigy_)
       modelY = y_
   correctPrediction <- assign (equal y_ y)
   modelAccuracy <- assign (reduceMeanAll (cast @Float32 correctPrediction))
-  modelLoss <- assign (reduceMeanAll (binaryCrossEntropy (cast @Float32 y) sigy_))
+  modelLoss <- assign (reduceMeanAll (sigmoidCrossEntropyWithLogits (cast @Float32 y) sigy_))
   return ModelOutput{..}
 
 -- | Model compiler options
