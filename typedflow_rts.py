@@ -71,6 +71,8 @@ def dict_generator (xs):
       for i in range(0, bs*(total_len//bs), bs):
         yield dict((k,xs[k][i:i+bs]) for k in xs)
 
+    return gen
+
 
 def initialize_params (session,model):
     '''Initialize the learnable parameters of the model'''
