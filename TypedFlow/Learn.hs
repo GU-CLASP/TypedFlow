@@ -100,13 +100,13 @@ type Model input tIn output tOut = T input tIn -> T output tOut -> Gen (ModelOut
 
 -- | Model with several binary outputs.
 binary :: forall n bs. (KnownNat bs) => Model '[n,bs] Float32 '[n,bs] Int32
-binary score y = do
-  sigy_ <- assign (sigmoid score)
+binary logits y = do
+  sigy_ <- assign (sigmoid logits)
   let y_ = cast @Int32 (round sigy_)
       modelY = y_
   correctPrediction <- assign (equal y_ y)
   modelAccuracy <- assign (reduceMeanAll (cast @Float32 correctPrediction))
-  modelLoss <- assign (reduceMeanAll (sigmoidCrossEntropyWithLogits (cast @Float32 y) sigy_))
+  modelLoss <- assign (reduceMeanAll (sigmoidCrossEntropyWithLogits (cast @Float32 y) logits))
   return ModelOutput{..}
 
 -- | Model compiler options
