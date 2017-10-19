@@ -313,16 +313,20 @@ slice1 :: forall i j m n s t. KnownNat j => KnownNat i => (i < j, j <= m, KnownL
 slice1 = slice @Dim1 @i @j
 
 -- | Split a tensors into @n@ tensors along the first dimension
-unstack :: ∀ s (n::Nat) t. (KnownLen s, KnownNat n) => Tensor (n ': s) t -> Gen (V n (T s t))
-unstack (T x) = do
+unstack0 :: ∀ s (n::Nat) t. (KnownLen s, KnownNat n) => Tensor (n ': s) t -> Gen (V n (T s t))
+unstack0 (T x) = do
   v <- newVar
   v <-- funcall "tf.unstack" [x, text "axis=" <> integer (listLen @ s)]
   return $ V $ [ T $ v <> brackets (integer i)| i <- [0..n Prelude.- 1] ]
         where n = natVal (Proxy @ n)
 
 -- | Concatenate @n@ tensors along the first dimension
-stack :: ∀ s (n::Nat) t. (KnownLen s) => V n (T s t) -> Tensor (n ': s) t
-stack (V xs) = T (funcall "tf.stack" [list [x | T x <- xs], text "axis=" <> integer (listLen @ s)])
+stack0 :: ∀ s (n::Nat) t. (KnownLen s) => V n (T s t) -> Tensor (n ': s) t
+stack0 (V xs) = T (funcall "tf.stack" [list [x | T x <- xs], text "axis=" <> integer (listLen @ s)])
+
+-- | Concatenate @n@ tensors along the first dimension
+stack1 :: ∀ s (n::Nat) m t. (KnownLen s) => V n (T (m ': s) t) -> Tensor (m ': n ': s) t
+stack1 (V xs) = T (funcall "tf.stack" [list [x | T x <- xs], text "axis=" <> integer (listLen @ s)])
 
 -- | Concatenate @n@ tensors along the last dimension
 stackN :: ∀ s (n::Nat) t. V n (T s t) -> Tensor (s ++ '[n]) t

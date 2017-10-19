@@ -359,9 +359,9 @@ rnn :: ∀ n state input output t u b.
        (KnownNat n, KnownShape input, KnownShape output) =>
        RnnCell b state (T input t) (T output u) -> RnnLayer b n state input t output u
 rnn cell s0 t = do
-  xs <- unstack t
+  xs <- unstack0 t
   (sFin,us) <- chainForward cell (s0,xs)
-  return (sFin,stack us)
+  return (sFin,stack0 us)
 -- There will be lots of stacking and unstacking at each layer for no
 -- reason; we should change the in/out from tensors to vectors of
 -- tensors.
@@ -374,9 +374,9 @@ rnnBackward :: ∀ n state input output t u b.
        RnnCell b state (T input t) (T output u) -> RnnLayer b n state input t output u
 
 rnnBackward cell s0 t = do
-  xs <- unstack t
+  xs <- unstack0 t
   (sFin,us) <- chainBackward cell (s0,xs)
-  return (sFin,stack us)
+  return (sFin,stack0 us)
 
 
 
@@ -419,7 +419,7 @@ transposeV :: forall n xs t. All KnownLen xs =>
 transposeV LZ _ = Unit
 transposeV (LS _ n) xxs  = F ys' :* yys'
   where (ys,yys) = help @(Tail xs) xxs
-        ys' = stack ys
+        ys' = stack0 ys
         yys' = transposeV n yys
 
         help :: forall ys x tt. V n (HTV tt (x ': ys)) -> (V n (T x tt) , V n (HTV tt ys))
@@ -446,10 +446,10 @@ rnnWithCull :: forall n bs x y t u ls b.
   All (LastEqual bs) ls =>
   T '[bs] Int32 -> RnnCell b ls (T x t) (T y u) -> RnnLayer b n ls x t y u
 rnnWithCull dynLen cell s0 t = do
-  xs <- unstack t
+  xs <- unstack0 t
   (us,ss) <- chainForwardWithState cell (s0,xs)
   let sss = transposeV @n (shapeSList @ls) ss
-  return (gathers @n (shapeSList @ls) dynLen sss,stack us)
+  return (gathers @n (shapeSList @ls) dynLen sss,stack0 us)
 
 -- | Like @rnnWithCull@, but states are threaded backwards.
 rnnBackwardsWithCull :: forall n bs x y t u ls b.
