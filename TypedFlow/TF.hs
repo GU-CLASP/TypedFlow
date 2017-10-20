@@ -301,8 +301,12 @@ last0 :: ∀ n s t. KnownNat n => KnownLen s => T (n ': s) t -> Tensor s t
 last0 = nth0 (natVal (Proxy @n) - 1)
 
 -- | Access the nth element in a tensor (in the 0th dimension)
-nth0 :: ∀ n s t. KnownNat n => KnownLen s => Integer -> T (n ': s) t -> Tensor s t
+nth0 :: ∀ n s t. KnownLen s => Integer -> T (n ': s) t -> Tensor s t
 nth0 i (T x) = T (x <> list (replicate (fromIntegral (listLen @s)) (text ":") ++ [integer i]))
+
+-- | Access the nth element in a tensor (in the 0th dimension), with a static index
+nth0' :: ∀ n m s t. KnownNat n => KnownLen s => n < m => T (m ': s) t -> Tensor s t
+nth0' (T x) = T (x <> list (replicate (fromIntegral (listLen @s)) (text ":") ++ [integer (natVal (Proxy @n))]))
 
 -- | Take a slice at dimension n from i to j.
 slice :: forall n i j s t. KnownNat j => KnownNat i => (i < j, j <= At n s, KnownPeano n, KnownLen s) =>
