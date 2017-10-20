@@ -135,23 +135,22 @@ compileGen :: forall sy ty. (KnownShape sy) =>
 compileGen Options{..} model = knownLast @sy $ do
   gen (text "import tensorflow as tf")
   genFun "mkModel" [text "optimizer=tf.train.AdamOptimizer()"] $ do
+    peekAt "optimizer" (T (text "optimizer"))
+    peekAt "batch_size" (T (showDim @ (Last sy)))
     trainingPhasePlaceholder <- placeholder "training_phase"
     modify $ \GState{..} -> GState{genTrainingPlaceholder = trainingPhasePlaceholder,..}
     ModelOutput{..} <- model
     y_ <- assign modelY
+    peekAt "y_" y_ 
     loss <- assign modelLoss
+    peekAt "loss" loss
     accuracy <- assign modelAccuracy
+    peekAt "accuracy" accuracy
     params <- getParameters
+    peekAt "params" (T params)
     trainStep <- assign $ case maxGradientNorm of
       Nothing -> T (funcall "optimizer.minimize" [fromTensor loss])
       Just clip -> T (funcall "optimizer.apply_gradients" [funcall "zip" [clipByGlobalNorm clip (grad loss params),params]])
-    peekAt "accuracy" accuracy
-    peekAt "loss" loss
-    peekAt "y_" y_
     peekAt "train" trainStep
     peeks <- gets genPeeks
-    gen (text "return " <> dict ([("params",params)
-                                 ,("optimizer",text "optimizer")
-                                 ,("batch_size",showDim @ (Last sy))
-                                 -- ,("gradients",gradients)
-                                 ] <> peeks))
+    gen (text "return " <> dict peeks)

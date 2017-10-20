@@ -487,7 +487,7 @@ newParameter p =   modify $ \GState{..} -> GState{genParams = p:genParams,..}
 
 -- | Name an expression so that it is made available for session.run.
 peekAtAny :: String -> UntypedExpression -> Gen ()
-peekAtAny p v = modify $ \GState{..} -> GState{genPeeks = (p,v):genPeeks,..}
+peekAtAny p v = modify $ \GState{..} -> GState{genPeeks = if p `elem` map fst genPeeks then error ("duplicate name: " ++ p) else (p,v):genPeeks,..}
 
 
 newVar :: Gen DOC
