@@ -34,73 +34,76 @@ TensorFlow functions. Higher-level functions are not defined here.
 {-# LANGUAGE UnicodeSyntax #-}
 
 module TypedFlow.TF (
-  -- * Persistent variables
-  persistent,
-  modifyPersistent,
-  -- * Parameters
+  -- * Variables, Parameters
+  -- ** Parameters
   parameter',
   parameter,
   parameterDefault,
   ParamWithDefault(..),
   getParameters,
-  -- * Placeholders and outputs
+  -- ** Persistent variables
+  persistent,
+  modifyPersistent,
+  -- ** Placeholders and outputs
   placeholder,
   peekAt,
   peekAtMany,
-  -- * Constants
+  -- * Operations
+  -- ** Constants
   zeros,
   ones,
   constant,
-  -- * indexwise unary operators
+  -- ** indexwise unary operators
   round, sigmoid, tanh, log, relu, floor, negate,
-  -- * Indexwise binary operators
+  -- ** Indexwise binary operators
   add, (+), (⊕), (⊝), (⊙), (⊘), equal,
-  -- * Products
+  -- ** Products
   (∙), (·), matmul,
-  -- * Reducers
+  -- ** Reducers
   reduceMeanAll, reduceSumAll,
   reduceSum, reduceMean,
   argmax, argmax0, argmax1,
   softmax0, softmax1,
-  -- * Gradients
+  -- ** Gradients
   grad,
   clipByGlobalNorm,
   clipByValue,
-  -- * Indexing
+  -- ** Indexing
   last0, nth0, nth0', gather,
-  -- * Split and concatenate
+  -- ** Split and concatenate
   split0, slice, slice1,
   stack0, unstack0, stackN,
   stack1,
   concatT, concat0, concat1,
-  -- * Reshaping
+  -- ** Reshaping
   expandDim,
   expandDim0, squeeze0,
   expandDim1, squeeze1,
   flatten2, inflate2, flattenN2,
   flatten3, inflate3,
   reshape, flattenAll, inflateAll,
-  -- * Transposition
+  -- ** Transposition
   transpose, transposeN, transposeN', transpose01, transposeN01,
-  -- * Sequences
+  -- ** Sequences
   reverseSequences, sequenceMask,
-  -- * Misc
+  -- ** Misc
   cast,
   convolution,
   oneHot, oneHot0, oneHot1,
   tile, replicateT,
-  -- * Testing
+  -- ** Testing conditions
   if_, where_,
-  -- * Mapping
+  -- * Contrib
+  -- ** Mapping
   mapT, mapTN, zipWithT, zipWithTN,
-  -- * Losses
+  -- ** Losses
   sigmoidCrossEntropyWithLogits,
   softmaxCrossEntropyWithLogits,
   sparseSoftmaxCrossEntropyWithLogits,
-  -- * Initializers
+  -- ** Initializers
   truncatedNormal, randomUniform, randomOrthogonal, varianceScaling, glorotUniform,
 
-  -- * Heterogeneous vectors
+  -- ** Heterogeneous vectors
   repeatT, flattenHTV, inflateHTV, KnownTensors(..), LastEqual
   ) where
 
