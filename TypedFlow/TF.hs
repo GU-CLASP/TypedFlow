@@ -33,9 +33,77 @@ TensorFlow functions. Higher-level functions are not defined here.
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE UnicodeSyntax #-}
 
-module TypedFlow.TF where
+module TypedFlow.TF (
+  -- * Persistent variables
+  persistent,
+  modifyPersistent,
+  -- * Parameters
+  parameter',
+  parameter,
+  parameterDefault,
+  getParameters,
+  -- * Placeholders and outputs
+  placeholder,
+  peekAt,
+  peekAtMany,
+  -- * Constants
+  zeros,
+  ones,
+  constant,
+  -- * indexwise unary operators
+  round, sigmoid, tanh, log, relu, floor, negate,
+  -- * Indexwise binary operators
+  add, (+), (⊕), (⊝), (⊙), (⊘), equal,
+  -- * Products
+  (∙), (·),
+  -- * Reducers
+  reduceMeanAll, reduceSumAll,
+  reduceSum, reduceMean,
+  argmax, argmax0, argmax1,
+  softmax0, softmax1,
+  -- * Gradients
+  grad,
+  clipByGlobalNorm,
+  clipByValue,
+  -- * Indexing
+  last0, nth0, nth0', gather,
+  -- * Split and concatenate
+  split0, slice, slice1,
+  stack0, unstack0, stackN,
+  stack1,
+  concatT, concat0, concat1,
+  -- * Reshaping
+  expandDim,
+  expandDim0, squeeze0,
+  expandDim1, squeeze1,
+  flatten2, inflate2, flattenN2,
+  flatten3, inflate3,
+  reshape, flattenAll, inflateAll,
+  -- * Transposition
+  transpose, transposeN, transposeN', transpose01, transposeN01,
+  -- * Sequences
+  reverseSequences, sequenceMask,
+  -- * Misc
+  cast,
+  convolution,
+  oneHot, oneHot0, oneHot1,
+  tile, replicateT,
+  -- * Testing
+  if_, where_,
+  -- * Mapping
+  mapT, mapTN, zipWithT, zipWithTN,
+  -- * Losses
+  sigmoidCrossEntropyWithLogits,
+  softmaxCrossEntropyWithLogits,
+  sparseSoftmaxCrossEntropyWithLogits,
+  -- * Initializers
+  truncatedNormal, randomUniform, randomOrthogonal, varianceScaling, glorotUniform,
 
-import Prelude hiding (tanh,Num(..),Floating(..))
+  -- * Heterogeneous vectors
+  repeatT, flattenHTV, inflateHTV
+                    ) where
+
+import Prelude hiding (tanh,Num(..),Floating(..),round,floor)
 import qualified Prelude
 import Prelude ((-))
 import Text.PrettyPrint.Compact hiding (Last, All,Product,Sum)
@@ -176,7 +244,7 @@ infixl 6 +
 equal :: Tensor d t -> Tensor d t -> Tensor d TFBool
 equal = binOp "tf.equal"
 
--- | Indexwise sum.
+-- | Indexwise operator
 (⊕), (⊝), (⊙), (⊘) :: ∀ (s :: Shape) t. Tensor s t -> Tensor s t -> Tensor s t
 (⊝) = binOp "tf.subtract"
 (⊙) = binOp "tf.multiply"
