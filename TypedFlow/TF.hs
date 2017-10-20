@@ -41,6 +41,7 @@ module TypedFlow.TF (
   parameter',
   parameter,
   parameterDefault,
+  ParamWithDefault(..),
   getParameters,
   -- * Placeholders and outputs
   placeholder,
@@ -55,7 +56,7 @@ module TypedFlow.TF (
   -- * Indexwise binary operators
   add, (+), (⊕), (⊝), (⊙), (⊘), equal,
   -- * Products
-  (∙), (·),
+  (∙), (·), matmul,
   -- * Reducers
   reduceMeanAll, reduceSumAll,
   reduceSum, reduceMean,
@@ -100,8 +101,8 @@ module TypedFlow.TF (
   truncatedNormal, randomUniform, randomOrthogonal, varianceScaling, glorotUniform,
 
   -- * Heterogeneous vectors
-  repeatT, flattenHTV, inflateHTV
-                    ) where
+  repeatT, flattenHTV, inflateHTV, KnownTensors(..), LastEqual
+  ) where
 
 import Prelude hiding (tanh,Num(..),Floating(..),round,floor)
 import qualified Prelude
