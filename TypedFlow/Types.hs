@@ -290,6 +290,11 @@ type Dim1 = 'Succ Dim0
 type Dim2 = 'Succ Dim1
 type Dim3 = 'Succ Dim2
 
+type Axis0 = 'Zero
+type Axis1 = 'Succ Dim0
+type Axis2 = 'Succ Dim1
+type Axis3 = 'Succ Dim2
+
 class KnownPeano n where peanoInt :: Integer
 instance KnownPeano 'Zero where peanoInt = 0
 instance KnownPeano n => KnownPeano ('Succ n) where peanoInt = 1 + (peanoInt @n)

@@ -22,5 +22,3 @@ import TypedFlow.Layers
 import TypedFlow.Learn
 import GHC.TypeLits
 
-
-

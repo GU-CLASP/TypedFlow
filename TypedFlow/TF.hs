@@ -147,17 +147,18 @@ reduceMeanAll = reduceAll "mean"
 reduceSumAll = reduceAll "sum"
 
 -- | Internal. Use 'reduceSum', etc. instead.
-reduce :: ∀ s s' n t. KnownLen s' => String -> Tensor (s ++ (n ': s')) t -> Tensor (s ++ s') t
-reduce op (T x) = T (funcall ("tf.reduce_" ++ op) [x, text "axis=" <> integer (listLen @ s')])
+reduce :: ∀ n s t. (KnownLen s,KnownPeano n) => String -> T s t -> T (Take n s ++ Drop ('Succ n) s) t
+reduce op (T x) = T (funcall ("tf.reduce_" ++ op) [x, text "axis=" <> integer (listLen @ s - peanoInt @n - 1)])
 
 -- | Sum along a given dimension
-reduceSum, reduceMean :: ∀ s s' n t. KnownLen s' => Tensor (s ++ (n ': s')) t -> Tensor (s ++ s') t
-reduceSum = reduce @s @s' @n "sum"
-reduceMean = reduce @s @s' @n "mean"
+reduceSum, reduceMean :: ∀n s t. (KnownLen s,KnownPeano n) => T s t -> T (Take n s ++ Drop ('Succ n) s) t
+reduceSum = reduce @n "sum"
+reduceMean = reduce @n "mean"
+
 
 -- | Sum along the first dimension
 reduceSum0 :: ∀ s' n t. KnownLen s' => Tensor (n ': s') t -> Tensor s' t
-reduceSum0 = reduceSum @'[]
+reduceSum0 = reduceSum @Dim0
 
 -- | Add two tensors, broacasting along shape @s@
 add :: ∀ s d t. Tensor (d++s) t -> Tensor d t -> Tensor (d++s) t -- note ++s for for 'broadcasting'
