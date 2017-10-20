@@ -514,15 +514,13 @@ glorotUniform = varianceScaling 1 VSAvg UniformDistr
 
 ----------------
 -- Helpers
-matvecmulBatch :: ∀ s cols rows t. (KnownLen s) =>  Tensor (cols ': rows ': s) t -> Tensor (cols ': s) t -> Tensor (rows ': s) t
-matvecmulBatch m v = squeeze0 (matmul m (expandDim0 v))
 
-matvecmul :: Tensor (cols ': rows ': '[]) t -> Tensor (cols ': batchSize ': '[]) t -> Tensor (rows ': batchSize ': '[]) t
-matvecmul m v = matmul v (transpose m)
+-- matvecmulBatch :: ∀ s cols rows t. (KnownLen s) =>  Tensor (cols ': rows ': s) t -> Tensor (cols ': s) t -> Tensor (rows ': s) t
+-- matvecmulBatch m v = squeeze0 (matmul m (expandDim0 v))
 
 -- | Product of a matrix of weight with a (batched) vector .
 (∙) :: Tensor '[cols, rows] t -> Tensor '[cols,batchSize] t -> Tensor '[rows,batchSize] t
-m ∙ v = matvecmul m v
+m ∙ v = matmul v (transpose m)
 infixl 7 ∙
 
 -- | Dot product between two batched vectors.
@@ -599,9 +597,11 @@ where_ (T c) (T x) (T y) = T (funcall "tf.where" [c, x, y])
 -------------------------
 -- Generic parameters
 
+-- | Create a parameter and initialize it with a suitable default for its type. Control the exact initializer using 'parameter'.
 parameterDefault :: forall p. ParamWithDefault p => String -> Gen p
 parameterDefault name = parameter name defaultInitializer
 
+-- | Create a parameter.
 parameter :: forall p. KnownTensors p => String -> p -> Gen p
 parameter = travTensor parameter'
 
@@ -633,7 +633,7 @@ instance (KnownTensors p1, KnownTensors p2, KnownTensors p3, KnownTensors p4) =>
 class KnownTensors p => ParamWithDefault p where
   defaultInitializer :: p
 
-
+-- | Flatten all the dimensions of the tensor
 flattenAll :: forall s t. KnownShape s => Tensor s t -> Tensor '[Product s] t
 flattenAll = knownProduct @s reshape
 
@@ -654,12 +654,12 @@ inflateHTV (T x) = do
   v <- newVar
   gen (v <> text " = " <> funcall "tf.split" [x, showShape' (prodshape @xs shapeSList), text "axis=0"])
   return (mkArr @xs 0 shapeSList  v)
-  where mkArr :: forall xs. All KnownShape xs => Int -> SList xs -> DOC -> HTV t xs
-        mkArr _ LZ v = Unit
+  where mkArr :: forall zs. All KnownShape zs => Int -> SList zs -> DOC -> HTV t zs
+        mkArr _ LZ _ = Unit
         mkArr i (LS _ n) v = F (unsafeReshape (T (v <> brackets (int i)) )):* mkArr (succ i) n v
 
-        prodshape :: forall xs. All KnownShape xs => SList xs -> [Integer]
+        prodshape :: forall zs. All KnownShape zs => SList zs -> [Integer]
         prodshape LZ = []
-        prodshape (LS x xs) = product (shapeToList' (shapeSListProxy x)) : prodshape xs
+        prodshape (LS xx xs) = product (shapeToList' (shapeSListProxy xx)) : prodshape xs
 
 
