@@ -188,7 +188,6 @@ def Every(n,f):
 ################################################################################################
 # Prediction and evaluation
 
-
 def predict (session, model, xs, result="y_"):
     '''Evaluate the model for given input and result.
     Input is given as a dictionary of lists to pass to session.run'''
@@ -196,15 +195,20 @@ def predict (session, model, xs, result="y_"):
     k0 = next (iter (xs.keys())) # at least one key is needed
     total_len = len(xs[k0])
     zeros = dict((k,np.zeros_like(xs[k][0])) for k in xs) # at least one example is needed
+    results = []
     def run():
-        for i in range(0, total_len, bs):
-            origlen = min(total_len - i,bs)
-            chunks = dict((k,np.concatenate((xs[k][i:i+bs],
-                                             np.repeat(zeros[k][np.newaxis,:],bs-origlen,axis=0)),
-                                             axis=0)) for k in xs)
+        for i in range(0, bs*(-(-total_len//bs)), bs):
+            chunks = dict((k,xs[k][i:i+bs]) for k in xs)
+            if i + bs > total_len:
+                origLen = total_len - i
+                for k in xs:
+                    chunks[k] = list(chunks[k]) + [zeros[k]] * (bs - origLen) # pad the last chunk
+            else:
+                origLen = bs
+            # print (".")
             yield (session.run(model[result],
                                dict([(model["training_phase"],False)] +
-                                    [(model[k],chunks[k]) for k in xs])))[:origlen]
+                                    [(model[k],chunks[k]) for k in xs])))[:origLen]
     return np.concatenate(list(run()))
 
 def beam_translate(session, model, k, x, xlen, start_symbol, stop_symbol, debug=None):
