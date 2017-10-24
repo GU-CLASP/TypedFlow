@@ -4,26 +4,50 @@ import sys
 from time import time
 import os
 
-def cuda_pref_device(n):
+
+###############################################################
+# Devices
+###############################################################
+
+
+def cuda_use_device(n):
+    """Attempt to use a given CUDA device by setting the appropriate environment variables"""
     os.environ["CUDA_DEVICE_ORDER"]= "PCI_BUS_ID"
     if os.environ.get("CUDA_VISIBLE_DEVICES") is None:
         os.environ["CUDA_VISIBLE_DEVICES"] = str(n)
 
+def find_free_cuda_device():
+    currentGPU = -1
+    gpuMemory=dict()
+    gpuUtil=dict()
+    for line in os.popen("nvidia-smi -q"):
+        fields = map(lambda x: x.strip(), line.split(":"))
+        k = fields[0]
+        if k == "Minor Number":
+            currentGPU += 1
+            gpuMemory[currentGPU] = 0
+        elif k == "Used GPU Memory":
+            gpuMemory[currentGPU] = int(fields[1][:-4]) # last characters are " MiB"
+        elif k == "Gpu":
+            gpuUtil[currentGPU] = fields[1] # last characters are " %"
+    print (gpuMemory.values())
+    minUse = min(gpuMemory.values())
+    freeGpus = [g for g in gpuMemory.keys() if gpuMemory[g] == minUse]
+    if freeGpus == []:
+        print("No free GPU could be found.")
+        assert False
+    else:
+        result = random.choice(freeGpus)
+        print ("Found device",result,"currently used at",gpuUtil[result],"and with",gpuMemory[result],"MB taken.")
+        return result
+
+def cuda_use_one_free_device():
+    """Attempt to use a free CUDA device by setting the appropriate environment variables"""
+    cuda_use_device(find_free_cuda_device())
 
 ###############################################################
 # Generators
 ###############################################################
-
-def s2s_generator(src_in,tgt_in,tgt_out,tgt_weights):
-    def gen(bs):
-      for i in range(0, bs*(len(src_in)//bs), bs):
-        yield {"src_in":src_in[i:i+bs],
-               "tgt_in":tgt_in[i:i+bs],
-               "tgt_out":tgt_out[i:i+bs],
-               "tgt_weights":tgt_weights[i:i+bs]}
-    return gen
-
-
 
 def bilist_generator(l):
     """
