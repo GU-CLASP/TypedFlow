@@ -308,13 +308,14 @@ expandDim0 = expandDim @Dim0
 expandDim1 :: ∀ n s t. KnownShape s => Tensor (n ': s) t -> Tensor (n ': 1 ': s) t
 expandDim1 = expandDim @Dim1
 
--- | Tile a tensor along the first dimension
-tile :: forall m n s t. (KnownNat m) => Tensor (n ': s) t -> Tensor ((m * n) ': s) t
-tile (T x) = T (funcall "tf.tile" [x, integer (natVal (Proxy @m))])
+-- -- | Tile a tensor along the first dimension
+-- tile :: forall m n s t. (KnownNat m) => Tensor (n ': s) t -> Tensor ((m * n) ': s) t
+-- tile (T x) = T (funcall "tf.tile" [x, integer (natVal (Proxy @m))])
+-- This implementation is incorrect.
 
--- | Replicate a tensor
-replicateT :: ∀ n s t. (KnownNat n, KnownLen s) => T s t -> T (n ': s) t
-replicateT = tile @n . expandDim0
+-- -- | Replicate a tensor
+-- replicateT :: ∀ n s t. (KnownNat n, KnownLen s) => T s t -> T (n ': s) t
+-- replicateT = tile @n . expandDim0
 
 -- | Remove a dimension if its size is 1.
 squeeze :: ∀ s0 s1 t. KnownLen s1 => Tensor (s0 ++ (1 ': s1)) t -> Tensor (s0 ++ s1) t
