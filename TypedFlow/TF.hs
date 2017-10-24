@@ -90,7 +90,6 @@ module TypedFlow.TF (
   cast,
   convolution,
   oneHot, oneHot0, oneHot1,
-  tile, replicateT,
   -- ** Testing conditions
   if_, where_,
   -- * Contrib
