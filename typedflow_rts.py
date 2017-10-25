@@ -3,7 +3,7 @@ import numpy as np
 import sys
 from time import time
 import os
-
+import random
 
 ###############################################################
 # Devices
@@ -21,7 +21,7 @@ def find_free_cuda_device():
     gpuMemory=dict()
     gpuUtil=dict()
     for line in os.popen("nvidia-smi -q"):
-        fields = map(lambda x: x.strip(), line.split(":"))
+        fields = list(map(lambda x: x.strip(), line.split(":")))
         k = fields[0]
         if k == "Minor Number":
             currentGPU += 1
