@@ -30,7 +30,6 @@ def find_free_cuda_device():
             gpuMemory[currentGPU] = int(fields[1][:-4]) # last characters are " MiB"
         elif k == "Gpu":
             gpuUtil[currentGPU] = fields[1] # last characters are " %"
-    print (gpuMemory.values())
     minUse = min(gpuMemory.values())
     freeGpus = [g for g in gpuMemory.keys() if gpuMemory[g] == minUse]
     if freeGpus == []:
