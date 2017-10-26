@@ -3,13 +3,32 @@
 TypedFlow is a typed, higher-order frontend to [[http://www.tensorflow.org][TensorFlow]] and a
 high-level library for deep-learning.
 
+The main design principles are:
+
+  - To make the parameters of layers explicit. This choice makes
+    sharing of parameters explicit and allows to implement "layers" as
+    pure functions.
+
+  - To provide as precise as possible types. Functions are explicit
+    about the shapes and elements of the tensors that they manipulate
+    (they are often polymorphic in shapes and elements though.)
+
+  - To let combinators be as transparent as possible. If a NN layers
+    is a simple tensor transformation it will be exposed as such.
+
+
 In this version, the interface to TensorFlow is done via python-code
 generation and a suitable runtime system.
 
-Documentation: https://hackage.haskell.org/package/TypedFlow
+** Documentation
 
-Examples:
- - adaptation of the [[examples/MNIST][MNIST tensorflow tutorial]]
+The compiled documentation should be found on [[https://hackage.haskell.org/package/TypedFlow][hackage]].
+
+** Examples
+
+TypedFlow comes with two examples of neural networks:
+
+ - An adaptation of the [[examples/MNIST][MNIST tensorflow tutorial]]
  - A simple [[examples/seq2seq][sequence to sequence model]] which
    attempts to learn to translate pre-order into post-order.
 
