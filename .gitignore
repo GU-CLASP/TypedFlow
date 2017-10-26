@@ -22,3 +22,7 @@ cabal.project.local
 .HTF/
 /examples/seq2seq/s2s.py
 /examples/seq2seq/synthtrees.txt
+MNIST_data
+__pycache__
+/examples/seq2seq/GenTr
+/.tramp_history
