@@ -1,0 +1,25 @@
+#+TITLE: TypedFlow
+
+TypedFlow is a typed, higher-order frontend to [[http://www.tensorflow.org][TensorFlow]] and a
+high-level library for deep-learning.
+
+In this version, the interface to TensorFlow is done via python-code
+generation and a suitable runtime system.
+
+Documentation: https://hackage.haskell.org/package/TypedFlow
+
+Examples:
+ - adaptation of the [[examples/MNIST][MNIST tensorflow tutorial]]
+ - A simple [[examples/seq2seq][sequence to sequence model]] which
+   attempts to learn to translate pre-order into post-order.
+
+To running the examples can be done like so:
+
+#+BEGIN_SRC shell
+nix-env -iA nixpkgs.haskellPackages.styx
+nix-env -iA nixpkgs.cabal2nix
+styx configure
+cd examples/seq2seq
+make
+#+END_SRC
+
