@@ -2,7 +2,15 @@ name:           typedflow
 version:        0.9
 category:       Deep Learning
 synopsis:       Typed frontend to TensorFlow and higher-order deep learning
-description:    Typed frontend to TensorFlow and higher-order deep learning
+description: TypedFlow is a typed, higher-order frontend to TensorFlow and a high-level library for deep-learning.
+             .
+             The main design principles are:
+             .
+               - To make the parameters of layers explicit. This choice makes sharing of parameters explicit and allows to implement "layers" as pure functions.
+             .
+               - To provide as precise as possible types. Functions are explicit about the shapes and elements of the tensors that they manipulate (they are often polymorphic in shapes and elements though.)
+             .
+               - To let combinators be as transparent as possible. If a NN layers is a simple tensor transformation it will be exposed as such.
 license:        LGPL-3
 license-file:   LICENSE
 author:         Jean-Philippe Bernardy
