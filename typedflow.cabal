@@ -1,5 +1,5 @@
 name:           typedflow
-version:        0.1
+version:        0.9
 category:       Deep Learning
 synopsis:       Typed frontend to TensorFlow and higher-order deep learning
 description:    Typed frontend to TensorFlow and higher-order deep learning
