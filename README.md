@@ -11,4 +11,5 @@ Documentation: https://hackage.haskell.org/package/TypedFlow
 
 Examples:
  - adaptation of the [MNIST tensorflow tutorial](examples/MNIST)
- - [simple sequence to sequence model](examples/seq2seq)
+ - A simple [sequence to sequence model](examples/seq2seq) which
+   attempts to learn to translate pre-order into post-order.
