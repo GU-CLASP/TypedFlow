@@ -1,3 +1,61 @@
+#+TITLE: TypedFlow: A library for typed and higher-order deep learning
+#+AUTHOR: Jean-Philippe Bernardy, University of Gothenburg
+
+TensorFlow is a library for numerical computation, with specific
+features for machine-learning such as gradient computation. It is
+perhaps the most popular backend for deep learning applications.
+TypedFlow a higher-order and typed (HOT) frontend to TensorFlow
+written in Haskell, and a library of neural-network layers and
+combinators.
+
+
+In this talk I will: 
+
+- briefly recall what TensorFlow is and how it applies to deep 
+learning 
+- discuss the advantages of a HOT approach vs. plain TensorFlow 
+- expose two use-cases: the standard MNIST example and a 
+sequence-to-sequence network with attention model.
+
+* Machine learning in 45 seconds:
+
+- a vector of training inputs X :: [A]
+- a model f : (Θ × A) → ℝ⁺
+
+Task:
+
+Given X, find θ such that f(θ,x) < ε, if
+x is considered similar to points in X.
+
+Commentary: Every point in X lie on a manyfold. We want to find what
+this manyfold is. (Interpolation problem.)
+
+* "Deep" learning in 45 seconds
+
+- "Deep" ≡ f is "complex"
+- So we must use a brute force method to compute θ: stochastic
+  gradient descent (or variants thereof).
+
+- Typically, compute the gradient of f wrt. θ using AD.
+
+* Tensorflow
+
+- A (meta) programming language to define f. AD is builtin. (there is fineprint)
+
+- Restricted control flow (mostly, tensor-generalisations of +, *, -,
+  /, ^)
+
+- Typically programmed using python (standard in scientific computing)
+
+- "Strongly typed".
+  - but: "brodcasting"
+  - but: running the metaprogram can be quite slow ~1 minute (so type
+    errors can happen after 1 minute of loading the model --- and
+    programs can do other things before ...)
+  - but: types are typically not written as such. Given any two
+    functions, weather they compose (and what the composition does) is
+    a mistery unless one examines their code.
+
 * What is TypedFlow?
 
 - An typed, higher-order frontend to tensorflow (basic tensor operations)
@@ -6,36 +64,66 @@
 
 * Why TypedFlow?
 
-- Some NN building blocks are naturally higher-order. Taking an
-  example (and simplifying) a recurrent neural network turns a tensor
-  function into a function between lists (vectorslists) of tensors.
+Functional programming is ideally suited to program complicated
+applications from building blocks.
 
-- Functional programming is ideally suited to program complicated
-  applications from building blocks.
+- Notation
+- Types
+- HO
 
-  Example: an "Attention-model" is a thing where every step in a RNN adds
-  a computation which depends on an external input. We can compose
-  usual RNN cells with attention models in several ways. The state of
-  the art is to reprogram all combinations by hand.
+* Notation
 
-- Typed APIs.
+Haskell is typically much closer to mathematical notation than
+python. Programs are short to write and easier to read.
 
-  Types can be used to check the tensor dimensions. Types catch a lof
-  of errors, but they can also be used to *guide* the programming.
+file:../TypedFlow/TF.hs::/⊕.*::/
 
-  Types are pretty much a necessity in the presence of HO
-  functions.
+* Why Types?
 
-- TypedFlow is typically much closer to mathematical notation than
-  python. Programs are short to write and easier to read. Standard
-  building blocks can be swapped for custom versions quite easily.
+Types can be used to check the tensor dimensions.
 
-  Examples
-    - rnn stacking using "residual connections" instead of just
-      stacking.
-    - make it easy to share parameters between different components
-      (example: if we do a style translation we may want to share the
-      embedding layers between encoder and decoders parts)
+- Types catch a lof of errors
+- but they can also be used to *guide* the programming. "Type holes" (see MNIST example)
 
-- Long game: integrate cutting edge ideas as they arrive with moderate
-  effort.
+Types are pretty much a necessity to take advantage of HO functions.
+
+#+BEGIN_QUOTE
+Together with lazy evaluation and the absence of side
+effects, rich type systems enable to construct complex programs with a
+high degree of confidence:
+
+- types precisely abstract the intention of the programmer for each function,
+  without any hidden side effect, and
+- provided that they match the contracts imposed by types, functions
+  can be freely combined, using lazy evaluation and higher-order
+  facilities, without risk of pernicious interference.
+#+END_QUOTE
+
+
+* Python and the Cult of First Order
+
+[[file:imperiallegion.jpg]]
+
+https://github.com/fchollet/keras/blob/master/keras/layers/recurrent.py
+(search "class LSTM")
+
+* Example 1: LSTM
+
+file:../TypedFlow/Layers/RNN.hs::/^lstm.*::/
+
+* Example 2: Attention
+
+Example: an "Attention-model" is a model where every step in a RNN
+adds a computation which depends on an external input. We can compose
+usual RNN cells with attention models in several ways. The state of
+the art is to reprogram such combinations by hand.
+
+file:../TypedFlow/Layers/RNN.hs::/^attentiveWithFeedback.*::/
+
+* Long game
+
+Integrate cutting edge DL ideas as they arrive with moderate effort.
+
+* MNIST
+
+* Seq2Seq
