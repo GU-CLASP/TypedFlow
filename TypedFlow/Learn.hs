@@ -35,13 +35,21 @@ import qualified Prelude (Float)
 import Prelude (($),return,Maybe(..),(=<<))
 import Text.PrettyPrint.Compact (text)
 import Data.Monoid hiding (Last)
-import GHC.TypeLits (KnownNat)
+import GHC.TypeLits
 import Control.Monad.State (modify, gets)
 
+-- | Triple of values that are always output in a model: prediction, loss and accuracy.
+data ModelOutput s t = forall n.
+                       ModelOutput {modelY :: T s t -- ^ prediction
+                                   ,modelLoss :: Scalar Float32
+                                   ,modelCorrect :: T '[n] Float32 -- ^ correctness of a bit of the output, within [0,1]
+                                   }
 
---------------------------------
--- Model maker.
+-- | A standard modelling function: (input value, gold value) ↦ (prediction, accuracy, loss)
+type Model input tIn output tOut = T input tIn -> T output tOut -> Gen (ModelOutput output tOut)
 
+modelBoth :: forall n m s t. KnownLen s => ModelOutput (n ': s) t -> ModelOutput (m ': s) t -> ModelOutput (n + m ': s) t
+modelBoth (ModelOutput y1 l1 c1) (ModelOutput y2 l2 c2) = ModelOutput (concat0 y1 y2) (l1 + l2) (concat0 c1 c2)
 
 -- | First type argument is the number of classes.
 -- @categorical logits gold@
@@ -52,9 +60,8 @@ categorical logits' y = do
   logits <- assign logits'
   let y_ = argmax0 logits
       modelY = y_
-  correctPrediction <- assign (equal y_ y)
-  modelAccuracy <- assign (reduceMeanAll (cast @Float32 correctPrediction))
-  modelLoss <- assign (reduceMeanAll (sparseSoftmaxCrossEntropyWithLogits y logits))
+      modelCorrect = cast (equal y_ y)
+      modelLoss = reduceMeanAll (sparseSoftmaxCrossEntropyWithLogits y logits)
   return ModelOutput{..}
 
 -- | First type argument is the number of classes.
@@ -66,9 +73,8 @@ categoricalDistribution logits' y = do
   logits <- assign logits'
   let y_ = softmax0 logits
       modelY = y_
-  correctPrediction <- assign (equal (argmax0 @'B32 logits) (argmax0 y))
-  modelAccuracy <- assign (reduceMeanAll (cast @Float32 correctPrediction))
-  modelLoss <- assign (reduceMeanAll (softmaxCrossEntropyWithLogits y logits))
+      modelCorrect = cast (equal (argmax0 @'B32 logits) (argmax0 y))
+      modelLoss = reduceMeanAll (softmaxCrossEntropyWithLogits y logits)
   return ModelOutput{..}
 
 -- | @timedCategorical targetWeights logits y@
@@ -76,6 +82,9 @@ categoricalDistribution logits' y = do
 -- targetWeights: a zero-one matrix of the same size as
 -- decoder_outputs. It is intended to mask padding positions outside
 -- of the target sequence lengths with values 0.
+--
+-- Note that the accuracy is computed by weigthing the accuracies at
+-- individual time steps with the targetWeights.
 
 timedCategorical :: forall len nCat bs bits. KnownNat nCat => KnownNat bs => KnownNat len => KnownBits bits =>
   Tensor '[len,bs] (Flt bits) -> Tensor '[len,nCat,bs] (Flt bits) -> Tensor '[len,bs] Int32 -> Gen (ModelOutput '[len,nCat,bs] (Flt bits))
@@ -83,30 +92,20 @@ timedCategorical targetWeights logits' y = do
   logits <- assign logits'
   let y_ = argmax1 logits
       modelY = softmax1 logits
-  correctPrediction <- assign (equal y_ y)
-  modelAccuracy <- assign (cast @Float32 (reduceSumAll (flatten2 (cast @(Flt bits) correctPrediction ⊙ targetWeights)) ⊘ reduceSumAll targetWeights)) --   does not work
-  let crossEntropies = sparseSoftmaxCrossEntropyWithLogits y (transpose01 logits)
-  modelLoss <- assign (cast @Float32 (reduceMeanAll (crossEntropies ⊙ targetWeights)))
+      correctPrediction = equal y_ y
+      modelCorrect = cast ((reduceSum @Axis0 (cast @(Flt bits) correctPrediction ⊙ targetWeights)) ⊘ reduceSum @Axis0 targetWeights)
+      crossEntropies = sparseSoftmaxCrossEntropyWithLogits y (transpose01 logits)
+      modelLoss = cast @Float32 (reduceMeanAll (crossEntropies ⊙ targetWeights))
   return ModelOutput{..}
 
--- | Triple of values that are always output in a model: prediction, loss and accuracy.
-data ModelOutput s t = ModelOutput {modelY :: T s t -- ^ prediction
-                                   ,modelLoss :: Scalar Float32
-                                   ,modelAccuracy :: Scalar Float32
-                                   }
-
--- | A standard modelling function: (input value, gold value) ↦ (prediction, accuracy, loss)
-type Model input tIn output tOut = T input tIn -> T output tOut -> Gen (ModelOutput output tOut)
-
 -- | Model with several binary outputs.
-binary :: forall n bs. (KnownNat bs) => Model '[n,bs] Float32 '[n,bs] Int32
+binary :: forall n bs. KnownNat n => (KnownNat bs) => Model '[n,bs] Float32 '[n,bs] Int32
 binary logits y = do
   sigy_ <- assign (sigmoid logits)
   let y_ = cast @Int32 (round sigy_)
       modelY = y_
-  correctPrediction <- assign (equal y_ y)
-  modelAccuracy <- assign (reduceMeanAll (cast @Float32 correctPrediction))
-  modelLoss <- assign (reduceMeanAll (sigmoidCrossEntropyWithLogits (cast @Float32 y) logits))
+      modelCorrect = cast (flatten2 (equal y_ y))
+      modelLoss = reduceMeanAll (sigmoidCrossEntropyWithLogits (cast @Float32 y) logits)
   return ModelOutput{..}
 
 -- | Model compiler options
@@ -144,7 +143,7 @@ compileGen Options{..} model = knownLast @sy $ do
     peekAt "y_" y_ 
     loss <- assign modelLoss
     peekAt "loss" loss
-    accuracy <- assign modelAccuracy
+    accuracy <- assign (reduceMeanAll (cast @Float32 modelCorrect))
     peekAt "accuracy" accuracy
     params <- getParameters
     peekAt "params" (T params)
