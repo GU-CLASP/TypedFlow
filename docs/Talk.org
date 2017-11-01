@@ -9,17 +9,22 @@ written in Haskell, and a library of neural-network layers and
 combinators.
 
 
-In this talk I will: 
+In this talk I will:
 
-- briefly recall what TensorFlow is and how it applies to deep 
-learning 
-- discuss the advantages of a HOT approach vs. plain TensorFlow 
-- expose two use-cases: the standard MNIST example and a 
+- briefly recall what TensorFlow is and how it applies to deep
+  learning
+- discuss the advantages of a HOT approach vs. plain TensorFlow
+- expose two use-cases: the standard MNIST example and a
 sequence-to-sequence network with attention model.
+
+
+
+
+
 
 * Machine learning in 45 seconds:
 
-- a vector of training inputs X :: [A]
+- a vector of training inputs X::[A]
 - a model f : (Θ × A) → ℝ⁺
 
 Task:
@@ -71,6 +76,10 @@ applications from building blocks.
 - Types
 - HO
 
+* Deep Learning: The state of the art
+
+[[file:cards.jpg]]
+
 * Notation
 
 Haskell is typically much closer to mathematical notation than
@@ -99,8 +108,7 @@ high degree of confidence:
   facilities, without risk of pernicious interference.
 #+END_QUOTE
 
-
-* Python and the Cult of First Order
+* Python, aka The Culture of First Order
 
 [[file:imperiallegion.jpg]]
 
@@ -126,4 +134,8 @@ Integrate cutting edge DL ideas as they arrive with moderate effort.
 
 * MNIST
 
+file:../examples/mnist/MNIST.hs
+
 * Seq2Seq
+
+file:../examples/seq2seq/Seq2Seq.hs
