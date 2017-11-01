@@ -1,4 +1,4 @@
-#+TITLE: TypedFlow: A library for typed and higher-order deep learning
+#+TITLE: TypedFlow: A library for higher-order typed deep learning
 #+AUTHOR: Jean-Philippe Bernardy, University of Gothenburg
 
 TensorFlow is a library for numerical computation, with specific
@@ -18,7 +18,7 @@ In this talk I will:
 sequence-to-sequence network with attention model.
 
 
-
+Ideas: transparency, explainability
 
 
 
@@ -30,14 +30,14 @@ sequence-to-sequence network with attention model.
 Task:
 
 Given X, find θ such that f(θ,x) < ε, if
-x is considered similar to points in X.
+x is considered similar to points in X, and > ε otherwise.
 
 Commentary: Every point in X lie on a manyfold. We want to find what
 this manyfold is. (Interpolation problem.)
 
 * "Deep" learning in 45 seconds
 
-- "Deep" ≡ f is "complex"
+- "Deep" ≡ f is "complicated"
 - So we must use a brute force method to compute θ: stochastic
   gradient descent (or variants thereof).
 
@@ -45,14 +45,16 @@ this manyfold is. (Interpolation problem.)
 
 * Tensorflow
 
-- A (meta) programming language to define f. AD is builtin. (there is fineprint)
+- A (meta) programming language to define f. AD is builtin. (there is
+  fineprint)
 
 - Restricted control flow (mostly, tensor-generalisations of +, *, -,
-  /, ^)
+  /, ^, tanh, ...)
 
 - Typically programmed using python (standard in scientific computing)
 
 - "Strongly typed".
+  - but: no abstraction over dimensions
   - but: "brodcasting"
   - but: running the metaprogram can be quite slow ~1 minute (so type
     errors can happen after 1 minute of loading the model --- and
@@ -63,7 +65,8 @@ this manyfold is. (Interpolation problem.)
 
 * What is TypedFlow?
 
-- An typed, higher-order frontend to tensorflow (basic tensor operations)
+- An typed, higher-order frontend to tensorflow
+  (basic tensor operations)
 - A library to construct neural networks
 - Generates python
 
@@ -92,14 +95,14 @@ file:../TypedFlow/TF.hs::/⊕.*::/
 Types can be used to check the tensor dimensions.
 
 - Types catch a lof of errors
-- but they can also be used to *guide* the programming. "Type holes" (see MNIST example)
+- but they can also be used to *guide* the programming. "Type holes"
+  (see MNIST example)
 
 Types are pretty much a necessity to take advantage of HO functions.
 
 #+BEGIN_QUOTE
-Together with lazy evaluation and the absence of side
-effects, rich type systems enable to construct complex programs with a
-high degree of confidence:
+Together with the absence of side effects, rich type systems enable to
+construct complex programs with a high degree of confidence:
 
 - types precisely abstract the intention of the programmer for each function,
   without any hidden side effect, and

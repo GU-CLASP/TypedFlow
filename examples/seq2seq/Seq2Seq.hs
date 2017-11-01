@@ -12,8 +12,11 @@ module Main (main) where
 
 import TypedFlow
 
-mkLSTM :: ∀ n x bs w. KnownNat x => KnownNat n => (KnownNat bs) => KnownBits w =>
-        String -> Gen (RnnCell w '[ '[n,bs], '[n,bs]] (Tensor '[x,bs] (Flt w)) (Tensor '[n,bs] (Flt w)))
+mkLSTM :: ∀ n x bs w.
+       KnownNat x => KnownNat n => (KnownNat bs) => KnownBits w
+       => String
+       -> Gen (RnnCell w '[ '[n,bs], '[n,bs]] (Tensor '[x,bs] (Flt w))
+               (Tensor '[n,bs] (Flt w)))
 mkLSTM pName = do
   params <- parameterDefault pName
   drp1 <- mkDropout (DropProb 0.05)
@@ -21,13 +24,14 @@ mkLSTM pName = do
   return (timeDistribute drp1 .-. onStates rdrp1 (lstm params))
 
 encoder :: forall (lstmSize :: Nat) (vocSize :: Nat) (n :: Nat) (bs :: Nat) w. 
-                 KnownNat lstmSize => KnownNat vocSize => (KnownNat bs, KnownNat n) => KnownBits w =>
-                 String
-                 -> T '[bs] Int32 -- lengths
-                 -> Tensor '[n, bs] Int32
-                 -> Gen
-                      (HTV (Flt w) '[ '[lstmSize, bs], '[lstmSize, bs] ],
-                       Tensor '[n, lstmSize, bs] (Flt w))
+           KnownNat lstmSize => KnownNat vocSize
+        => (KnownNat bs, KnownNat n) => KnownBits w
+        => String
+        -> T '[bs] Int32 -- lengths
+        -> Tensor '[n, bs] Int32
+        -> Gen
+        (HTV (Flt w) '[ '[lstmSize, bs], '[lstmSize, bs] ],
+          Tensor '[n, lstmSize, bs] (Flt w))
 encoder prefix lens input = do
   embs <- parameterDefault (prefix++"embs")
   lstm1 <- mkLSTM (prefix++"lstm1")
@@ -67,17 +71,19 @@ decoder prefix lens hs thoughtVectors targetInput = do
 
 
 seq2seq :: forall (vocSize :: Nat) (n :: Nat) (bs :: Nat) w.
-                 KnownNat vocSize => (KnownNat bs, KnownNat n) => KnownBits w =>
-                 Tensor '[n, bs] Int32 ->
-                 Tensor '[bs] Int32 ->
-                 Tensor '[n, bs] Int32 ->
-                 Gen (Tensor '[n, vocSize, bs] (Flt w))
+                 KnownNat vocSize => (KnownNat bs, KnownNat n) => KnownBits w
+        => Tensor '[n, bs] Int32
+        -> Tensor '[bs] Int32
+        -> Tensor '[n, bs] Int32
+        -> Gen (Tensor '[n, vocSize, bs] (Flt w))
 seq2seq input inputLen output = do
   (VecPair t1 t2,h) <- encoder @256 @vocSize "enc" inputLen input
   decoder "dec" inputLen h (VecPair t1 t2) output
 
-model :: forall w vocSize len batchSize. KnownNat batchSize => KnownNat vocSize => KnownNat len => KnownBits w =>
-         Gen (ModelOutput '[len, vocSize, batchSize] (Flt w))
+model :: forall w vocSize len batchSize.
+  KnownNat batchSize
+  => KnownNat vocSize => KnownNat len => KnownBits w
+  => Gen (ModelOutput '[len, vocSize, batchSize] (Flt w))
 model = do
   sourceInput <- placeholder "src_in"
   sourceLen <- placeholder "src_len"
