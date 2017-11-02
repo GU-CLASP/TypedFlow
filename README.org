@@ -22,13 +22,13 @@ generation and a suitable runtime system.
 
 ** Documentation
 
-The compiled documentation should be found on [[https://hackage.haskell.org/package/TypedFlow][hackage]].
+The compiled documentation should be found on [[https://hackage.haskell.org/package/typedflow][hackage]].
 
 ** Examples
 
 TypedFlow comes with two examples of neural networks:
 
- - An adaptation of the [[examples/MNIST][MNIST tensorflow tutorial]]
+ - An adaptation of the [[examples/mnist][MNIST tensorflow tutorial]]
  - A simple [[examples/seq2seq][sequence to sequence model]] which
    attempts to learn to translate pre-order into post-order.
 
