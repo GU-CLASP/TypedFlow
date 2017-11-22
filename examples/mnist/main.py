@@ -1,28 +1,26 @@
-import typedflow_rts
+import sys
+sys.path.append('../..') # so we can see the rts.
+
+import typedflow_rts as tyf
 import tensorflow as tf
 import numpy as np
-import mnist_model
+from mnist_model import mkModel
 import os
 
-os.environ["CUDA_DEVICE_ORDER"]= "PCI_BUS_ID"
+# comment out if you don't have CUDA
+tyf.cuda_use_one_free_device()
 
-if os.environ.get("CUDA_VISIBLE_DEVICES") is None:
-    os.environ["CUDA_VISIBLE_DEVICES"] = "2"
-
-model = typedflow_example.mkModel()
-
+model = mkModel(tf.train.AdamOptimizer(1e-4))
 
 from tensorflow.examples.tutorials.mnist import input_data
 mnist = input_data.read_data_sets('MNIST_data', one_hot=True)
 
 def train_generator(batch_size):
     for _ in range(1000):
-        yield mnist.train.next_batch(100)
-
-def valid_generator():
-    return []
+        (x,y) = mnist.train.next_batch(100)
+        yield {"x":x,"y":y}
 
 sess = tf.Session()
 
-typedflow_rts.initialize_params(sess,model)
-typedflow_rts.train(sess,model,optimizer=tf.train.AdamOptimizer(1e-4),train_generator)
+tyf.initialize_params(sess,model)
+tyf.train(sess,model,train_generator)

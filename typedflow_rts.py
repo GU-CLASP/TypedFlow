@@ -58,8 +58,10 @@ def bilist_generator(l):
     """
     (l0,l1) = l
     def gen(bs):
-      for i in range(0, bs*(len(l0)//bs), bs):
-        yield {"x":l0[i:i+bs],"y":l1[i:i+bs]}
+        if len(l0) == 0:
+            return
+        for i in range(0, bs*(len(l0)//bs), bs):
+            yield {"x":l0[i:i+bs],"y":l1[i:i+bs]}
     return gen
 
 

@@ -9,7 +9,9 @@ import os
 import math
 import random
 
-tyf.cuda_pref_device(2)
+
+# comment out if you don't have CUDA
+tyf.cuda_use_one_free_device()
 
 chars = sorted(list("()01234abcde^$ "))
 

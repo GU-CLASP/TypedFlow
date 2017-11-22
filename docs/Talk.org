@@ -1,0 +1,144 @@
+#+TITLE: TypedFlow: A library for higher-order typed deep learning
+#+AUTHOR: Jean-Philippe Bernardy, University of Gothenburg
+
+TensorFlow is a library for numerical computation, with specific
+features for machine-learning such as gradient computation. It is
+perhaps the most popular backend for deep learning applications.
+TypedFlow a higher-order and typed (HOT) frontend to TensorFlow
+written in Haskell, and a library of neural-network layers and
+combinators.
+
+
+In this talk I will:
+
+- briefly recall what TensorFlow is and how it applies to deep
+  learning
+- discuss the advantages of a HOT approach vs. plain TensorFlow
+- expose two use-cases: the standard MNIST example and a
+sequence-to-sequence network with attention model.
+
+
+Ideas: transparency, explainability
+
+
+
+* Machine learning in 45 seconds:
+
+- a vector of training inputs X::[A]
+- a model f : (Θ × A) → ℝ⁺
+
+Task:
+
+Given X, find θ such that f(θ,x) < ε, if
+x is considered similar to points in X, and > ε otherwise.
+
+Commentary: Every point in X lie on a manyfold. We want to find what
+this manyfold is. (Interpolation problem.)
+
+* "Deep" learning in 45 seconds
+
+- "Deep" ≡ f is "complicated"
+- So we must use a brute force method to compute θ: stochastic
+  gradient descent (or variants thereof).
+
+- Typically, compute the gradient of f wrt. θ using AD.
+
+* Tensorflow
+
+- A (meta) programming language to define f. AD is builtin. (there is
+  fineprint)
+
+- Restricted control flow (mostly, tensor-generalisations of +, *, -,
+  /, ^, tanh, ...)
+
+- Typically programmed using python (standard in scientific computing)
+
+- "Strongly typed".
+  - but: no abstraction over dimensions
+  - but: "brodcasting"
+  - but: running the metaprogram can be quite slow ~1 minute (so type
+    errors can happen after 1 minute of loading the model --- and
+    programs can do other things before ...)
+  - but: types are typically not written as such. Given any two
+    functions, weather they compose (and what the composition does) is
+    a mistery unless one examines their code.
+
+* What is TypedFlow?
+
+- An typed, higher-order frontend to tensorflow
+  (basic tensor operations)
+- A library to construct neural networks
+- Generates python
+
+* Why TypedFlow?
+
+Functional programming is ideally suited to program complicated
+applications from building blocks.
+
+- Notation
+- Types
+- HO
+
+* Deep Learning: The state of the art
+
+[[file:cards.jpg]]
+
+* Notation
+
+Haskell is typically much closer to mathematical notation than
+python. Programs are short to write and easier to read.
+
+file:../TypedFlow/TF.hs::/⊕.*::/
+
+* Why Types?
+
+Types can be used to check the tensor dimensions.
+
+- Types catch a lof of errors
+- but they can also be used to *guide* the programming. "Type holes"
+  (see MNIST example)
+
+Types are pretty much a necessity to take advantage of HO functions.
+
+#+BEGIN_QUOTE
+Together with the absence of side effects, rich type systems enable to
+construct complex programs with a high degree of confidence:
+
+- types precisely abstract the intention of the programmer for each function,
+  without any hidden side effect, and
+- provided that they match the contracts imposed by types, functions
+  can be freely combined, using lazy evaluation and higher-order
+  facilities, without risk of pernicious interference.
+#+END_QUOTE
+
+* Python, aka The Culture of First Order
+
+[[file:imperiallegion.jpg]]
+
+https://github.com/fchollet/keras/blob/master/keras/layers/recurrent.py
+(search "class LSTM")
+
+* Example 1: LSTM
+
+file:../TypedFlow/Layers/RNN.hs::/^lstm.*::/
+
+* Example 2: Attention
+
+Example: an "Attention-model" is a model where every step in a RNN
+adds a computation which depends on an external input. We can compose
+usual RNN cells with attention models in several ways. The state of
+the art is to reprogram such combinations by hand.
+
+file:../TypedFlow/Layers/RNN.hs::/^attentiveWithFeedback.*::/
+
+* Long game
+
+Integrate cutting edge DL ideas as they arrive with moderate effort.
+
+* MNIST
+
+file:../examples/mnist/MNIST.hs
+
+* Seq2Seq
+
+file:../examples/seq2seq/Seq2Seq.hs
