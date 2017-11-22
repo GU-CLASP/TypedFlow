@@ -147,7 +147,7 @@ def train (session, model,
         for inputs in train_generator(batch_size) if isTraining else valid_generator(batch_size):
             print(".",end="")
             sys.stdout.flush()
-            maybeTrain = model["train"] if isTraining else []
+            maybeTrain = [model["train"]] if isTraining else []
             results = session.run([model["loss"],model["accuracy"]] + maybeTrain + extraVectors,
                                   feed_dict=dict([(model["training_phase"],isTraining)] +
                                                  [(model[k],inputs[k]) for k in inputs]))
