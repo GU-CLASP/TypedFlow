@@ -297,11 +297,11 @@ uniformAttn score lengths hs_ ht = do
 -- the next iteration in the rnn. (This follows the diagram at
 -- https://github.com/tensorflow/nmt#background-on-the-attention-mechanism
 -- commit 75aa22dfb159f10a1a5b4557777d9ff547c1975a).
-attentiveWithFeedback ::forall attSize cellSize inputSize bs w ss.
+attentiveWithFeedback ::forall attSize cellSize inputSize bs w ss. KnownLen ss =>
   AttentionFunction w bs cellSize attSize ->
   RnnCell w ss                      (T '[inputSize+attSize,bs] (Flt w)) (T '[cellSize,bs] (Flt w)) ->
   RnnCell w ('[attSize,bs] ': ss)   (T '[inputSize        ,bs] (Flt w)) (T '[attSize,bs] (Flt w))
-attentiveWithFeedback attn cell = withFeedback (cell .-. timeDistribute' attn)
+attentiveWithFeedback attn cell = appEmpty @ss $ withFeedback (cell .-. timeDistribute' attn)
 
 
 -- -- | LSTM for an attention model. The result of attention is fed to the next step.
