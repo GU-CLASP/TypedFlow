@@ -353,7 +353,9 @@ flatten3  =  -- (m * (n * (o * Product s)))
              prodAssoc @(m * n) @o @(Product s) $
              -- ((m * n) * o) * Product s
              reshape
-
+-- | Reshape a tensor so that the first two dimensions are collapsed
+flatten12 :: ∀ m n o s t. KnownNat o => (KnownNat m, KnownNat n, KnownShape s) => Tensor (o ': m ': n ': s) t -> Tensor (o ': m*n ': s) t
+flatten12 = prodAssoc @m @n @(TypedFlow.Product s) reshape
 
 -- | Reshape a tensor so that the first dimension is expanded into two.
 inflate2 :: ∀ m n s t. (KnownNat m, KnownNat n, KnownShape s) => Tensor (m*n ': s) t -> Tensor (m ': n ': s) t
@@ -367,6 +369,12 @@ inflate3 = -- (m * (n * (o * Product s)))
            prodAssoc @(m * n) @o @(Product s) $
            -- ((m * n) * o) * Product s
            reshape
+
+-- | Reshape a tensor so that the first two dimensions are collapsed
+inflate12 :: ∀ m n o s t. KnownNat o => (KnownNat m, KnownNat n, KnownShape s) => Tensor (o ': m*n ': s) t -> Tensor (o ': m ': n ': s) t
+inflate12 = prodAssoc @m @n @(TypedFlow.Product s) reshape
+
+
 
 -- | Access the last element in a tensor (in the 0th dimension)
 last0 :: ∀ n s t. KnownNat n => KnownLen s => T (n ': s) t -> Tensor s t
@@ -401,7 +409,7 @@ unstack0 (T x) = do
 stack0 :: ∀ s (n::Nat) t. (KnownLen s) => V n (T s t) -> Tensor (n ': s) t
 stack0 (V xs) = T (funcall "tf.stack" [list [x | T x <- xs], text "axis=" <> integer (listLen @ s)])
 
--- | Concatenate @n@ tensors along the first dimension
+-- | Concatenate @n@ tensors along the second dimension
 stack1 :: ∀ s (n::Nat) m t. (KnownLen s) => V n (T (m ': s) t) -> Tensor (m ': n ': s) t
 stack1 (V xs) = T (funcall "tf.stack" [list [x | T x <- xs], text "axis=" <> integer (listLen @ s)])
 
