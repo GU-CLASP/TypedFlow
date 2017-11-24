@@ -39,7 +39,7 @@ module TypedFlow.Layers.RNN (
   stackRnnCells, (.-.),
   stackRnnLayers, (.--.),
   bothRnnLayers,(.++.),
-  withBypass,
+  withBypass, withFeedback,
   onStates,
   timeDistribute, timeDistribute',
   -- * RNN Cells
@@ -133,6 +133,14 @@ withBypass :: RnnCell b s0 (T '[x,bs] t) (T '[y,bs] t) -> RnnCell b s0 (T '[x,bs
 withBypass cell (s,x) = do
   (s',y) <- cell (s,x)
   return (s',concat0 x y)
+
+-- | Run the cell, and feeds its output as input to the next time-step
+withFeedback :: forall outputSize inputSize bs w ss.
+  RnnCell w ss                      (T '[inputSize+outputSize,bs] (Flt w)) (T '[outputSize,bs] (Flt w)) ->
+  RnnCell w ('[outputSize,bs] ': ss)   (T '[inputSize        ,bs] (Flt w)) (T '[outputSize,bs] (Flt w))
+withFeedback cell ((F prevoutputnVector :* s),x) = do
+  (s',y) <- cell (s,concat0 x prevoutputnVector)
+  return ((F y :* s'),y)
 
 --------------------------------------
 -- Cells
@@ -293,10 +301,8 @@ attentiveWithFeedback ::forall attSize cellSize inputSize bs w ss.
   AttentionFunction w bs cellSize attSize ->
   RnnCell w ss                      (T '[inputSize+attSize,bs] (Flt w)) (T '[cellSize,bs] (Flt w)) ->
   RnnCell w ('[attSize,bs] ': ss)   (T '[inputSize        ,bs] (Flt w)) (T '[attSize,bs] (Flt w))
-attentiveWithFeedback attn cell ((F prevAttnVector :* s),x) = do
-  (s',y) <- cell (s,concat0 x prevAttnVector)
-  focus <- attn y
-  return ((F focus :* s'),focus)
+attentiveWithFeedback attn cell = withFeedback (cell .-. timeDistribute' attn)
+
 
 -- -- | LSTM for an attention model. The result of attention is fed to the next step.
 -- attentiveLstm :: forall attSize n x bs t. KnownNat bs =>
