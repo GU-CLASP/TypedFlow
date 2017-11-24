@@ -79,8 +79,8 @@ module TypedFlow.TF (
   expandDim,
   expandDim0, squeeze0,
   expandDim1, squeeze1,
-  flatten2, inflate2, flattenN2,
-  flatten3, inflate3,
+  flatten2, flatten3, flatten12, flattenN2,
+  inflate2, inflate3, inflate12,
   reshape, flattenAll, inflateAll,
   -- ** Transposition
   transpose, transposeN, transposeN', transpose01, transposeN01,
@@ -355,7 +355,7 @@ flatten3  =  -- (m * (n * (o * Product s)))
              reshape
 -- | Reshape a tensor so that the first two dimensions are collapsed
 flatten12 :: ∀ m n o s t. KnownNat o => (KnownNat m, KnownNat n, KnownShape s) => Tensor (o ': m ': n ': s) t -> Tensor (o ': m*n ': s) t
-flatten12 = prodAssoc @m @n @(TypedFlow.Product s) reshape
+flatten12 = prodAssoc @m @n @(Product s) reshape
 
 -- | Reshape a tensor so that the first dimension is expanded into two.
 inflate2 :: ∀ m n s t. (KnownNat m, KnownNat n, KnownShape s) => Tensor (m*n ': s) t -> Tensor (m ': n ': s) t
@@ -372,7 +372,7 @@ inflate3 = -- (m * (n * (o * Product s)))
 
 -- | Reshape a tensor so that the first two dimensions are collapsed
 inflate12 :: ∀ m n o s t. KnownNat o => (KnownNat m, KnownNat n, KnownShape s) => Tensor (o ': m*n ': s) t -> Tensor (o ': m ': n ': s) t
-inflate12 = prodAssoc @m @n @(TypedFlow.Product s) reshape
+inflate12 = prodAssoc @m @n @(Product s) reshape
 
 
 
