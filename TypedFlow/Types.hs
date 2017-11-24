@@ -74,6 +74,14 @@ type family Init xs where
 -- initLast' :: forall s k. ((Init s ++ '[Last s]) ~ s => k) -> k
 -- initLast' k = unsafeCoerce# k -- why not?
 
+
+succPos' :: CmpNat 0 (1 + n) :~: 'LT
+succPos' = unsafeCoerce Refl
+
+succPos :: forall n k. ((0 < (1+n)) => k) -> k
+succPos k = case succPos' @n  of
+  Refl -> k
+
 plusAssoc' :: forall x y z. (x + y) + z :~: x + (y + z)
 plusAssoc' = unsafeCoerce Refl
 
@@ -100,6 +108,12 @@ knownProduct' (LS _ n) k = knownProduct' n k
 
 knownProduct :: forall s k. KnownShape s => (KnownNat (Product s) => k) -> k
 knownProduct = knownProduct' @s shapeSList
+
+appEmpty' :: (xs ++ '[]) :~: xs
+appEmpty' = unsafeCoerce Refl
+
+appEmpty :: forall xs k. (((xs ++ '[]) ~ xs) => k) -> k
+appEmpty k = case appEmpty' @xs of Refl -> k
 
 initLast' :: forall s k. SList s -> ((Init s ++ '[Last s]) ~ s => k) -> k
 initLast' LZ _ = error "initLast': does not hold on empty lists"
