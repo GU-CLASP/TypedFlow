@@ -132,8 +132,8 @@ ones :: ∀ t (shape :: Shape). KnownShape shape => KnownTyp t => (T shape t)
 ones = T (funcall "tf.ones" [showShape @shape, named "dtype" (showTyp @t)])
 
 -- | Constant
-constant :: forall s w. KnownShape s => KnownBits w => Float -> T s ('Typ 'Float w)
-constant c = T (funcall "tf.constant" [float c, named "shape" (showShape @s), named "dtype" (showTyp @(Flt w))])
+constant :: forall s t w. KnownShape s => KnownBits w => KnownKind t => HostType t -> T s ('Typ t w)
+constant c = T (funcall "tf.constant" [pretty c, named "shape" (showShape @s), named "dtype" (showTyp @(Flt w))])
 
 -- TODO: use a different type for persistent?
 -- | Declare variable which persists between calls to session.run.

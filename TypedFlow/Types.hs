@@ -376,21 +376,36 @@ instance (KnownNat x, KnownShape xs) => KnownShape (x ': xs)
 
 class KnownTyp t where
   typVal :: Typ
+
 class KnownBits t where
   bitsVal :: NBits
 
 instance KnownBits 'B1 where bitsVal = B1
 instance KnownBits 'B32 where bitsVal = B32
 instance KnownBits 'B64 where bitsVal = B64
+
 instance (KnownBits l, KnownKind k) => KnownTyp ('Typ k l) where
   typVal = Typ (kindVal @k) (bitsVal @l)
 
-class KnownKind t where
-  kindVal :: Kind
+class Pretty t where
+  pretty :: t -> DOC
 
-instance KnownKind 'Bool where kindVal = Bool
-instance KnownKind 'Float where kindVal = Float
-instance KnownKind 'Int where kindVal = Int
+instance Pretty Bool where pretty = bool
+instance Pretty Float where pretty = float
+instance Pretty Int where pretty = int
+class (Pretty (HostType t)) => KnownKind t where
+  kindVal :: Kind
+  type HostType t
+
+instance KnownKind 'Bool where
+  kindVal = Bool
+  type HostType 'Bool = Bool
+instance KnownKind 'Float where
+  kindVal = Float
+  type HostType 'Float = Float
+instance KnownKind 'Int where
+  kindVal = Int
+  type HostType 'Int = Int
 
 -- data SList s where
 --   LZ :: SList '[]
