@@ -38,6 +38,7 @@ module TypedFlow.Layers.RNN (
   -- * Combinators
   stackRnnCells, (.-.),
   stackRnnLayers, (.--.),
+  bothRnnCells, (.|.),
   bothRnnLayers,(.++.),
   withBypass, withFeedback,
   onStates,
@@ -127,6 +128,18 @@ stackRnnCells l1 l2 (hsplit @s0 -> (s0,s1),x) = do
   return ((happ s0' s1'),z)
 
 (.-.) = stackRnnCells
+
+-- | Compose two rnn cells in parallel.
+bothRnnCells, (.|.) :: forall s0 s1 a b c t bs bits. KnownLen s0
+  => RnnCell t s0 a (T '[b,bs] (Flt bits))
+  -> RnnCell t s1 a (T '[c,bs] (Flt bits))
+  -> RnnCell t (s0 ++ s1) a (T '[b+c,bs] (Flt bits))
+bothRnnCells l1 l2 (hsplit @s0 -> (s0,s1),x) = do
+  (s0',y) <- l1 (s0,x)
+  (s1',z) <- l2 (s1,x)
+  return ((happ s0' s1'),concat0 y z)
+
+(.|.) = bothRnnCells
 
 -- | Run the cell, and forward the input to the output, by concatenation with the output of the cell.
 withBypass :: RnnCell b s0 (T '[x,bs] t) (T '[y,bs] t) -> RnnCell b s0 (T '[x,bs] t) (T '[x+y,bs] t)
