@@ -38,7 +38,7 @@ module TypedFlow.Layers.Core
     -- * Dropout
     DropProb(..), mkDropout, mkDropouts,
     -- * Embedding
-    EmbeddingP(..), embedding,
+    EmbeddingP(..), embedding, embedding',
     -- * Convolutional
     ConvP(..), conv, maxPool2D)
 
@@ -77,9 +77,14 @@ instance (KnownNat numObjects, KnownBits b, KnownNat embeddingSize) => ParamWith
   defaultInitializer = EmbeddingP (randomUniform (-0.05) 0.05)
 
 -- | embedding layer
-embedding :: ∀ embeddingSize numObjects batchSize t.
+embedding' :: ∀ embeddingSize numObjects batchSize t.
              EmbeddingP numObjects embeddingSize t -> Tensor '[batchSize] Int32 -> Tensor '[embeddingSize,batchSize] ('Typ 'Float t)
-embedding (EmbeddingP param) input = gather @ '[embeddingSize] (transpose param) input
+embedding' (EmbeddingP param) input = gather @ '[embeddingSize] (transpose param) input
+
+
+embedding :: ∀ embeddingSize numObjects s t.
+             KnownNat embeddingSize => KnownShape s => EmbeddingP numObjects embeddingSize t -> Tensor s Int32 -> Tensor (embeddingSize ': s) ('Typ 'Float t)
+embedding e x = knownProduct @s $ reshape (embedding' e (reshape @'[Product s] x))
 
 instance (KnownNat a, KnownNat b, KnownBits t) => KnownTensors (DenseP t a b) where
   travTensor f s (DenseP x y) = DenseP <$> travTensor f (s<>"_w") x <*> travTensor f (s<>"_bias") y
