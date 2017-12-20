@@ -541,11 +541,11 @@ oneHot :: forall n numClasses s w t. KnownNat numClasses => KnownBits t =>
 oneHot (T x) = T (funcall "tf.one_hot" [x, named "depth" (showDim @numClasses), named "axis" (integer (listLen @s - peanoInt @n)), named "dtype" (showTyp @(Flt t))])
 
 -- | One hot vector along axis 0
-oneHot0 :: forall numClasses w batchSize t. KnownNat numClasses => KnownBits t => Tensor '[batchSize] ('Typ 'Int w) -> Tensor '[numClasses,batchSize] (Flt t)
+oneHot0 :: forall numClasses w s t. KnownLen s => KnownNat numClasses => KnownBits t => Tensor s ('Typ 'Int w) -> Tensor (numClasses ': s) (Flt t)
 oneHot0 = oneHot @Dim0
 
 -- | One hot vector along axis 1
-oneHot1 :: forall numClasses w batchSize m t. KnownNat numClasses => KnownBits t => Tensor '[m,batchSize] ('Typ 'Int w) -> Tensor '[m,numClasses,batchSize] (Flt t)
+oneHot1 :: forall numClasses w s m t. KnownLen s => KnownNat numClasses => KnownBits t => Tensor (m ': s) ('Typ 'Int w) -> Tensor (m ': numClasses ': s) (Flt t)
 oneHot1 = oneHot @Dim1
 
 -- | Generate a random tensor where each individual element is picked
