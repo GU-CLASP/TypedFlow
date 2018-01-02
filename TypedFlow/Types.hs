@@ -173,6 +173,9 @@ type family Reverse xs where
 newtype V (n::Nat) a = V [a]
   deriving (Functor, Foldable, Traversable)
 
+lastV :: V (1+n) a -> a
+lastV (V xs) = last xs
+
 instance KnownNat n => Applicative (V n) where
   pure = V . replicate (fromIntegral (natVal (Proxy @n)))
   V fs <*> V xs = V (zipWith ($) fs xs)
