@@ -36,7 +36,7 @@ module TypedFlow.Layers.RNN.Base (
   -- * Types
   RnnCell, RnnLayer,
   -- * Monad-like interface
-  bindC, returnC,
+  Component, bindC, returnC, liftC,
   -- * Combinators
   stackRnnCells, (.-.),
   stackRnnLayers, (.--.),
@@ -72,6 +72,11 @@ bindC f g (hsplit @s1 -> (s1,s0)) = do
   (s1',y) <- g x s1
   return (happ s1' s0',y)
 
+liftC :: Gen a -> Component t '[] a
+liftC f Unit = do
+  x <- f
+  return (Unit,x)
+
 -- | A cell in an rnn. @state@ is the state propagated through time.
 type RnnCell t states input output = input -> Component t states output
 
@@ -89,9 +94,7 @@ timeDistribute pureLayer = timeDistribute' (return . pureLayer)
 -- | Convert a stateless generator into an RNN cell by ignoring the
 -- RNN state.
 timeDistribute' :: (a -> Gen b) -> RnnCell t '[] a b
-timeDistribute' stateLess a Unit = do
-  b <- stateLess a
-  return (Unit,b)
+timeDistribute' stateLess a = liftC (stateLess a)
 
 --------------------------------------
 -- Combinators
