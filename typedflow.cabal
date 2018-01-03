@@ -34,6 +34,9 @@ library
        TypedFlow.Layers,
        TypedFlow.Layers.Core,
        TypedFlow.Layers.RNN,
+       TypedFlow.Layers.RNN.Base,
+       TypedFlow.Layers.RNN.Cells,
+       TypedFlow.Layers.RNN.Attention,
        TypedFlow.Learn,
        TypedFlow.TF,
        TypedFlow.Types
