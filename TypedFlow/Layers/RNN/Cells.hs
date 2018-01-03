@@ -1,9 +1,13 @@
+{-# LANGUAGE ViewPatterns #-}
+{-# LANGUAGE AllowAmbiguousTypes #-}
 {-# OPTIONS_GHC -fplugin GHC.TypeLits.KnownNat.Solver #-}
-{-# LANGUAGE UnicodeSyntax #-}
-{-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE DataKinds #-}
-{-# LANGUAGE TypeOperators #-}
+{-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE TypeOperators #-}
+{-# LANGUAGE UnicodeSyntax #-}
 {-|
 Module      : TypedFlow.Layers.RNN.Cells
 Description : RNN cells
@@ -85,4 +89,37 @@ gru (GRUP wz wr w) (VecSing ht1, xt) = do
   ht <- assign ((ones ⊝ zt) ⊙ ht1 + zt ⊙ hTilda)
   return (VecSing ht, ht)
 
+
+data StackP w n = StackP (DenseP w (n + n) 3)
+
+defStackP :: KnownNat n => KnownBits w => StackP w n
+defStackP = StackP defaultInitializer
+  -- (DenseP glorotUniform (stack0 (V [zeros, constant (-1), zeros]) )) -- demote popping a bit 
+
+instance (KnownNat n, KnownBits w) => KnownTensors (StackP w n) where
+  travTensor f s (StackP d) = StackP <$> travTensor f s d
+
+instance (KnownNat n, KnownBits w) => (ParamWithDefault (StackP w n)) where
+  defaultInitializer = defStackP
+
+-- | A stack recurrent unit. The input has two purposes: 1. it is
+-- saved in a stack. 2. it controls (a dense layer which gives) the
+-- operation to apply on the stack.  The first type argument is the
+-- depth of the stack.
+stackRU :: ∀k n bs w. KnownNat k => KnownNat n => (KnownNat bs) => (KnownBits w) => StackP w n ->
+        RnnCell w '[ '[k+1,n,bs]] (Tensor '[n,bs] (Flt w)) (Tensor '[n,bs] (Flt w))
+stackRU (StackP w) (VecSing st1, input) =
+  succPos @k $
+  plusComm @k @1 $ do
+  let ct1 = nth0' @0 st1
+      hx = concat0 ct1 input
+      action :: T '[3,bs] (Flt w)
+      action = softmax0 (w # hx)
+  (_,tl) <- split0 @1 @k st1
+  (it,_) <- split0 @k @1 st1
+  let stTilda :: T '[3,k+1,n,bs] (Flt w)
+      stTilda = stack0 (V [st1, tl `concat0` zeros, (expandDim0 input) `concat0` it])
+  st <- assign (squeeze0 (inflate12 (matmul (flatten12 @(k+1) @n stTilda) (expandDim0 action))))
+  let ct = nth0' @0 st
+  return (VecSing st, ct)
 

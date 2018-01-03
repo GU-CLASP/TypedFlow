@@ -82,6 +82,14 @@ succPos :: forall n k. ((0 < (1+n)) => k) -> k
 succPos k = case succPos' @n  of
   Refl -> k
 
+
+plusComm' :: forall x y. (x + y) :~: (y + x)
+plusComm' = unsafeCoerce Refl
+
+plusComm :: forall x y k. ((x + y) ~ (y + x) => k) -> k
+plusComm k = case plusComm' @x @y of
+  Refl -> k
+
 plusAssoc' :: forall x y z. (x + y) + z :~: x + (y + z)
 plusAssoc' = unsafeCoerce Refl
 
