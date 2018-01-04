@@ -55,7 +55,7 @@ module TypedFlow.TF (
   eye,
   constant,
   -- ** indexwise unary operators
-  round, sqrt, sigmoid, tanh, log, relu, floor, negate,
+  round, sqrt, sigmoid, tanh, log, relu, floor, negate, square,
   -- ** Indexwise binary operators
   add, (+), (/), (⊕), (⊝), (⊙), (⊘), equal,
   -- ** Products
@@ -278,7 +278,7 @@ infixl 6 ⊕,⊝
 matmul :: Tensor (o ': n ': s) t -> Tensor (m ': o ': s) t -> Tensor (m ': n ': s) t
 matmul = binOp "tf.matmul"
 
-round, sigmoid, tanh, log, relu, floor, square, sqrt, square
+round, sigmoid, tanh, log, relu, floor, sqrt, square
    :: ∀ s t. Tensor s ('Typ 'Float t) -> Tensor s ('Typ 'Float t)
 sigmoid = unOp "tf.sigmoid"
 tanh = unOp "tf.tanh"
