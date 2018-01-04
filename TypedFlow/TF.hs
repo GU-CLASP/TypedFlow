@@ -61,7 +61,7 @@ module TypedFlow.TF (
   -- ** Products
   (∙), (·), matmul,
   -- ** Reducers
-  reduceMeanAll, reduceSumAll,
+  reduceMeanAll, reduceSumAll, reduceMaxAll,
   reduceSum, reduceMean, reduceMax,
   argmax, argmax0, argmax1,
   softmax0, softmax1,
@@ -223,7 +223,8 @@ reduceAll :: String -> Tensor s t -> Tensor '[] t
 reduceAll op = unOp ("tf.reduce_" ++ op)
 
 -- | Mean value of the input tensor.
-reduceMeanAll, reduceSumAll :: ∀ (s :: Shape) t. Tensor s t -> Tensor '[] t
+reduceMeanAll, reduceSumAll, reduceMaxAll :: ∀ (s :: Shape) t. Tensor s t -> Tensor '[] t
+reduceMaxAll = reduceAll "max"
 reduceMeanAll = reduceAll "mean"
 reduceSumAll = reduceAll "sum"
 
@@ -277,7 +278,7 @@ infixl 6 ⊕,⊝
 matmul :: Tensor (o ': n ': s) t -> Tensor (m ': o ': s) t -> Tensor (m ': n ': s) t
 matmul = binOp "tf.matmul"
 
-round, sigmoid, tanh, log, relu, floor
+round, sigmoid, tanh, log, relu, floor, square, sqrt, square
    :: ∀ s t. Tensor s ('Typ 'Float t) -> Tensor s ('Typ 'Float t)
 sigmoid = unOp "tf.sigmoid"
 tanh = unOp "tf.tanh"
@@ -286,6 +287,7 @@ relu = unOp "tf.nn.relu"
 round = unOp "tf.round"
 floor = unOp "tf.floor"
 sqrt = unOp "tf.sqrt"
+square = unOp "tf.square"
 
 negate :: ∀ s t. T s t -> T s t
 negate = unOp "-"
