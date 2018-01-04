@@ -62,7 +62,7 @@ instance (KnownNat n, KnownNat x, KnownBits t) => ParamWithDefault (LSTMP t n x)
 -- | Standard LSTM
 lstm :: ∀ n x bs t. LSTMP t n x ->
         RnnCell t '[ '[n,bs], '[n,bs]] (Tensor '[x,bs] (Flt t)) (Tensor '[n,bs] (Flt t))
-lstm (LSTMP wf wi wc wo) input (VecPair ht1 ct1) = do
+lstm (LSTMP wf wi wc wo) input = C $ \(VecPair ht1 ct1) -> do
   hx <- assign (concat0 ht1 input)
   let f = sigmoid (wf # hx)
       i = sigmoid (wi # hx)
@@ -84,7 +84,7 @@ instance (KnownNat n, KnownNat x, KnownBits t) => ParamWithDefault (GRUP t n x) 
 -- | Standard GRU cell
 gru :: ∀ n x bs t. (KnownNat bs, KnownNat n, KnownBits t) => GRUP t n x ->
         RnnCell t '[ '[n,bs] ] (Tensor '[x,bs] (Flt t)) (Tensor '[n,bs] (Flt t))
-gru (GRUP wz wr w) xt (VecSing ht1) = do
+gru (GRUP wz wr w) xt = C $ \(VecSing ht1) -> do
   hx <- assign (concat0 ht1 xt)
   let zt = sigmoid (wz ∙ hx)
       rt = sigmoid (wr ∙ hx)
@@ -111,7 +111,7 @@ instance (KnownNat n, KnownBits w) => (ParamWithDefault (StackP w n)) where
 -- depth of the stack.
 stackRU :: ∀k n bs w. KnownNat k => KnownNat n => (KnownNat bs) => (KnownBits w) => StackP w n ->
         RnnCell w '[ '[k+1,n,bs]] (Tensor '[n,bs] (Flt w)) (Tensor '[n,bs] (Flt w))
-stackRU (StackP w) input (VecSing st1) =
+stackRU (StackP w) input = C $ \(VecSing st1) ->
   succPos @k $
   plusComm @k @1 $ do
   let ct1 = nth0' @0 st1
