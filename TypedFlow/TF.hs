@@ -52,11 +52,12 @@ module TypedFlow.TF (
   -- ** Constants
   zeros,
   ones,
+  eye,
   constant,
   -- ** indexwise unary operators
-  round, sigmoid, tanh, log, relu, floor, negate,
+  round, sqrt, sigmoid, tanh, log, relu, floor, negate,
   -- ** Indexwise binary operators
-  add, (+), (⊕), (⊝), (⊙), (⊘), equal,
+  add, (+), (/), (⊕), (⊝), (⊙), (⊘), equal,
   -- ** Products
   (∙), (·), matmul,
   -- ** Reducers
@@ -107,7 +108,7 @@ module TypedFlow.TF (
   repeatT, flattenHTV, inflateHTV, KnownTensors(..), LastEqual
   ) where
 
-import Prelude hiding (tanh,Num(..),Floating(..),round,floor)
+import Prelude hiding (tanh,Num(..),Floating(..),round,floor,(/),sqrt)
 import qualified Prelude
 import Prelude ((-))
 import Text.PrettyPrint.Compact hiding (Last, All,Product,Sum)
@@ -131,6 +132,14 @@ zeros = T (funcall "tf.zeros" [showShape @shape, named "dtype" (showTyp @t)])
 -- | Ones
 ones :: ∀ t (shape :: Shape). KnownShape shape => KnownTyp t => (T shape t)
 ones = T (funcall "tf.ones" [showShape @shape, named "dtype" (showTyp @t)])
+
+-- | Identity matrix in dimensions m,n (extended with zeros if m ≠ n), and repeated on shape s.
+eye :: ∀ m n s t. KnownShape s => KnownNat m => KnownNat n => KnownTyp t => (T (m ': n ': s) t)
+eye = T (funcall "tf.eye" [showDim @n,
+                            named "num_columns" (showDim @m),
+                            named "batchShape" (showShape @s),
+                            named "dtype" (showTyp @t)])
+
 
 -- | Constant
 constant :: forall s t w. KnownShape s => KnownBits w => KnownKind t => HostType t -> T s ('Typ t w)
@@ -245,6 +254,11 @@ add = binOp "tf.add"
 (+) = add @s @d
 infixl 6 +
 
+-- | Divide tensors, broacasting along shape @s@
+(/) :: ∀ (d :: Shape) (s :: Shape) t. Tensor (d ++ s) t -> Tensor d t -> Tensor (d ++ s) t
+(/) = binOp "tf.divide"
+infixl 7 /
+
 -- | Indexwise equality test.
 equal :: Tensor d t -> Tensor d t -> Tensor d TFBool
 equal = binOp "tf.equal"
@@ -271,6 +285,7 @@ log = unOp "tf.log"
 relu = unOp "tf.nn.relu"
 round = unOp "tf.round"
 floor = unOp "tf.floor"
+sqrt = unOp "tf.sqrt"
 
 negate :: ∀ s t. T s t -> T s t
 negate = unOp "-"
@@ -612,8 +627,8 @@ varianceScaling factor mode distr = case distr of
     n = max 1 $ case mode of
                   VSFanIn -> fan_in
                   VSFanOut -> fan_out
-                  VSAvg -> (fan_in Prelude.+ fan_out) / 2
-    limit = Prelude.sqrt ((case distr of NormalDistr -> 1.3; UniformDistr -> 3) Prelude.* factor / n)
+                  VSAvg -> (fan_in Prelude.+ fan_out) Prelude./ 2
+    limit = Prelude.sqrt ((case distr of NormalDistr -> 1.3; UniformDistr -> 3) Prelude.* factor Prelude./ n)
 
 
 glorotUniform :: forall inDim outDim t. KnownNat inDim => (KnownNat outDim, KnownBits t) => Tensor '[inDim,outDim] ('Typ 'Float t)
@@ -625,7 +640,7 @@ glorotUniform = varianceScaling 1 VSAvg UniformDistr
 -- matvecmulBatch :: ∀ s cols rows t. (KnownLen s) =>  Tensor (cols ': rows ': s) t -> Tensor (cols ': s) t -> Tensor (rows ': s) t
 -- matvecmulBatch m v = squeeze0 (matmul m (expandDim0 v))
 
--- | Product of a matrix of weight with a (batched) vector .
+-- | Product of a matrix of weights with a (batched) vector .
 (∙) :: Tensor '[cols, rows] t -> Tensor '[cols,batchSize] t -> Tensor '[rows,batchSize] t
 m ∙ v = matmul v (transpose m)
 infixl 7 ∙
