@@ -61,7 +61,7 @@ module TypedFlow.TF (
   (∙), (·), matmul,
   -- ** Reducers
   reduceMeanAll, reduceSumAll,
-  reduceSum, reduceMean,
+  reduceSum, reduceMean, reduceMax,
   argmax, argmax0, argmax1,
   softmax0, softmax1,
   -- ** Gradients
@@ -86,9 +86,10 @@ module TypedFlow.TF (
   transpose, transposeN, transposeN', transpose01, transposeN01,
   -- ** Sequences
   reverseSequences, sequenceMask,
+  -- ** Convolutions
+  AddSpatialDims, convolution, convolutionValid,
   -- ** Misc
   cast,
-  convolution,
   oneHot, oneHot0, oneHot1,
   -- ** Testing conditions
   if_, where_,
@@ -221,10 +222,11 @@ reduceSumAll = reduceAll "sum"
 reduce :: ∀ n s t. (KnownLen s,KnownPeano n) => String -> T s t -> T (Take n s ++ Drop ('Succ n) s) t
 reduce op (T x) = T (funcall ("tf.reduce_" ++ op) [x, text "axis=" <> integer (listLen @ s - peanoInt @n - 1)])
 
--- | Sum along a given dimension
-reduceSum, reduceMean :: ∀n s t. (KnownLen s,KnownPeano n) => T s t -> T (Take n s ++ Drop ('Succ n) s) t
+-- | Reduce along a given dimension
+reduceSum, reduceMean, reduceMax :: ∀n s t. (KnownLen s,KnownPeano n) => T s t -> T (Take n s ++ Drop ('Succ n) s) t
 reduceSum = reduce @n "sum"
 reduceMean = reduce @n "mean"
+reduceMax = reduce @n "max"
 
 
 -- | Sum along the first dimension
@@ -456,6 +458,25 @@ sequenceMask (T x) = T (funcall "tf.sequence_mask" [x, named "maxlen" (showDim @
 gather :: ∀s n indexShape t. T (s ++ '[n]) t -> T indexShape Int32 -> T (s ++ indexShape) t
 gather = binOp "tf.gather"
 
+
+untypedConvolution :: forall outputChannels filterSpatialShape inChannels s t y.
+               KnownLen filterSpatialShape
+            => Length filterSpatialShape <= 3
+            => ((1 + Length filterSpatialShape) ~ Length s) -- the last dim of s is the batch size
+            => String
+            -> T (inChannels ': y) t -- ^ input tensor (batched)
+            -> T ('[outputChannels,inChannels] ++ filterSpatialShape) t -- ^ filters
+            -> T ('[outputChannels] ++ s) t
+untypedConvolution padding (T input) (T filters) = T (funcall "tf.nn.convolution"
+                                                      [input,filters
+                                                      ,named "padding" (text (show padding)) 
+                                                      ,named "data_format" (text (show dataFormat))])
+  where dataFormat = case listLen @ filterSpatialShape of
+          1 -> "NWC"
+          2 -> "NHWC"
+          3 -> "NDHWC"
+          _ -> error "convolution: more than 3 spatial dimensions are not supported!"
+
 -- | Size-preserving convolution operation.
 convolution :: forall outputChannels filterSpatialShape inChannels s t.
                KnownLen filterSpatialShape
@@ -464,15 +485,21 @@ convolution :: forall outputChannels filterSpatialShape inChannels s t.
             => T ('[inChannels] ++ s) t -- ^ input tensor (batched)
             -> T ('[outputChannels,inChannels] ++ filterSpatialShape) t -- ^ filters
             -> T ('[outputChannels] ++ s) t
-convolution (T input) (T filters) = T (funcall "tf.nn.convolution" [input,filters
-                                                                   ,named "padding" (text (show "SAME")) -- otherwise the shape s changes
-                                                                   ,named "data_format" (text (show dataFormat))])
-  where dataFormat = case listLen @ filterSpatialShape of
-          1 -> "NWC"
-          2 -> "NHWC"
-          3 -> "NDHWC"
-          _ -> error "convolution: more than 3 spatial dimensions are not supported!"
+convolution = untypedConvolution "SAME"
 
+type family AddSpatialDims xs ys where
+  AddSpatialDims '[x] '[] = '[x]
+  AddSpatialDims (x ': xs) (y ': ys) = (x+y-1) ': AddSpatialDims xs ys
+
+-- | Convolution operation with no padding (applying the filter only on positions where the input is fully defined)
+convolutionValid :: forall outputChannels filterSpatialShape inChannels s t.
+               KnownLen filterSpatialShape
+            => Length filterSpatialShape <= 3
+            => ((1 + Length filterSpatialShape) ~ Length s) -- the last dim of s is the batch size
+            => T (inChannels ': AddSpatialDims s filterSpatialShape) t -- ^ input tensor (batched)
+            -> T ('[outputChannels,inChannels] ++ filterSpatialShape) t -- ^ filters
+            -> T (outputChannels ': s) t
+convolutionValid = untypedConvolution "VALID"
 
 -- poolNC :: forall dim s inputSpatialShape channels batchSize t.
 --                   (inputSpatialShape ~ Take dim s, '[batchSize] ~ Drop dim s) =>
