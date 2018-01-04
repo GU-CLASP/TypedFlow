@@ -35,7 +35,7 @@ Stability   : experimental
 module TypedFlow.Layers.RNN.Base (
   -- * Types
   RnnCell, RnnLayer,
-  runCell, mkCell,
+  runLayer, runCell, mkCell,
   -- * Monad-like interface
   Component(..), bindC, returnC, liftC,
   -- * Combinators
@@ -92,9 +92,21 @@ type RnnCell t states input output = input -> Component t states output
 -- | A layer in an rnn. @n@ is the length of the time sequence. @state@ is the state propagated through time.
 type RnnLayer n b state input output = RnnCell b state (V n input) (V n output) 
 
+-- | Run a cell
 runCell :: RnnCell t states input output -> (HTV (Flt t) states,input) -> Gen (HTV (Flt t) states, output)
 runCell cell = uncurry (flip (runC . cell))
 
+-- | Run a layer on a tensor
+runLayer :: KnownNat n => (KnownLen s, KnownLen s1) =>
+                  RnnLayer n t2 states (T s1 t1) (T s t)
+                  -> (HTV (Flt t2) states, Tensor (n : s1) t1)
+                  -> Gen (HTV (Flt t2) states, Tensor (n : s) t)
+runLayer l (s,x) = do
+  x' <- unstack0 x
+  (s',y) <- runCell l (s,x')
+  return (s',stack0 y)
+
+-- | Construct a sell from an arbitrary stateful function
 mkCell :: ((HTV (Flt t) states,input) -> Gen (HTV (Flt t) states, output)) -> RnnCell t states input output
 mkCell cell = C . flip (curry cell)
 
