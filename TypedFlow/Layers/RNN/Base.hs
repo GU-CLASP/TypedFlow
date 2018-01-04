@@ -118,12 +118,12 @@ infixr .--.
 (.--.) = stackRnnLayers
 
 -- | Compose two rnn layers in parallel.
-bothRnnLayers,(.++.)  :: forall s1 s2 a b c n bits. KnownLen s1 => KnownLen s2 => KnownNat n
-  => RnnLayer n bits s1 a b -> RnnLayer n bits s2 a c -> RnnLayer n bits (s2 ++ s1) a (b,c)
+bothRnnLayers,(.++.)  :: forall s1 s2 a b c n bs bits. KnownLen s1 => KnownLen s2 => KnownNat n => KnownLen bs
+  => RnnLayer n bits s1 a (T (b ': bs) (Flt bits)) -> RnnLayer n bits s2 a (T (c ': bs) (Flt bits)) -> RnnLayer n bits (s2 ++ s1) a (T ((b+c) ': bs) (Flt bits))
 bothRnnLayers f g x =
   f x `bindC` \y ->
   g x `bindC` \z ->
-  returnC ((,) <$> y <*> z)
+  returnC (concat0 <$> y <*> z)
 
 infixr .++.
 (.++.) = bothRnnLayers
