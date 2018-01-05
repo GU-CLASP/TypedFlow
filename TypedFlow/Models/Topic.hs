@@ -31,7 +31,7 @@ Stability   : experimental
 
 
 module TypedFlow.Models.Topic where
-import Prelude hiding ((/), sqrt)
+import Prelude hiding ((/), sqrt, tanh, Num(..))
 import TypedFlow.TF
 import TypedFlow.Layers
 import TypedFlow.Types
@@ -46,8 +46,8 @@ tldmDocsummary :: forall
   (e :: Nat) -- size of the embedding
   (a :: Nat) -- document vector summary size
   (n :: Nat) -- length of the document
+  (filterSize :: Nat) -- size of the convolution filter
   (batchSize :: Nat)
-  (filterSize :: Nat) -- size of the convolution filter.
    (t :: NBits) -- size of floats
   .  KnownNat e => KnownNat a => KnownNat n => KnownNat batchSize => KnownBits t
   =>  (EmbeddingP vocSize e t) -> (ConvP t a e '[filterSize]) -> DropProb -> T '[n,batchSize] Int32 -> Gen (T '[a,batchSize] (Flt t))
@@ -73,18 +73,29 @@ mkTdlmTopic = do
   drpS   <- mkDropout (DropProb 0.1)
   topicInput :: T '[a,kk] (Flt t) <- parameter "A" glorotUniform -- mapping from document representations to topics
   topicOutput :: T '[kk,b] (Flt t) <- parameter "B" glorotUniform  -- all possible topics
-  -- regularizer which ensures that topics are disjoint:
-  let
-      topicNormalized :: T '[b,kk] (Flt t)
+  
+  let topicNormalized :: T '[b,kk] (Flt t)
       topicNormalized = transpose01 topicOutput / (sqrt (reduceSum @Dim0 (square topicOutput)) :: T '[b] (Flt t))
       -- matrix of correlation between the topics
       topicCorrelation :: T '[b,b] (Flt t)
       topicCorrelation = matmul (transpose01 topicNormalized) topicNormalized
       -- max correlation between two distinct topics
       topicOverlap = reduceMaxAll (square (topicCorrelation ⊝ eye))
-  addRegularizer (cast topicOverlap)
-  
+  addRegularizer (cast topicOverlap) -- regularizer which ensures that topics are disjoint
+
   return (\d -> let p :: T '[kk,batchSize] (Flt t)
                     p = softmax0 (topicInput ∙ d) -- attention distribution (among the topics)
                 in drpS (topicOutput ∙ p))
 
+
+-- | Gating unit which can be used to mix a RNN hidden state with an
+-- external information source (eg. topic representation).  Described
+-- 'Topically Driven Neural Language Model' by Lau, Baldwin and Cohn;
+-- formula (3)
+tldmGatingUnit :: KnownBits t => KnownNat bs => KnownNat m => (GRUP t m n) -> T '[n,bs] (Flt t) -> T '[m,bs] (Flt t) -> Gen (T '[m,bs] (Flt t))
+tldmGatingUnit (GRUP wz wr w) s h = do
+  x <- assign (concat0 h s)
+  let z = sigmoid (wz ∙ x)
+      r = sigmoid (wr ∙ x)
+      hTilda = tanh (w ∙ (concat0 (r ⊙ h) s))
+  assign ((ones ⊝ z) ⊙ h + z ⊙ hTilda)
