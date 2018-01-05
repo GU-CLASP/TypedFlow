@@ -50,35 +50,38 @@ import GHC.TypeLits
 -- p = softmax (A d)
 -- s = B p
 
--- | An implementation of 'Topically Driven Neural Language Model' by
--- Lau, Baldwin and Cohn. This is the first part; the topic modelling
--- itself.
-tdlmTopic :: forall
+-- | A convolutional document summary function. Described in
+-- 'Topically Driven Neural Language Model' by Lau, Baldwin and Cohn.
+tldmDocsummary :: forall
   (vocSize :: Nat) -- number of words
   (e :: Nat) -- size of the embedding
+  (a :: Nat) -- document vector summary size
   (n :: Nat) -- length of the document
+  (batchSize :: Nat)
+  (filterSize :: Nat) -- size of the convolution filter.
+   (t :: NBits) -- size of floats
+  .  KnownNat e => KnownNat a => KnownNat n => KnownNat batchSize => KnownBits t
+  =>  (EmbeddingP vocSize e t) -> (ConvP t a e '[filterSize]) -> DropProb -> T '[n,batchSize] Int32 -> Gen (T '[a,batchSize] (Flt t))
+tldmDocsummary embs filters dropProb document = do
+  drpEmb <- mkDropout dropProb
+  return (reduceMax @Dim1 (conv filters (drpEmb (embedding @e @vocSize embs document))))
+
+-- | A topic modeler. Described 'Topically Driven Neural Language
+-- Model' by Lau, Baldwin and Cohn.
+tdlmTopic :: forall
   (kk :: Nat) -- number of topics
   (a :: Nat) -- document vector summary size
   (b :: Nat) -- topic representation size
-  (filterSize :: Nat) -- size of the convolution filter.
   (t :: NBits) -- size of floats
   (batchSize :: Nat)
-  . KnownNat kk => KnownNat filterSize => KnownNat n => KnownNat a => KnownNat b => KnownNat e => KnownNat vocSize => KnownBits t => KnownNat batchSize
-  => T '[n,batchSize] Int32 -- ^ document
+  . KnownNat kk => KnownNat a => KnownNat b => KnownBits t => KnownNat batchSize
+  => T '[a,batchSize] (Flt t) -- ^ document summary
   -> Gen (Tensor '[b, batchSize] (Flt t), Scalar (Flt t))
-tdlmTopic inputDoc = do
-  embs <- parameterDefault "embs"
-  drpEmb <- mkDropout (DropProb 0.1)
+tdlmTopic d = do
   drpS   <- mkDropout (DropProb 0.1)
-  filters <- parameterDefault "conv"
   topicInput :: T '[a,kk] (Flt t) <- parameter "A" glorotUniform -- mapping from document representations to topics
   topicOutput :: T '[kk,b] (Flt t) <- parameter "B" glorotUniform  -- all possible topics
-  let docInputs = drpEmb (embedding @e @vocSize embs inputDoc)
-      conv'd = conv @a @'[filterSize] filters docInputs -- in the code they do this for several filter sizes (ie. phrase sizes)
-      max'd = reduceMax @Dim1 conv'd
-      d :: T '[a,batchSize] (Flt t)
-      d = max'd -- document summary
-      p :: T '[kk,batchSize] (Flt t)
+  let p :: T '[kk,batchSize] (Flt t)
       p = softmax0 (topicInput ∙ d) -- attention distribution (among the topics)
       s :: T '[b,batchSize] (Flt t)
       s = drpS (topicOutput ∙ p)  -- document topic representation
@@ -87,4 +90,4 @@ tdlmTopic inputDoc = do
       topicCorrelation :: T '[b,b] (Flt t)
       topicCorrelation = matmul (transpose01 topicNormalized) topicNormalized
       topicUniqueness = reduceMaxAll (topicCorrelation ⊝ eye)
-
+  return (s,topicUniqueness)
