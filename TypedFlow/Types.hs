@@ -522,6 +522,7 @@ data ParamInfo = ParamInfo {paramName :: String
 data GState = GState {nextVar :: Integer, -- ^ next free variable
                       genText :: DOC,
                       genParams :: [ParamInfo], -- ^ optimizable parameters
+                      genRegularizers :: [Scalar Float32], -- ^ accumulated regularizers
                       genTrainingPlaceholder :: Scalar TFBool, -- ^ flag which is true when training
                       genPeeks :: [(String,UntypedExpression)]}
 newtype Gen x = Gen {fromGen :: State GState x} deriving (Monad, MonadState GState, Functor, Applicative)
@@ -606,6 +607,7 @@ generate s = (renderWith (Options 92 (const id)) genText,genParams)
   where GState{..} =  execState (fromGen s) (GState {nextVar = 0
                                                     ,genText = mempty
                                                     ,genParams=[]
+                                                    ,genRegularizers=[]
                                                     ,genTrainingPlaceholder = T "NO TRAINING PLACEHOLDER!"
                                                     ,genPeeks=[]})
 

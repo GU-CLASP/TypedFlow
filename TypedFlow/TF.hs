@@ -57,7 +57,7 @@ module TypedFlow.TF (
   -- ** indexwise unary operators
   round, sqrt, sigmoid, tanh, log, relu, floor, negate, square,
   -- ** Indexwise binary operators
-  add, (+), (/), (⊕), (⊝), (⊙), (⊘), equal,
+  add, addN, (+), (/), (⊕), (⊝), (⊙), (⊘), equal,
   -- ** Products
   (∙), (·), matmul,
   -- ** Reducers
@@ -247,8 +247,8 @@ reduceSum0 = reduceSum @Dim0
 add :: ∀ s d t. Tensor (d++s) t -> Tensor d t -> Tensor (d++s) t -- note ++s for for 'broadcasting'
 add = binOp "tf.add"
 
--- add_n :: ∀ s t. [Tensor s t] -> Tensor s t
--- add_n = error "add_n not implemented"
+addN :: ∀ s t. [Tensor s t] -> Tensor s t
+addN ts = T (funcall "tf.add_n" [list [x | T x <- ts]])
 
 -- | Add two tensors, broacasting along shape @s@
 (+) :: ∀ (d :: Shape) (s :: Shape) t. Tensor (d ++ s) t -> Tensor d t -> Tensor (d ++ s) t

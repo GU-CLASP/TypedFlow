@@ -126,6 +126,11 @@ compile options f = compileGen options $ do
   x <- placeholder "x"
   f x =<< placeholder "y"
 
+-- | Add a term to the loss. This function is intendend to add
+-- regularizers, ie. losses that do not depend on the predicted
+-- output, but rather on the structure of a parameter.
+addRegularizer :: Scalar Float32 -> Gen ()
+addRegularizer r = modify $ \GState{..} -> GState{genRegularizers=r:genRegularizers,..}
 
 -- | Generic a model with non-standard parameters ("x" and "y" must be
 -- provided as placeholders manually).
@@ -140,8 +145,9 @@ compileGen Options{..} model = knownLast @sy $ do
     modify $ \GState{..} -> GState{genTrainingPlaceholder = trainingPhasePlaceholder,..}
     ModelOutput{..} <- model
     y_ <- assign modelY
-    peekAt "y_" y_ 
-    loss <- assign modelLoss
+    peekAt "y_" y_
+    regularizers <- gets genRegularizers
+    loss <- assign (modelLoss ⊕ addN regularizers)
     peekAt "loss" loss
     accuracy <- assign (reduceMeanAll (cast @Float32 modelCorrect))
     peekAt "accuracy" accuracy
