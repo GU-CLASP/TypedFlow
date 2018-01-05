@@ -506,7 +506,7 @@ convolution = untypedConvolution "SAME"
 
 type family AddSpatialDims xs ys where
   AddSpatialDims '[x] '[] = '[x]
-  AddSpatialDims (x ': xs) (y ': ys) = (x+y-1) ': AddSpatialDims xs ys
+  AddSpatialDims (x ': xs) (y ': ys) = (x+(y-1)) ': AddSpatialDims xs ys
 
 -- | Convolution operation with no padding (applying the filter only on positions where the input is fully defined)
 convolutionValid :: forall outputChannels filterSpatialShape inChannels s t.
