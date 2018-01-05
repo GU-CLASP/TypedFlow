@@ -37,7 +37,7 @@ import TypedFlow.Layers
 import TypedFlow.Types
 import TypedFlow.Learn
 import GHC.TypeLits
-
+import Data.Monoid ((<>))
 
 -- | A convolutional document summary function. Described in
 -- 'Topically Driven Neural Language Model' by Lau, Baldwin and Cohn.
@@ -55,6 +55,13 @@ tldmDocsummary embs filters dropProb document = do
   drpEmb <- mkDropout dropProb
   return (reduceMax @Dim1 (conv filters (drpEmb (embedding @e @vocSize embs document))))
 
+-- | Parameter for a GRU
+data TopicP t a k b = TopicP (T '[a,k] (Flt t)) (T '[k,b] (Flt t))
+instance (KnownNat a, KnownNat k, KnownNat b, KnownBits t) => KnownTensors (TopicP t a k b) where
+  travTensor f s (TopicP x y) = TopicP <$> travTensor f (s<>"_A") x <*> travTensor f (s<>"_B") y
+instance (KnownNat a, KnownNat k, KnownNat b, KnownBits t) => ParamWithDefault (TopicP t a k b) where
+  defaultInitializer = TopicP glorotUniform glorotUniform
+
 -- | A topic modeler. Described 'Topically Driven Neural Language
 -- Model' by Lau, Baldwin and Cohn.  Returns a function converting raw
 -- representations (eg. document summaries) to topic representations.
@@ -68,12 +75,9 @@ mkTdlmTopic :: forall
   (t :: NBits) -- size of floats
   (batchSize :: Nat)
   . KnownNat kk => KnownNat a => KnownNat b => KnownBits t => KnownNat batchSize
-  => Gen (T '[a,batchSize] (Flt t) -> Tensor '[b, batchSize] (Flt t))
-mkTdlmTopic = do
+  => Float -> TopicP t a kk b -> Gen (T '[a,batchSize] (Flt t) -> Tensor '[b, batchSize] (Flt t))
+mkTdlmTopic separationConstant (TopicP topicInput topicOutput) = do
   drpS   <- mkDropout (DropProb 0.1)
-  topicInput :: T '[a,kk] (Flt t) <- parameter "A" glorotUniform -- mapping from document representations to topics
-  topicOutput :: T '[kk,b] (Flt t) <- parameter "B" glorotUniform  -- all possible topics
-  
   let topicNormalized :: T '[b,kk] (Flt t)
       topicNormalized = transpose01 topicOutput / (sqrt (reduceSum @Dim0 (square topicOutput)) :: T '[b] (Flt t))
       -- matrix of correlation between the topics
@@ -81,12 +85,11 @@ mkTdlmTopic = do
       topicCorrelation = matmul (transpose01 topicNormalized) topicNormalized
       -- max correlation between two distinct topics
       topicOverlap = reduceMaxAll (square (topicCorrelation ⊝ eye))
-  addRegularizer (cast topicOverlap) -- regularizer which ensures that topics are disjoint
+  addRegularizer (constant separationConstant ⊙ cast topicOverlap) -- regularizer which ensures that topics are disjoint
 
   return (\d -> let p :: T '[kk,batchSize] (Flt t)
                     p = softmax0 (topicInput ∙ d) -- attention distribution (among the topics)
                 in drpS (topicOutput ∙ p))
-
 
 -- | Gating unit which can be used to mix a RNN hidden state with an
 -- external information source (eg. topic representation).  Described
