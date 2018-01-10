@@ -55,8 +55,13 @@ tldmDocsummary embs filters dropProb document = do
   drpEmb <- mkDropout dropProb
   return (reduceMax @Dim1 (conv filters (drpEmb (embedding @e @vocSize embs document))))
 
--- | Parameter for a GRU
-data TopicP t a k b = TopicP (T '[a,k] (Flt t)) (T '[k,b] (Flt t))
+-- | Parameter for topics. This is effectively map from document
+-- features (a) to topic representations (vectors of size b) via k
+-- topic distributions.
+data TopicP t a k b = TopicP {topicDistributions :: (T '[a,k] (Flt t))  -- ^ a linear map from documents features (a) to topic distributions (k)
+                             ,topicRepresentations :: (T '[k,b] (Flt t)) -- ^ a linear map from topic distributions (k) to topic representations (b)
+                             }
+  
 instance (KnownNat a, KnownNat k, KnownNat b, KnownBits t) => KnownTensors (TopicP t a k b) where
   travTensor f s (TopicP x y) = TopicP <$> travTensor f (s<>"_A") x <*> travTensor f (s<>"_B") y
 instance (KnownNat a, KnownNat k, KnownNat b, KnownBits t) => ParamWithDefault (TopicP t a k b) where
