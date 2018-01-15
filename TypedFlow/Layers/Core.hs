@@ -40,7 +40,7 @@ module TypedFlow.Layers.Core
     -- * Embedding
     EmbeddingP(..), embedding, embedding',
     -- * Convolutional
-    ConvP(..), conv, convValid, maxPool2D)
+    ConvP(..), conv, convValid, maxPool1D, maxPool2D)
 
 where
 
@@ -173,12 +173,22 @@ convValid :: forall outChannels filterSpatialShape inChannels s t.
 convValid (ConvP filters bias) input = convolutionValid input filters + bias
 
 
--- | 2 by 2 maxpool layer.
-maxPool2D :: forall stridex (stridey::Nat) batch height width channels t.
-             (KnownNat stridex, KnownNat stridey) =>
-             T '[channels,width*stridex,height*stridex,batch] (Flt t) -> T '[channels,width,height,batch] (Flt t)
+-- | x by y maxpool layer.
+maxPool2D :: forall windowx windowy batch height width channels t.
+             (KnownNat windowx, KnownNat windowy) =>
+             T '[channels,width*windowx,height*windowx,batch] (Flt t) -> T '[channels,width,height,batch] (Flt t)
 maxPool2D (T value) = T (funcall "tf.nn.max_pool" [value
-                                                  ,showShape @'[1,stridex,stridey,1]
-                                                  ,showShape @'[1,stridex,stridey,1]
+                                                  ,showShape @'[1,windowx,windowy,1]
+                                                  ,showShape @'[1,windowx,windowy,1]
                                                   ,named "padding" (str "SAME") ])
+
+-- | maxpool layer. window size is the first type argument.
+maxPool1D :: forall window batch width channels t.
+             (KnownNat window) =>
+             T '[channels,width*window,batch] (Flt t) -> T '[channels,width,batch] (Flt t)
+maxPool1D (T value) = T (funcall "tf.nn.pool" [named "input" value
+                                              ,named "window_shape" (showShape @'[1,window,1])
+                                              ,named "pooling_type" (str "MAX")
+                                              ,named "padding" (str "SAME")
+                                              ])
 
