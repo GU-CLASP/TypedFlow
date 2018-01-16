@@ -137,7 +137,7 @@ ones = T (funcall "tf.ones" [showShape @shape, named "dtype" (showTyp @t)])
 eye :: ∀ m n s t. KnownShape s => KnownNat m => KnownNat n => KnownTyp t => (T (m ': n ': s) t)
 eye = T (funcall "tf.eye" [showDim @n,
                             named "num_columns" (showDim @m),
-                            named "batchShape" (showShape @s),
+                            named "batch_shape" (showShape @s),
                             named "dtype" (showTyp @t)])
 
 
