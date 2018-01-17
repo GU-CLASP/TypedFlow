@@ -247,7 +247,8 @@ reduceSum0 = reduceSum @Dim0
 add :: ∀ s d t. Tensor (d++s) t -> Tensor d t -> Tensor (d++s) t -- note ++s for for 'broadcasting'
 add = binOp "tf.add"
 
-addN :: ∀ s t. [Tensor s t] -> Tensor s t
+addN :: ∀ s t. KnownTyp t => KnownShape s => [Tensor s t] -> Tensor s t
+addN [] = zeros
 addN ts = T (funcall "tf.add_n" [list [x | T x <- ts]])
 
 -- | Add two tensors, broacasting along shape @s@
