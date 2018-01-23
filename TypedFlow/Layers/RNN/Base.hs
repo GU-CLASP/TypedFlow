@@ -45,11 +45,11 @@ module TypedFlow.Layers.RNN.Base (
   bothRnnLayers,(.++.),
   withBypass, withFeedback,
   onStates,
-  timeDistribute, timeDistribute',
   -- * RNN unfolding functions
-  rnn,
-  rnnBackward,
-  rnnWithCull,
+  timeDistribute, timeDistribute',
+  iterateCell,
+  iterateCellBackward,
+  iterateWithCull,
   -- rnnBackwardsWithCull,
   )
 
@@ -191,18 +191,18 @@ withFeedback cell x = C $ \(F prevoutputnVector :* s) -> do
 -- RNN unfolding
 
 -- | Build a RNN by repeating a cell @n@ times.
-rnn :: ∀ n state input output b.
+iterateCell :: ∀ n state input output b.
        (KnownNat n) =>
        RnnCell b state input output -> RnnLayer n b state input output
-rnn c x = C $ \s -> chainForward (\(t,y) -> runC (c y) t) (s,x)
+iterateCell c x = C $ \s -> chainForward (\(t,y) -> runC (c y) t) (s,x)
 
 -- | Build a RNN by repeating a cell @n@ times. However the state is
 -- propagated in the right-to-left direction (decreasing indices in
 -- the time dimension of the input and output tensors)
-rnnBackward :: ∀ n state input output b.
+iterateCellBackward :: ∀ n state input output b.
        (KnownNat n) =>
        RnnCell b state input output -> RnnLayer n b state input output
-rnnBackward c x = C $ \s -> chainBackward (\(t,y) -> runC (c y) t) (s,x)
+iterateCellBackward c x = C $ \s -> chainBackward (\(t,y) -> runC (c y) t) (s,x)
 
 -- | RNN helper
 chainForward :: ∀ state a b n. ((state , a) -> Gen (state , b)) → (state , V n a) -> Gen (state , V n b)
@@ -266,10 +266,10 @@ gathers (LS _ n) ixs (F x :* xs) = F (gatherFinalStates ixs x) :* gathers @n n i
 
 -- | @rnnWithCull dynLen@ constructs an RNN as normal, but returns the
 -- state after step @dynLen@ only.
-rnnWithCull :: forall n bs x y ls b.
+iterateWithCull :: forall n bs x y ls b.
   KnownLen ls => KnownNat n => All KnownLen ls => All (LastEqual bs) ls =>
   T '[bs] Int32 -> RnnCell b ls x y -> RnnLayer n b ls x y
-rnnWithCull dynLen cell xs = C $ \s0 -> do
+iterateWithCull dynLen cell xs = C $ \s0 -> do
   (us,ss) <- chainForwardWithState (uncurry (flip (runC . cell))) (s0,xs)
   let sss = transposeV @n (shapeSList @ls) ss
   return (gathers @n (shapeSList @ls) dynLen sss,us)
