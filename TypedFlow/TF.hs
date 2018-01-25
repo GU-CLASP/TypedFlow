@@ -97,6 +97,7 @@ module TypedFlow.TF (
   -- * Contrib
   -- ** Mapping
   mapT, mapTN, zipWithT, zipWithTN,
+  consT0, snocT0,
   -- ** Losses
   sigmoidCrossEntropyWithLogits,
   softmaxCrossEntropyWithLogits,
@@ -636,6 +637,14 @@ varianceScaling factor mode distr = case distr of
 
 glorotUniform :: forall inDim outDim t. KnownNat inDim => (KnownNat outDim, KnownBits t) => Tensor '[inDim,outDim] ('Typ 'Float t)
 glorotUniform = varianceScaling 1 VSAvg UniformDistr
+
+-- | 'cons' an element and an array (in the first dimension)
+consT0 :: forall n s t. KnownLen s => T s t -> T (n ': s) t -> T (n+1 ': s) t
+consT0 x xs = plusComm @1 @n $ concat0 (expandDim0 x) xs
+
+-- | 'snoc' an element and an array (in the first dimension)
+snocT0 :: forall n s t. KnownLen s => T s t -> T (n ': s) t -> T (n+1 ': s) t
+snocT0 x xs = concat0 xs (expandDim0 x)
 
 ----------------
 -- Helpers
