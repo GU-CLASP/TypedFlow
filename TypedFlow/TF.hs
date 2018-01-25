@@ -643,8 +643,8 @@ consT0 :: forall n s t. KnownLen s => T s t -> T (n ': s) t -> T (n+1 ': s) t
 consT0 x xs = plusComm @1 @n $ concat0 (expandDim0 x) xs
 
 -- | 'snoc' an element and an array (in the first dimension)
-snocT0 :: forall n s t. KnownLen s => T s t -> T (n ': s) t -> T (n+1 ': s) t
-snocT0 x xs = concat0 xs (expandDim0 x)
+snocT0 :: forall n s t. KnownLen s => T (n ': s) t -> T s t -> T (n+1 ': s) t
+snocT0 xs x = concat0 xs (expandDim0 x)
 
 ----------------
 -- Helpers
