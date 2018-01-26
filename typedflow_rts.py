@@ -211,6 +211,14 @@ def Every(n,f):
             return False
     return callback
 
+def Save(ckptfile,saver):
+    def cb(values):
+        nonlocal saver
+        print("Saving to",ckptfile)
+        saver.save(sess, ckptfile)
+        return False
+    return cb
+
 ################################################################################################
 # Prediction and evaluation
 
