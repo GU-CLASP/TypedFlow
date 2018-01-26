@@ -50,10 +50,10 @@ tldmDocsummary :: forall
   (batchSize :: Nat)
    (t :: NBits) -- size of floats
   .  KnownNat e => KnownNat a => KnownNat n => KnownNat batchSize => KnownBits t
-  =>  (EmbeddingP vocSize e t) -> (ConvP t a e '[filterSize]) -> DropProb -> T '[n,batchSize] Int32 -> Gen (T '[a,batchSize] (Flt t))
-tldmDocsummary embs filters dropProb document = do
+  =>  (EmbeddingP vocSize e t) -> (ConvP t a e '[filterSize]) -> DropProb -> Gen (T '[n,batchSize] Int32 -> T '[a,batchSize] (Flt t))
+tldmDocsummary embs filters dropProb = do
   drpEmb <- mkDropout dropProb
-  return (reduceMax @Dim1 (conv filters (drpEmb (embedding @e @vocSize embs document))))
+  return (\document -> reduceMax @Dim1 (conv filters (drpEmb (embedding @e @vocSize embs document))))
 
 -- | Parameter for topics. This is effectively map from document
 -- features (a) to topic representations (vectors of size b) via k
