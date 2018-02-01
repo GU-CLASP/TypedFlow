@@ -82,6 +82,7 @@ module TypedFlow.TF (
   expandDim1, squeeze1,
   flatten2, flatten3, flatten12, flattenN2,
   inflate2, inflate3, inflate12,
+  broadcast0, broadcastN,
   reshape, flattenAll, inflateAll,
   -- ** Transposition
   transpose, transposeN, transposeN', transpose01, transposeN01,
@@ -329,9 +330,18 @@ expandDim1 :: ∀ n s t. KnownShape s => Tensor (n ': s) t -> Tensor (n ': 1 ': 
 expandDim1 = expandDim @Dim1
 
 -- -- | Tile a tensor along the first dimension
--- tile :: forall m n s t. (KnownNat m) => Tensor (n ': s) t -> Tensor ((m * n) ': s) t
--- tile (T x) = T (funcall "tf.tile" [x, integer (natVal (Proxy @m))])
--- This implementation is incorrect.
+-- tile0 :: forall m n s t. KnownLen s => (KnownNat m) => Tensor (n ': s) t -> Tensor ((m * n) ': s) t
+-- tile0 (T x) = T (funcall "tf.tile" [x, list (genericReplicate (listLen @s) (int 1) ++ [integer (natVal (Proxy @m))])])
+-- Probably less efficient than a broadcast; so I leave it out for now.
+
+broadcast0 :: forall n s t. KnownTyp t => KnownNat n => KnownShape s => Tensor s t -> Tensor (n ': s) t
+broadcast0 x = binOp "tf.add" (zeros @t @(n ': s)) x
+ -- this is some "hack to force the shape to that we want."
+
+broadcastN :: forall n s t. KnownTyp t => KnownNat n => KnownShape s => Tensor s t -> Tensor (s ++ '[n]) t
+broadcastN x = knownAppend @s @'[n] $
+  binOp "tf.add" (zeros @t @(s ++ '[n])) x
+
 
 -- -- | Replicate a tensor
 -- replicateT :: ∀ n s t. (KnownNat n, KnownLen s) => T s t -> T (n ': s) t
