@@ -342,7 +342,6 @@ broadcastN :: forall n s t. KnownTyp t => KnownNat n => KnownShape s => Tensor s
 broadcastN x = knownAppend @s @'[n] $
   binOp "tf.add" (zeros @t @(s ++ '[n])) x
 
-
 -- -- | Replicate a tensor
 -- replicateT :: ∀ n s t. (KnownNat n, KnownLen s) => T s t -> T (n ': s) t
 -- replicateT = tile @n . expandDim0
@@ -466,8 +465,8 @@ transpose01 (T x) = T (funcall "tf.transpose" [x, named "perm" (list (map intege
   where l = listLen @s
 
 -- | Transposition. See the type for the permutation of dimensions.
-transposeN01 :: ∀ s m n t. T (s ++ [m,n]) t -> T (s ++ [n,m]) t
-transposeN01 (T x) = T (funcall "tf.transpose" [x, named "perm" (list (map integer [1,0]))])
+transposeN01 :: ∀ s m n t. KnownLen s => T (s ++ [m,n]) t -> T (s ++ [n,m]) t
+transposeN01 (T x) = T (funcall "tf.transpose" [x, named "perm" (list (map integer ([1,0] ++ [2..(listLen @s) Prelude.+ 1])))])
 
 class LastEqual x xs
 instance                   LastEqual x (x ': '[])
