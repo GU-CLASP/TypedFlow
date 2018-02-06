@@ -225,7 +225,7 @@ def Save(sess,saver,ckptfile):
 def predict (session, model, xs, result="y_"):
     '''Evaluate the model for given input and result.
     Input is given as a dictionary of lists to pass to session.run'''
-    bs = model["batch_size"]
+    bs = int(model[result].shape[0])
     k0 = next (iter (xs.keys())) # at least one key is needed
     total_len = len(xs[k0])
     zeros = dict((k,np.zeros_like(xs[k][0])) for k in xs) # at least one example is needed
