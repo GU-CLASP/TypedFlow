@@ -100,7 +100,7 @@ plusAssoc k = case plusAssoc' @x @y @z of
 prodAssoc' :: forall x y z. (x * y) * z :~: x * (y * z)
 prodAssoc' = unsafeCoerce Refl
 
-prodAssoc :: forall x y z k. (((x * y) * z) ~ (x * (y * z)) => k) -> k
+prodAssoc :: forall (x::Nat) (y::Nat) (z::Nat) k. (((x * y) * z) ~ (x * (y * z)) => k) -> k
 prodAssoc k = case prodAssoc' @x @y @z of
   Refl -> k
 

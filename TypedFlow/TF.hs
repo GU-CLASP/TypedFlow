@@ -89,7 +89,7 @@ module TypedFlow.TF (
   -- ** Sequences
   reverseSequences, sequenceMask,
   -- ** Convolutions
-  AddSpatialDims, convolution, convolutionValid,
+  convolution, 
   -- ** Misc
   cast,
   oneHot, oneHot0, oneHot1,
@@ -120,43 +120,91 @@ import TypedFlow.Types
 import Control.Monad (when)
 import Data.Type.Equality
 import Unsafe.Coerce
+import Data.Kind (Type,Constraint)
 
 data Permutation (s :: [k]) (t :: [k]) where
   PermId :: Permutation s t
   PermSkip :: Permutation s t -> Permutation (n ': s) (n ': t)
-  PermSwap :: Permutation s t -> Permutation (n ': m ': s) (m ': n ': t)
+  PermSwap :: Permutation (n ': m ': s) (m ': n ': t)
   PermTrans :: Permutation s t -> Permutation t u -> Permutation s u
 
 data TF (s :: Shape) (w :: Kind) (t :: NBits) where
-  Constant :: HostType t -> TF s w t -- TODO: any untyped expr
-  BinOp :: String -> TF s w t -> TF s w t -> TF s w t
-  Unbroadcast :: KnownNat n => Proxy n -> TF (n ':s)w t -> TF s w t
-  ReduceBy :: String -> SList s0 -> Proxy m -> SList s1 -> TF (s0 ++ (m ': s1))w t -> TF (s0 ++ s1)w t
-  Reshape :: Product s ~ Product s0 => SList s0 -> TF s0 w t -> TF s w t
-  Transpose :: Permutation s s0 -> TF s0 w t -> TF s w t
-  Share :: TF s w t -> TF s w t
-  Stack :: SList s0 -> Proxy m -> SList s1 -> V m (TF (s0 ++ s1)w t) -> TF (s0 ++ (m ': s1))w t
-  Index :: Int -> SList s0 -> Proxy m ->  SList s1 -> TF (s0 ++ (m ': s1))w t -> TF (s0 ++ s1)w t
-  Concat :: SList s0 -> Proxy m -> Proxy o -> SList s1 -> TF (s0 ++ (m ': s1))w t -> TF (s0 ++ (o ': s1))w t -> TF (s0 ++ ((m+o) ': s1))w t
-  Gather :: SList indexshape -> SList s0 -> Proxy m -> SList s1 -> TF (s0 ++ (m ': s1)) w t -> TF indexShape 'Int w0 -> TF (s0 ++ indexShape ++ s1) w t
-  -- MatMul ::
+  Constant :: HostType t -> TF s t w -- TODO: any untyped expr
+  BinOp :: String -> TF s t w -> TF s t w -> TF s t w
+  Unbroadcast :: KnownNat n => Proxy n -> TF (n ':s)t w -> TF s t w
+  ReduceBy :: String -> SList s0 -> Proxy m -> SList s1 -> TF (s0 ++ (m ': s1))t w -> TF (s0 ++ s1)t w
+  ReshapeFrom :: Product s ~ Product s0 => SList s0 -> TF s0 t w -> TF s t w
+  Transpose :: Permutation s s0 -> TF s0 t w -> TF s t w
+  Share :: TF s t w -> TF s t w
+  Stack :: SList s0 -> Proxy m -> SList s1 -> V m (TF (s0 ++ s1)t w) -> TF (s0 ++ (m ': s1))t w
+  Index :: Int -> SList s0 -> Proxy m ->  SList s1 -> TF (s0 ++ (m ': s1))t w -> TF (s0 ++ s1) t w
+  Concat :: SList s0 -> Proxy m -> Proxy o -> SList s1 -> TF (s0 ++ (m ': s1))t w -> TF (s0 ++ (o ': s1))t w -> TF (s0 ++ ((m+o) ': s1))t w
+  Gather :: SList indexshape -> SList s0 -> Proxy m -> SList s1 -> TF (s0 ++ (m ': s1)) t w -> TF indexShape 'Int w0 -> TF (s0 ++ indexShape ++ s1) t w
+  MatMul :: KnownLen s => Proxy m -> Proxy n ->  Proxy o -> SList s -> TF (n ': o ': s) t w -> TF (m ': o ': s) t w -> TF (m ': n ': s) t w
+  ArgMax :: TF (s0 ++ (m ': s1)) t w' -> TF (s0 ++ s1) 'Int w
+  SoftMax :: SList s0 -> Proxy m ->  SList s1 -> TF (s0 ++ (m ': s1)) t w -> TF (s0 ++ (m ': s1)) t w
+  Where :: TF s 'Bool 'B1  -> TF s t w -> TF s t w -> TF s t w
+  -- Convolution :: KnownLen filterSpatialShape
+  --           => Length filterSpatialShape <= 3
+  --           => ((1 + Length filterSpatialShape) ~ Length s) -- the last dim of s is the batch size
+  --           => T ('[inChannels] ++ s) t -- ^ input tensor (batched)
+  --           -> T ('[outputChannels,inChannels] ++ filterSpatialShape) t -- ^ filters
+  --           -> T ('[outputChannels] ++ s) t
+  -- if_
+
+
+proxyMul :: forall n m. Proxy n -> Proxy m -> Proxy (n*m)
+proxyMul _ _ = Proxy
 
 testEqual :: KnownNat m => KnownNat n => Proxy m -> Proxy n -> Maybe (m :~: n)
 testEqual m n = if natVal m == natVal n then Just (unsafeCoerce Refl) else Nothing
 
-broadcast :: forall n s w t. KnownNat n => TF s w t -> TF (n ': s) w t
-broadcast (Unbroadcast p x) = case testEqual p (Proxy @n) of
+noBroadcast :: a -> a
+noBroadcast = id -- FIXME: check 
+
+prodAssocS :: forall (x :: Nat) (y :: Nat) (z :: Nat) k (proxy :: Nat -> Type) . proxy x -> proxy y -> proxy z -> (((x * y) * z) ~ (x * (y * z)) => k) -> k
+prodAssocS _ _ _ = prodAssoc @x @y @z
+
+productS :: SList s -> Proxy (Product s)
+productS _ = Proxy
+
+broadcast :: forall n s w t. KnownNat n => Proxy n -> TF s w t -> TF (n ': s) w t
+broadcast n (Unbroadcast p x) = case testEqual p n of
   Nothing -> error "panic: Unbroadcast of wrong kind found!"
   Just Refl -> x
-broadcast (Constant t) = Constant t
-broadcast (BinOp op x y) = BinOp op (broadcast x) (broadcast y)
-broadcast (ReduceBy op s0 m s1 x) = ReduceBy op (LS (Proxy @n) s0) m s1 (broadcast @n x)
-broadcast (Reshape s x) = Reshape (LS (Proxy @n) s) (broadcast @n x)
-broadcast (Transpose t x) = Transpose (PermSkip t) (broadcast @n x)
-broadcast (Stack s0 m s1 xs) = Stack (LS (Proxy @n) s0) m s1 (fmap (broadcast @n) xs)
-broadcast (Concat s0 m o s1 x y) = Concat (LS (Proxy @n) s0) m o s1 (broadcast @n x) (broadcast @n y) 
-broadcast (Index n s0 m s1 x ) = Index n (LS (Proxy @n) s0) m s1 (broadcast @n x)
-broadcast (Gather is s0 m s1 x ix) = Gather is (LS (Proxy @n) s0) m s1 (broadcast @n x) ix
+broadcast n (Constant t) = Constant t
+broadcast n (BinOp op x y) = BinOp op (broadcast n x) (broadcast n y)
+broadcast n (ReduceBy op s0 m s1 x) = ReduceBy op (LS n s0) m s1 (broadcast n x)
+broadcast n (ReshapeFrom s x) = ReshapeFrom (LS n s) (broadcast n x)
+broadcast n (Transpose t x) = Transpose (PermSkip t) (broadcast n x)
+broadcast n (Stack s0 m s1 xs) = Stack (LS n s0) m s1 (fmap (broadcast n) xs)
+broadcast n (Concat s0 m o s1 x y) = Concat (LS n s0) m o s1 (broadcast n x) (broadcast n y) 
+broadcast n (Index ix s0 m s1 x ) = Index ix (LS n s0) m s1 (broadcast n x)
+broadcast n (Gather is s0 m s1 x ix) = Gather is (LS n s0) m s1 (broadcast n x) (noBroadcast ix)
+broadcast n (MatMul m p o s x y) = prodAssocS n m (productS (LS p s)) $
+                                 prodAssocS n m (productS (LS o s)) $
+  ReshapeFrom (LS (proxyMul n m) (LS p s))
+  (MatMul (proxyMul n m) p o s x ((reshapeTo (LS (proxyMul n m) (LS o s)) (broadcast n y))))
+broadcast n (MatMul m p o s x y) = Transpose perm210 (MatMul m p o (LS n s) (broadcast2 @n x) (broadcast2 @n y))
+--
+
+perm210 :: Permutation (n ': m ': o ': s) (m ': o ': n ': s)
+perm210 = PermSwap `PermTrans` (PermSkip PermSwap)
+
+perm021 :: Permutation (m ': o ': n ': s) (n ': m ': o ': s) 
+perm021 = inversePerm perm210
+
+inversePerm :: Permutation a b -> Permutation b a
+inversePerm PermId = PermId
+inversePerm (PermSkip x) = PermSkip (inversePerm x)
+inversePerm PermSwap = PermSwap
+inversePerm (PermTrans x y) = PermTrans (inversePerm y) (inversePerm x)
+
+broadcast2 :: forall n a b s w t. KnownNat n => TF (a ': b ': s) w t -> TF (a ': b ': n ': s) w t
+broadcast2 = _
+
+reshapeTo :: forall s s0 t w. KnownLen s0 => Product s ~ Product s0 => SList s -> TF s0 t w -> TF s t w
+reshapeTo _ = ReshapeFrom (shapeSListProxy (Proxy @s0))
 
 -- | Repeat a flexible-shape constant vector to form a heterogeneous tensor vector.
 repeatT :: forall (ss :: [Shape]) t. All KnownShape ss => KnownLen ss =>
@@ -554,19 +602,19 @@ convolution :: forall outputChannels filterSpatialShape inChannels s t.
             -> T ('[outputChannels] ++ s) t
 convolution = untypedConvolution "SAME"
 
-type family AddSpatialDims xs ys where
-  AddSpatialDims '[x] '[] = '[x]
-  AddSpatialDims (x ': xs) (y ': ys) = (x+(y-1)) ': AddSpatialDims xs ys
+-- type family AddSpatialDims xs ys where
+--   AddSpatialDims '[x] '[] = '[x]
+--   AddSpatialDims (x ': xs) (y ': ys) = (x+(y-1)) ': AddSpatialDims xs ys
 
--- | Convolution operation with no padding (applying the filter only on positions where the input is fully defined)
-convolutionValid :: forall outputChannels filterSpatialShape inChannels s t.
-               KnownLen filterSpatialShape
-            => Length filterSpatialShape <= 3
-            => ((1 + Length filterSpatialShape) ~ Length s) -- the last dim of s is the batch size
-            => T (inChannels ': AddSpatialDims s filterSpatialShape) t -- ^ input tensor (batched)
-            -> T ('[outputChannels,inChannels] ++ filterSpatialShape) t -- ^ filters
-            -> T (outputChannels ': s) t
-convolutionValid = untypedConvolution "VALID"
+-- -- | Convolution operation with no padding (applying the filter only on positions where the input is fully defined)
+-- convolutionValid :: forall outputChannels filterSpatialShape inChannels s t.
+--                KnownLen filterSpatialShape
+--             => Length filterSpatialShape <= 3
+--             => ((1 + Length filterSpatialShape) ~ Length s) -- the last dim of s is the batch size
+--             => T (inChannels ': AddSpatialDims s filterSpatialShape) t -- ^ input tensor (batched)
+--             -> T ('[outputChannels,inChannels] ++ filterSpatialShape) t -- ^ filters
+--             -> T (outputChannels ': s) t
+-- convolutionValid = untypedConvolution "VALID"
 
 -- poolNC :: forall dim s inputSpatialShape channels batchSize t.
 --                   (inputSpatialShape ~ Take dim s, '[batchSize] ~ Drop dim s) =>
