@@ -163,9 +163,9 @@ knownAppend = knownAppend' @t (shapeSList @s)
 -- knownFmap' LZ = LZ
 -- knownFmap' (LS x n) = LS Proxy (knownFmap' @f n)
 
--- knownSList :: SList xs -> (KnownLen xs => k) -> k
--- knownSList LZ k = k
--- knownSList (LS _ n) k = knownSList n k
+knownSList :: SList xs -> (KnownLen xs => k) -> k
+knownSList LZ k = k
+knownSList (LS _ n) k = knownSList n k
 
 type family Length xs where
   Length '[] = 0

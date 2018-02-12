@@ -130,6 +130,20 @@ data Permutation (s :: [k]) (t :: [k]) where
   PermSwap :: Permutation (n ': m ': s) (m ': n ': s)
   PermTrans :: Permutation s t -> Permutation t u -> Permutation s u
 
+
+permToFun :: Permutation s t -> Int -> Int
+permToFun = \case
+  PermId -> \x -> x
+  PermTrans a b -> permToFun b . permToFun a
+  PermSwap -> \case
+    0 -> 1
+    1 -> 0
+    x -> x
+  PermSkip p -> \case
+    0 -> 0
+    x -> permToFun p (x-1) Prelude.+ 1
+
+
 data TF (s :: Shape) (w :: Kind) (t :: NBits) where
   Constant :: HostType t -> TF s t w -- TODO: any untyped expr
   BinOp :: String -> TF s t w -> TF s t w -> TF s t w
@@ -175,12 +189,16 @@ sl :: forall x xs f. SList' f xs -> f x -> SList' f (xs ++ '[x])
 sl LZ x = LS x LZ
 sl (LS y ys) x = LS y (sl ys x)
 
-broadcast :: forall n s w t. KnownNat n => Proxy n -> TF s w t -> TF (s ++ '[n]) w t
-broadcast n tensor = case tensor of
-  BinOp op x y -> BinOp op (broadcast n x) (broadcast n y)
-  (MatMul m p o s x y) -> MatMul m p o (sl s n) (broadcast n x) (broadcast n y)
+-- broadcast :: forall n s w t. KnownNat n => Proxy n -> TF s w t -> TF (s ++ '[n]) w t
+-- broadcast n tensor = case tensor of
+--   BinOp op x y -> BinOp op (broadcast n x) (broadcast n y)
+--   (MatMul m p o s x y)
+--     | finished y -> _
+--     | otherwise ->
+--         knownSList (sl s n) $
+--         MatMul m p o (sl s n) (broadcast n x) (broadcast n y)
 
-{-
+
 broadcast :: forall n s w t. KnownNat n => Proxy n -> TF s w t -> TF (n ': s) w t
 broadcast n tensor
   | finished tensor = _
@@ -216,12 +234,15 @@ broadcast n tensor
   (Convolution inChans outChans filterShape filters x)
     | finished filters -> error ""
       -- Convolution inChans outChans filterShape (proxyMul bs n) (broadcast (lastDim) x) filters
--}
+
 perm210 :: Permutation (n ': m ': o ': s) (m ': o ': n ': s)
 perm210 = PermSwap `PermTrans` (PermSkip PermSwap)
 
 perm021 :: Permutation (m ': o ': n ': s) (n ': m ': o ': s) 
 perm021 = inversePerm perm210
+
+-- >>> map (permToFun perm210) [0..5::Int]
+-- [2,0,1,3,4,5]
 
 inversePerm :: Permutation a b -> Permutation b a
 inversePerm PermId = PermId
