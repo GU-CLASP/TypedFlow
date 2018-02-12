@@ -10,6 +10,7 @@ This module provides direct access to the most commonly used
 TensorFlow functions. Higher-level functions are not defined here.
 -}
 
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# OPTIONS_GHC -fplugin GHC.TypeLits.KnownNat.Solver #-}
@@ -89,7 +90,7 @@ module TypedFlow.TF (
   -- ** Sequences
   reverseSequences, sequenceMask,
   -- ** Convolutions
-  AddSpatialDims, convolution, convolutionValid,
+  convolution, 
   -- ** Misc
   cast,
   oneHot, oneHot0, oneHot1,
@@ -118,6 +119,7 @@ import GHC.TypeLits
 import Data.Proxy
 import TypedFlow.Types
 import Control.Monad (when)
+
 
 -- | Repeat a flexible-shape constant vector to form a heterogeneous tensor vector.
 repeatT :: forall (ss :: [Shape]) t. All KnownShape ss => KnownLen ss =>
@@ -515,19 +517,19 @@ convolution :: forall outputChannels filterSpatialShape inChannels s t.
             -> T ('[outputChannels] ++ s) t
 convolution = untypedConvolution "SAME"
 
-type family AddSpatialDims xs ys where
-  AddSpatialDims '[x] '[] = '[x]
-  AddSpatialDims (x ': xs) (y ': ys) = (x+(y-1)) ': AddSpatialDims xs ys
+-- type family AddSpatialDims xs ys where
+--   AddSpatialDims '[x] '[] = '[x]
+--   AddSpatialDims (x ': xs) (y ': ys) = (x+(y-1)) ': AddSpatialDims xs ys
 
--- | Convolution operation with no padding (applying the filter only on positions where the input is fully defined)
-convolutionValid :: forall outputChannels filterSpatialShape inChannels s t.
-               KnownLen filterSpatialShape
-            => Length filterSpatialShape <= 3
-            => ((1 + Length filterSpatialShape) ~ Length s) -- the last dim of s is the batch size
-            => T (inChannels ': AddSpatialDims s filterSpatialShape) t -- ^ input tensor (batched)
-            -> T ('[outputChannels,inChannels] ++ filterSpatialShape) t -- ^ filters
-            -> T (outputChannels ': s) t
-convolutionValid = untypedConvolution "VALID"
+-- -- | Convolution operation with no padding (applying the filter only on positions where the input is fully defined)
+-- convolutionValid :: forall outputChannels filterSpatialShape inChannels s t.
+--                KnownLen filterSpatialShape
+--             => Length filterSpatialShape <= 3
+--             => ((1 + Length filterSpatialShape) ~ Length s) -- the last dim of s is the batch size
+--             => T (inChannels ': AddSpatialDims s filterSpatialShape) t -- ^ input tensor (batched)
+--             -> T ('[outputChannels,inChannels] ++ filterSpatialShape) t -- ^ filters
+--             -> T (outputChannels ': s) t
+-- convolutionValid = untypedConvolution "VALID"
 
 -- poolNC :: forall dim s inputSpatialShape channels batchSize t.
 --                   (inputSpatialShape ~ Take dim s, '[batchSize] ~ Drop dim s) =>
