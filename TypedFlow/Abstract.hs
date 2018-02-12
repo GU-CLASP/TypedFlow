@@ -65,28 +65,6 @@ permToFun = \case
     0 -> 0
     x -> permToFun p (x-1) Prelude.+ 1
 
--- data TF (s :: Shape) (w :: Kind) (t :: NBits) where
---   SimpleBroadcast :: Proxy s0 -> Proxy m ->  Proxy s1 -> TF (s0 ++  s1) t w -> TF (s0 ++ (m ': s1)) t w
---   Constant :: HostType t -> TF s t w -- TODO: any untyped expr
---   BinOp :: String -> TF s t w -> TF s t w -> TF s t w
---   Unbroadcast :: KnownNat n => Proxy n -> TF (s ++ '[n]) t w -> TF s t w
---   ReduceBy :: String -> SList s0 -> Proxy m -> SList s1 -> TF (s0 ++ (m ': s1))t w -> TF (s0 ++ s1)t w
---   ReshapeFrom :: Product s ~ Product s0 => SList s0 -> TF s0 t w -> TF s t w
---   Transpose :: Permutation s0 s -> TF s0 t w -> TF s t w
---   Share :: TF s t w -> TF s t w
---   Stack :: SList s0 -> Proxy m -> SList s1 -> V m (TF (s0 ++ s1)t w) -> TF (s0 ++ (m ': s1))t w
---   Index :: Int -> SList s0 -> Proxy m ->  SList s1 -> TF (s0 ++ (m ': s1))t w -> TF (s0 ++ s1) t w
---   Concat :: SList s0 -> Proxy m -> Proxy o -> SList s1 -> TF (s0 ++ (m ': s1))t w -> TF (s0 ++ (o ': s1))t w -> TF (s0 ++ ((m+o) ': s1))t w
---   Gather :: SList indexShape -> SList s0 -> Proxy m -> SList s1 -> TF (s0 ++ (m ': s1)) t w -> TF indexShape 'Int w0 -> TF (s0 ++ indexShape ++ s1) t w
---   MatMul :: KnownLen s => Proxy m -> Proxy n ->  Proxy o -> SList s -> TF (o ': n ': s) t w -> TF (m ': o ': s) t w -> TF (m ': n ': s) t w
---   ArgMax :: TF (s0 ++ (m ': s1)) t w' -> TF (s0 ++ s1) 'Int w
---   SoftMax :: SList s0 -> Proxy m ->  SList s1 -> TF (s0 ++ (m ': s1)) t w -> TF (s0 ++ (m ': s1)) t w
---   Where :: TF s 'Bool 'B1  -> TF s t w -> TF s t w -> TF s t w
---   Convolution :: Proxy inChannels -> Proxy outChannels -> SList filterSpatialShape
---             -> TF ('[inChannels] ++ filterSpatialShape ++ '[bs]) t w -- ^ input tensor (batched)
---             -> TF ('[outChannels,inChannels] ++ filterSpatialShape) t w -- ^ filters
---             -> TF ('[outChannels] ++ filterSpatialShape ++ '[bs]) t w
-
 data TF (s :: Shape) (w :: Kind) (t :: NBits) where
   SimpleBroadcast :: Proxy s0 -> Proxy m ->  Proxy s1 -> TF (s0 ++  s1) t w -> TF (s0 ++ (m ': s1)) t w
   Constant :: HostType t -> TF s t w -- TODO: any untyped expr
@@ -178,45 +156,7 @@ app (LS x xs) ys = LS x (app xs ys)
 
 sl :: forall x xs f. SList' f xs -> f x -> SList' f (xs ++ '[x])
 sl xs x = app xs (LS x LZ) 
--- sl LZ x = LS x LZ
--- sl (LS y ys) x = LS y (sl ys x)
 
-
--- broadcast :: forall n s w t. KnownNat n => Proxy n -> TF s w t -> TF (n ': s) w t
--- broadcast n tensor
---   | finished tensor = _
---   | otherwise = case tensor of
---   (Unbroadcast p x) -> case testEqual p n of
---      Nothing -> error "panic: Unbroadcast of wrong kind found!"
---      Just Refl -> x
---   (Constant t) -> Constant t
---   (BinOp op x y) -> BinOp op (broadcast n x) (broadcast n y)
---   (ReduceBy op s0 m s1 x) -> ReduceBy op (LS n s0) m s1 (broadcast n x)
---   (ReshapeFrom s x) -> ReshapeFrom (LS n s) (broadcast n x)
---   (Transpose t x) -> Transpose (PermSkip t) (broadcast n x)
---   (Stack s0 m s1 xs) -> Stack (LS n s0) m s1 (fmap (broadcast n) xs)
---   (Concat s0 m o s1 x y) -> Concat (LS n s0) m o s1 (broadcast n x) (broadcast n y) 
---   (Index ix s0 m s1 x ) -> Index ix (LS n s0) m s1 (broadcast n x)
---   (Gather is s0 m s1 x ix)
---     | finished ix -> Gather is (LS n s0) m s1 (broadcast n x) ix
---     | otherwise -> error "broadcast for gather not fully implemented"
---   (MatMul m p o s x y)
---     | finished x -> prodAssocS n m (productS (LS p s)) $
---                     prodAssocS n m (productS (LS o s)) $
---                     ReshapeFrom (LS (proxyMul n m) (LS p s))
---                     (MatMul (proxyMul n m) p o s x ((reshapeTo (LS (proxyMul n m) (LS o s)) (broadcast n y))))
---     | finished y -> prodAssocS n p (productS (LS o s)) $
---                     prodAssocS n p (productS s) $
---                     -- (n ': m ': p ': s0)
---                     Transpose PermSwap $
---                     -- (m ': n ': p ': s0)
---                     ReshapeFrom (LS m (LS (proxyMul n p) s)) $
---                     -- (m ': (n * p) ': s0)
---                     MatMul m (proxyMul n p) o s (reshapeTo (LS (proxyMul n p) (LS o s)) (broadcast n x)) y
---     | otherwise -> Transpose perm021 (MatMul m p o (LS n s) (broadcast2 @n x) (broadcast2 @n y))
---   (Convolution inChans outChans filterShape filters x)
---     | finished filters -> error ""
---       -- Convolution inChans outChans filterShape (proxyMul bs n) (broadcast (lastDim) x) filters
 
 perm210 :: Permutation (n ': m ': o ': s) (m ': o ': n ': s)
 perm210 = PermSwap `PermTrans` (PermSkip PermSwap)

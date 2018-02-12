@@ -35,7 +35,6 @@ TensorFlow functions. Higher-level functions are not defined here.
 {-# LANGUAGE UnicodeSyntax #-}
 
 module TypedFlow.TF (
-  broadcast,
   -- * Variables, Parameters
   -- ** Parameters
   parameter',
@@ -120,9 +119,6 @@ import GHC.TypeLits
 import Data.Proxy
 import TypedFlow.Types
 import Control.Monad (when)
-import Data.Type.Equality
-import Unsafe.Coerce
-import Data.Kind (Type,Constraint)
 
 
 -- | Repeat a flexible-shape constant vector to form a heterogeneous tensor vector.
