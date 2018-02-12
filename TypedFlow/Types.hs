@@ -495,6 +495,14 @@ data GState = GState {nextVar :: Integer, -- ^ next free variable
                       genPeeks :: [(String,UntypedExpression)]}
 newtype Gen x = Gen {fromGen :: State GState x} deriving (Monad, MonadState GState, Functor, Applicative)
 
+--------------------------
+-- Tensors
 
 type Tensor shape = T shape
+
+data Permutation (s :: [k]) (t :: [k]) where
+  PermId :: Permutation s t
+  PermSkip :: Permutation s t -> Permutation (n ': s) (n ': t)
+  PermSwap :: Permutation (n ': m ': s) (m ': n ': s)
+  PermTrans :: Permutation s t -> Permutation t u -> Permutation s u
 

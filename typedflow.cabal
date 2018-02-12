@@ -27,7 +27,8 @@ library
     base==4.*,
     ghc-typelits-knownnat,
     pretty-compact,
-    mtl
+    mtl,
+    containers
 
   exposed-modules:
        TypedFlow,

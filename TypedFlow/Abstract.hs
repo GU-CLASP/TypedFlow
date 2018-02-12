@@ -41,17 +41,14 @@ import qualified Prelude
 import Prelude ((-))
 import GHC.TypeLits
 import Data.Proxy
-import TypedFlow.Types
+import TypedFlow.Types hiding (T)
 import Data.Type.Equality
 import Unsafe.Coerce
 import Data.Kind (Type,)
-
-data Permutation (s :: [k]) (t :: [k]) where
-  PermId :: Permutation s t
-  PermSkip :: Permutation s t -> Permutation (n ': s) (n ': t)
-  PermSwap :: Permutation (n ': m ': s) (m ': n ': s)
-  PermTrans :: Permutation s t -> Permutation t u -> Permutation s u
-
+import qualified Data.IntMap as I
+import System.Mem.StableName
+import Data.IORef
+import System.IO.Unsafe
 
 permToFun :: Permutation s t -> Int -> Int
 permToFun = \case
@@ -65,27 +62,27 @@ permToFun = \case
     0 -> 0
     x -> permToFun p (x-1) Prelude.+ 1
 
-data TF (s :: Shape) (w :: Kind) (t :: NBits) where
-  SimpleBroadcast :: Proxy s0 -> Proxy m ->  Proxy s1 -> TF (s0 ++  s1) t w -> TF (s0 ++ (m ': s1)) t w
-  Constant :: HostType t -> TF s t w -- TODO: any untyped expr
-  BinOp :: String -> TF s t w -> TF s t w -> TF s t w
-  Unbroadcast :: KnownNat n => Proxy n -> TF (n ': s) t w -> TF s t w
-  ReduceBy :: String -> SList s0 -> Proxy m -> SList s1 -> TF (s0 ++ (m ': s1)) t w -> TF (s0 ++ s1)t w
-  ReshapeFrom :: Product s ~ Product s0 => SList s0 -> TF s0 t w -> TF s t w
-  Transpose :: Permutation s0 s -> TF s0 t w -> TF s t w
-  Share :: TF s t w -> TF s t w
-  Stack :: SList s0 -> Proxy m -> SList s1 -> V m (TF (s0 ++ s1)t w) -> TF (s0 ++ (m ': s1))t w
-  Index :: Int -> SList s0 -> Proxy m ->  SList s1 -> TF (s0 ++ (m ': s1))t w -> TF (s0 ++ s1) t w
-  Concat :: SList s0 -> Proxy m -> Proxy o -> SList s1 -> TF (s0 ++ (m ': s1))t w -> TF (s0 ++ (o ': s1))t w -> TF (s0 ++ ((m+o) ': s1))t w
-  Gather :: SList indexShape -> SList s0 -> Proxy m -> SList s1 -> TF (s0 ++ (m ': s1)) t w -> TF indexShape 'Int w0 -> TF (s0 ++ indexShape ++ s1) t w
-  MatMul :: KnownLen s => Proxy m -> Proxy n ->  Proxy o -> SList s -> TF (s ++ '[n,o]) t w -> TF (s ++ [o,m]) t w -> TF (s ++ [n,m]) t w
-  ArgMax :: SList s0 -> Proxy m -> Proxy s1 -> TF (s0 ++ (m ': s1)) t w' -> TF (s0 ++ s1) 'Int w
-  SoftMax :: SList s0 -> Proxy m ->  Proxy s1 -> TF (s0 ++ (m ': s1)) t w -> TF (s0 ++ (m ': s1)) t w
-  Where :: TF s 'Bool 'B1  -> TF s t w -> TF s t w -> TF s t w
+data TF (s :: Shape) (t :: Typ) where
+  SimpleBroadcast :: Proxy s0 -> Proxy m ->  Proxy s1 -> TF (s0 ++  s1) t -> TF (s0 ++ (m ': s1)) t
+  T :: UntypedExpression -> TF s t
+  BinOp :: String -> TF s t -> TF s t -> TF s t
+  Unbroadcast :: KnownNat n => Proxy n -> TF (n ': s) t -> TF s t
+  ReduceBy :: String -> SList s0 -> Proxy m -> SList s1 -> TF (s0 ++ (m ': s1)) t -> TF (s0 ++ s1)t
+  ReshapeFrom :: Product s ~ Product s0 => SList s0 -> TF s0 t -> TF s t
+  Transpose :: Permutation s0 s -> TF s0 t -> TF s t
+  Share :: TF s t -> TF s t
+  Stack :: SList s0 -> Proxy m -> SList s1 -> V m (TF (s0 ++ s1)t) -> TF (s0 ++ (m ': s1))t
+  Index :: Int -> SList s0 -> Proxy m ->  SList s1 -> TF (s0 ++ (m ': s1))t -> TF (s0 ++ s1) t
+  Concat :: SList s0 -> Proxy m -> Proxy o -> SList s1 -> TF (s0 ++ (m ': s1))t -> TF (s0 ++ (o ': s1))t -> TF (s0 ++ ((m+o) ': s1))t
+  Gather :: SList indexShape -> SList s0 -> Proxy m -> SList s1 -> TF (s0 ++ (m ': s1)) t -> TF indexShape ('Typ 'Int w0) -> TF (s0 ++ indexShape ++ s1) t
+  MatMul :: KnownLen s => Proxy m -> Proxy n ->  Proxy o -> SList s -> TF (s ++ '[n,o]) t -> TF (s ++ [o,m]) t -> TF (s ++ [n,m]) t
+  ArgMax :: SList s0 -> Proxy m -> Proxy s1 -> TF (s0 ++ (m ': s1)) t' -> TF (s0 ++ s1) ('Typ 'Int w)
+  SoftMax :: SList s0 -> Proxy m ->  Proxy s1 -> TF (s0 ++ (m ': s1)) t -> TF (s0 ++ (m ': s1)) t
+  Where :: TF s TFBool  -> TF s t -> TF s t -> TF s t
   Convolution :: Proxy bs -> Proxy inChannels -> Proxy outChannels -> SList filterSpatialShape
-            -> TF (bs ': filterSpatialShape ++ '[inChannels]) t w -- ^ input tensor (batched)
-            -> TF (filterSpatialShape ++ '[inChannels,outChannels]) t w -- ^ filters
-            -> TF (bs ': filterSpatialShape ++ '[outChannels]) t w
+            -> TF (bs ': filterSpatialShape ++ '[inChannels]) t -- ^ input tensor (batched)
+            -> TF (filterSpatialShape ++ '[inChannels,outChannels]) t -- ^ filters
+            -> TF (bs ': filterSpatialShape ++ '[outChannels]) t
 
 appAssocS :: SList' f a -> SList' f b -> SList' f c -> ((a ++ b) ++ c) :~: (a ++ (b ++ c))
 appAssocS = unsafeCoerce Refl
@@ -99,16 +96,16 @@ broadcastPerm n (PermTrans p q) = PermTrans (broadcastPerm n p) (broadcastPerm n
 proxyCons :: Proxy x -> Proxy xs -> Proxy (x ': xs)
 proxyCons _ _ = Proxy
 
-broadcast :: forall n s w t. KnownNat n => Proxy n -> TF s w t -> TF (n ': s) w t
+broadcast :: forall n s t. KnownNat n => Proxy n -> TF s t -> TF (n ': s) t
 broadcast n tensor
   | finished tensor = SimpleBroadcast (Proxy @'[]) n (Proxy @s)  tensor
   | otherwise = case tensor of
   (Where cond x y) -> Where (broadcast n cond) (broadcast n x) (broadcast n y)
   (SimpleBroadcast s0 m s1 x) -> SimpleBroadcast (proxyCons n s0) m s1 (broadcast n x)
-  Constant _ -> error "panic: broadcast constant should be finished!"
-  Share _ -> _
-  (ArgMax s0 m s1 x) -> ArgMax (LS n s0) m s1 (broadcast n x)
-  (SoftMax s0 m s1 x) -> SoftMax (LS n s0) m s1 (broadcast n x)
+  T _ -> error "panic: broadcast constant should be finished!"
+  Share x -> Share (broadcast n x)
+  ArgMax s0 m s1 x -> ArgMax (LS n s0) m s1 (broadcast n x)
+  SoftMax s0 m s1 x -> SoftMax (LS n s0) m s1 (broadcast n x)
   Unbroadcast p x -> case testEqual p n of
      Nothing -> error "panic: Unbroadcast of wrong kind found!"
      Just Refl -> x
@@ -147,8 +144,8 @@ prodAssocS _ _ _ = prodAssoc @x @y @z
 productS :: SList s -> Proxy (Product s)
 productS _ = Proxy
 
-finished :: TF s w t -> Bool
-finished = _
+finished :: TF s t -> Bool
+finished rec = _
 
 app :: SList' f xs -> SList' f ys -> SList' f (xs ++ ys)
 app LZ x = x
@@ -173,14 +170,40 @@ inversePerm (PermSkip x) = PermSkip (inversePerm x)
 inversePerm PermSwap = PermSwap
 inversePerm (PermTrans x y) = PermTrans (inversePerm y) (inversePerm x)
 
-broadcast2 :: forall n a b s w t. KnownNat n => TF (a ': b ': s) w t -> TF (a ': b ': n ': s) w t
-broadcast2 x = Transpose perm210 (broadcast (Proxy @n) x)
-
-atShape :: SList s -> TF s t w -> TF s t w
+atShape :: SList s -> TF s t -> TF s t
 atShape _ x = x
 
-reshapeAuto :: forall s s0 t w. KnownLen s0 => Product s ~ Product s0 => TF s0 t w -> TF s t w
+reshapeAuto :: forall s s0 t. KnownLen s0 => Product s ~ Product s0 => TF s0 t -> TF s t
 reshapeAuto = ReshapeFrom (shapeSListProxy (Proxy @s0))
 
-reshapeTo :: forall s s0 t w. KnownLen s0 => Product s ~ Product s0 => SList s -> TF s0 t w -> TF s t w
+reshapeTo :: forall s s0 t. KnownLen s0 => Product s ~ Product s0 => SList s -> TF s0 t -> TF s t
 reshapeTo _ = ReshapeFrom (shapeSListProxy (Proxy @s0))
+
+type SNMap k v = IORef (I.IntMap [(StableName k,v)])
+
+bc :: KnownNat n => Proxy n -> TF s t -> TF (n : s) t
+bc x y = memo (memo broadcast x) y
+
+memo :: (a -> b) -> a -> b
+memo f = unsafePerformIO (
+  do { tref <- newIORef (I.empty)
+     ; return (applyStable f tref)
+     })
+
+lk :: StableName k -> I.IntMap [(StableName k,v)] -> Maybe v
+lk sn m = do
+  x <- I.lookup (hashStableName sn) m
+  lookup sn x
+
+applyStable :: (a -> b) -> SNMap a b -> a -> b
+applyStable f tbl arg = unsafePerformIO (
+  do { sn <- makeStableName arg
+     ; lkp <- lk sn <$> readIORef tbl
+     ; case lkp of
+         Just result -> return result
+         Nothing ->
+           do { let res = f arg
+              ; modifyIORef tbl (I.insertWith (++) (hashStableName sn) [(sn,res)])
+              ; return res
+              }})
+
