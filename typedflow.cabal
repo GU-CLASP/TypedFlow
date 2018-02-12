@@ -37,7 +37,8 @@ library
        TypedFlow.Layers.RNN.Base,
        TypedFlow.Layers.RNN.Cells,
        TypedFlow.Layers.RNN.Attention,
-       TypedFlow.Models.Topic,
        TypedFlow.Learn,
+       TypedFlow.Models.Topic,
+       TypedFlow.Python,
        TypedFlow.TF,
        TypedFlow.Types

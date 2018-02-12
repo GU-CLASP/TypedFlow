@@ -118,6 +118,7 @@ import Text.PrettyPrint.Compact hiding (Last, All,Product,Sum)
 import GHC.TypeLits
 import Data.Proxy
 import TypedFlow.Types
+import TypedFlow.Python
 import Control.Monad (when)
 
 

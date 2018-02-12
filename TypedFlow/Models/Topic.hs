@@ -35,6 +35,7 @@ import Prelude hiding ((/), sqrt, tanh, Num(..))
 import TypedFlow.TF
 import TypedFlow.Layers
 import TypedFlow.Types
+import TypedFlow.Python (assign)
 import TypedFlow.Learn
 import GHC.TypeLits
 import Data.Monoid ((<>))

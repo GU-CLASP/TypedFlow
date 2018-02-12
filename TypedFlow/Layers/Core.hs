@@ -40,7 +40,7 @@ module TypedFlow.Layers.Core
     -- * Embedding
     EmbeddingP(..), embedding, embedding',
     -- * Convolutional
-    ConvP(..), conv, convValid, maxPool1D, maxPool2D)
+    ConvP(..), conv, {-convValid,-} maxPool1D, maxPool2D)
 
 where
 
@@ -50,6 +50,7 @@ import GHC.TypeLits
 -- import Text.PrettyPrint.Compact (float)
 import TypedFlow.TF
 import TypedFlow.Types
+import TypedFlow.Python
 import Control.Monad.State (gets)
 -- import Data.Type.Equality
 -- import Data.Kind (Type,Constraint)
@@ -160,17 +161,17 @@ conv :: forall outChannels filterSpatialShape inChannels s t.
                   T ('[inChannels] ++ s) ('Typ 'Float t) -> (T ('[outChannels] ++ s) ('Typ 'Float t))
 conv (ConvP filters bias) input = convolution input filters + bias
 
--- | Convolution layers with no padding (applying the filter only on
--- positions where the input is fully defined, aka "VALID" in
--- tensorflow.)
-convValid :: forall outChannels filterSpatialShape inChannels s t.
-                  ((1 + Length filterSpatialShape) ~ Length s,
-                   Length filterSpatialShape <= 3,
-                   KnownLen filterSpatialShape) -- the last dim of s is the batch size
-          => ConvP t outChannels inChannels filterSpatialShape -- ^ Parameters
-          -> T ('[inChannels] ++ AddSpatialDims s filterSpatialShape) ('Typ 'Float t) -- ^ input
-          -> (T ('[outChannels] ++ s) ('Typ 'Float t))
-convValid (ConvP filters bias) input = convolutionValid input filters + bias
+-- -- | Convolution layers with no padding (applying the filter only on
+-- -- positions where the input is fully defined, aka "VALID" in
+-- -- tensorflow.)
+-- convValid :: forall outChannels filterSpatialShape inChannels s t.
+--                   ((1 + Length filterSpatialShape) ~ Length s,
+--                    Length filterSpatialShape <= 3,
+--                    KnownLen filterSpatialShape) -- the last dim of s is the batch size
+--           => ConvP t outChannels inChannels filterSpatialShape -- ^ Parameters
+--           -> T ('[inChannels] ++ AddSpatialDims s filterSpatialShape) ('Typ 'Float t) -- ^ input
+--           -> (T ('[outChannels] ++ s) ('Typ 'Float t))
+-- convValid (ConvP filters bias) input = convolutionValid input filters + bias
 
 
 -- | x by y maxpool layer.

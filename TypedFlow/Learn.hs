@@ -30,6 +30,7 @@ Stability   : experimental
 module TypedFlow.Learn where
 
 import TypedFlow.Types
+import TypedFlow.Python
 import TypedFlow.TF
 import qualified Prelude (Float)
 import Prelude (($),return,Maybe(..),(=<<))
