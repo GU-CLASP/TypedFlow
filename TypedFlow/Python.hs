@@ -66,14 +66,14 @@ showTyp :: forall t. KnownTyp t => DOC
 showTyp = text (show (typVal @t))
 
 showShape' ::  [Integer] -> DOC
-showShape' s = list (map (showDim' "None") (reverse s))
+showShape' s = list (map (showDim' "None") s)
 
 showShape :: ∀ (s :: Shape). KnownShape s => DOC
 showShape = showShape' (shapeToList @s)
 
 -- | Show a shape, but "None" is replaced by "-1"
 showShapeMinus :: ∀ (s :: Shape). KnownShape s => DOC
-showShapeMinus = list (map (showDim' "-1") (reverse (shapeToList @ s)))
+showShapeMinus = list (map (showDim' "-1") (shapeToList @ s))
 
 showShapeLen :: ∀ (s::Shape). KnownLen s => DOC
 showShapeLen = (text . show) (listLen @ s)
@@ -138,16 +138,11 @@ peekAtAny :: String -> UntypedExpression -> Gen ()
 peekAtAny p v = modify $ \GState{..} -> GState{genPeeks = if p `elem` map fst genPeeks then error ("duplicate name: " ++ p) else (p,v):genPeeks,..}
 
 
-binOp :: ∀ s1 s2 s3 t1 t2 t3. String -> Tensor s1 t1 -> Tensor s2 t2 -> Tensor s3 t3
-binOp op (T x) (T y) = T (funcall op [ x , y])
-
-unOp :: ∀ s1 s2 t1 t2. String -> Tensor s1 t1 -> Tensor s2 t2
-unOp op (T x) = T (funcall op [x])
 
 assign :: ∀s t. T s t -> Gen (T s t)
-assign (T x) = do
+assign x = do
   v <- newVar
-  v <-- x
+  v <-- generatePure x
   return (T v)
 
 lambda :: (T s t -> T s' t') -> Gen UntypedExpression
@@ -164,3 +159,20 @@ generate s = (renderWith (Options 92 (const id)) genText,genParams)
                                                     ,genRegularizers=[]
                                                     ,genTrainingPlaceholder = T "NO TRAINING PLACEHOLDER!"
                                                     ,genPeeks=[]})
+
+generatePure :: T s t -> DOC
+generatePure = error "TODO: generatePure"
+--   ReduceBy  
+-- UnOp op s _ _ x -> | (funcall ("tf.reduce_" ++ op) [x, text "axis=" <> integer (length s)])
+-- UnOp op x -> T (funcall op [generatePure x])
+-- binOp :: ∀ s1 s2 s3 t1 t2 t3. String -> Tensor s1 t1 -> Tensor s2 t2 -> Tensor s3 t3
+-- binOp op (T x) (T y) = T (funcall op [ x , y])
+-- UnOp (SliceOp lo hi) s _ _ x -> rec x <> list (replicate (listLen s) (text ":") ++ [integer lo <> text ".." <> integer hi])
+-- BinOp (AxisOp op) s x y = T (funcall op  [list [x,y], named "axis" (integer (listLen @s))])
+-- Reshape s2 ->  (funcall "tf.reshape" [t, showShapeMinus @s2])
+-- (IndexOp n) (x <> list (replicate n (text ":") ++ [integer i]))
+-- Stack T (funcall "tf.stack" [list [x | T x <- xs], text "axis=" <> integer (listLen @ s)])
+-- broadcast0 :: forall n s t. KnownTyp t => KnownNat n => KnownShape s => Tensor s t -> Tensor (n ': s) t
+-- broadcast0 x = binOp "tf.add" (zeros @t @(n ': s)) x
+--  -- this is some "hack to force the shape to that we want."
+

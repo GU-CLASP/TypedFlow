@@ -370,8 +370,7 @@ instance Show Typ where
 
 type Shape = [Nat]
 
-type UntypedExpression = DOC
-data T (shape :: Shape) (t :: Typ) = T {fromTensor :: UntypedExpression}
+
 
 data SNat (n :: Nat) where
   SNat :: KnownNat n => Proxy n -> SNat n
@@ -465,6 +464,10 @@ instance KnownLen xs => KnownLen (x ': xs) where
 shapeSListProxy :: KnownLen xs => proxy xs -> SList xs
 shapeSListProxy _ = shapeSList
 
+shapeProxySList :: KnownLen xs => SList xs -> Proxy xs 
+shapeProxySList _ = Proxy
+
+
 shapeToList' :: All KnownNat s => SList s -> [Integer]
 shapeToList' LZ = []
 shapeToList' (LS x xs) = natVal x : shapeToList' xs
@@ -498,7 +501,35 @@ newtype Gen x = Gen {fromGen :: State GState x} deriving (Monad, MonadState GSta
 --------------------------
 -- Tensors
 
+type UntypedExpression = DOC
+
+data T (s :: Shape) (t :: Typ) where
+  SimpleBroadcast :: Proxy s0 -> Proxy m ->  Proxy s1 -> T (s0 ++  s1) t -> T (s0 ++ (m ': s1)) t
+  T :: UntypedExpression -> T s t
+  BinOp :: BinOp -> SList s0 -> Proxy s1 -> Proxy s2 -> Proxy s3 -> T (s0 ++ s1) t -> T (s0 ++ s2) t -> T (s0 ++ s3) u
+  UnOp :: UnOp -> SList s0 -> Proxy s1 -> Proxy s2 -> T (s0 ++ s1) t -> T (s0 ++ s2) u
+  Unbroadcast :: KnownNat n => Proxy n -> T (n ': s) t -> T s t
+  -- ReduceBy :: String -> SList s0 -> Proxy m -> SList s1 -> T (s0 ++ (m ': s1)) t -> T (s0 ++ s1) t
+  ReshapeTo :: SList s -> T s0 t -> T s t
+  Transpose :: Permutation s0 s -> T s0 t -> T s t
+  Share :: T s t -> T s t
+  Stack :: SList s0 -> Proxy m -> Proxy s1 -> V m (T (s0 ++ s1) t) -> T (s0 ++ (m ': s1)) t
+  -- Index :: Int -> SList s0 -> Proxy m ->  SList s1 -> T (s0 ++ (m ': s1))t -> T (s0 ++ s1) t
+  Concat :: SList s0 -> Proxy m -> Proxy o -> SList s1 -> T (s0 ++ (m ': s1))t -> T (s0 ++ (o ': s1))t -> T (s0 ++ ((m+o) ': s1))t
+  Gather :: SList indexShape -> SList s0 -> Proxy m -> SList s1 -> T (s0 ++ (m ': s1)) t -> T indexShape ('Typ 'Int w0) -> T (s0 ++ indexShape ++ s1) t
+  -- MatMul :: KnownLen s => Proxy m -> Proxy n ->  Proxy o -> SList s -> T (s ++ '[n,o]) t -> T (s ++ [o,m]) t -> T (s ++ [n,m]) t
+  ArgMax :: SList s0 -> Proxy m -> Proxy s1 -> T (s0 ++ (m ': s1)) t' -> T (s0 ++ s1) ('Typ 'Int w)
+  SoftMax :: SList s0 -> Proxy m ->  Proxy s1 -> T (s0 ++ (m ': s1)) t -> T (s0 ++ (m ': s1)) t
+  Where :: T s TFBool  -> T s t -> T s t -> T s t
+  Convolution :: Proxy bs -> Proxy inChannels -> Proxy outChannels -> SList filterSpatialShape
+            -> T (bs ': filterSpatialShape ++ '[inChannels]) t -- ^ input tensor (batched)
+            -> T (filterSpatialShape ++ '[inChannels,outChannels]) t -- ^ filters
+            -> T (bs ': filterSpatialShape ++ '[outChannels]) t
+
 type Tensor shape = T shape
+
+data UnOp  = Simple1Op String | SliceOp Integer Integer | Axis1Op String Integer | IndexOp {indexOpAxis :: Integer, indexOpIndex :: Integer}
+data BinOp = Simple2Op String | Axis2Op String Integer
 
 data Permutation (s :: [k]) (t :: [k]) where
   PermId :: Permutation s t
