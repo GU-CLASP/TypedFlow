@@ -6,8 +6,8 @@ License     : LGPL-3
 Maintainer  : jean-philippe.bernardy@gu.se
 Stability   : experimental
 
-This module provides an abstract representation of tensor
-operations. It is not normally imported directly by users.
+This module provides operations on the abstract representation of
+tensor operations. It is not normally imported directly by users.
 -}
 
 {-# LANGUAGE LambdaCase #-}
@@ -34,7 +34,8 @@ operations. It is not normally imported directly by users.
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE UnicodeSyntax #-}
 
-module TypedFlow.Abstract where
+module TypedFlow.Abstract (broadcast
+                          ,permToFun) where
 
 import Prelude hiding (tanh,Num(..),Floating(..),round,floor,(/),sqrt)
 import qualified Prelude
@@ -71,7 +72,7 @@ data TF (s :: Shape) (t :: Typ) where
   ReshapeFrom :: Product s ~ Product s0 => SList s0 -> TF s0 t -> TF s t
   Transpose :: Permutation s0 s -> TF s0 t -> TF s t
   Share :: TF s t -> TF s t
-  Stack :: SList s0 -> Proxy m -> SList s1 -> V m (TF (s0 ++ s1)t) -> TF (s0 ++ (m ': s1))t
+  Stack :: SList s0 -> Proxy m -> SList s1 -> V m (TF (s0 ++ s1) t) -> TF (s0 ++ (m ': s1))t
   Index :: Int -> SList s0 -> Proxy m ->  SList s1 -> TF (s0 ++ (m ': s1))t -> TF (s0 ++ s1) t
   Concat :: SList s0 -> Proxy m -> Proxy o -> SList s1 -> TF (s0 ++ (m ': s1))t -> TF (s0 ++ (o ': s1))t -> TF (s0 ++ ((m+o) ': s1))t
   Gather :: SList indexShape -> SList s0 -> Proxy m -> SList s1 -> TF (s0 ++ (m ': s1)) t -> TF indexShape ('Typ 'Int w0) -> TF (s0 ++ indexShape ++ s1) t
@@ -96,37 +97,42 @@ broadcastPerm n (PermTrans p q) = PermTrans (broadcastPerm n p) (broadcastPerm n
 proxyCons :: Proxy x -> Proxy xs -> Proxy (x ': xs)
 proxyCons _ _ = Proxy
 
-broadcast :: forall n s t. KnownNat n => Proxy n -> TF s t -> TF (n ': s) t
-broadcast n tensor
+broadcast :: forall n s t. KnownNat n => Proxy n -> TF s t -> TF (n : s) t
+broadcast n = f
+  where f :: TF s' t' -> TF (n : s') t'
+        f = memo (protoBroadcast n f)
+
+protoBroadcast :: forall n s t. KnownNat n => Proxy n -> (forall s' t'. TF s' t' -> TF (n ': s') t') -> TF s t -> TF (n ': s) t
+protoBroadcast n rec tensor
   | finished tensor = SimpleBroadcast (Proxy @'[]) n (Proxy @s)  tensor
   | otherwise = case tensor of
-  (Where cond x y) -> Where (broadcast n cond) (broadcast n x) (broadcast n y)
-  (SimpleBroadcast s0 m s1 x) -> SimpleBroadcast (proxyCons n s0) m s1 (broadcast n x)
+  (Where cond x y) -> Where (rec cond) (rec x) (rec y)
+  (SimpleBroadcast s0 m s1 x) -> SimpleBroadcast (proxyCons n s0) m s1 (rec x)
   T _ -> error "panic: broadcast constant should be finished!"
-  Share x -> Share (broadcast n x)
-  ArgMax s0 m s1 x -> ArgMax (LS n s0) m s1 (broadcast n x)
-  SoftMax s0 m s1 x -> SoftMax (LS n s0) m s1 (broadcast n x)
+  Share x -> Share (rec x)
+  ArgMax s0 m s1 x -> ArgMax (LS n s0) m s1 (rec x)
+  SoftMax s0 m s1 x -> SoftMax (LS n s0) m s1 (rec x)
   Unbroadcast p x -> case testEqual p n of
      Nothing -> error "panic: Unbroadcast of wrong kind found!"
      Just Refl -> x
-  BinOp op x y -> BinOp op (broadcast n x) (broadcast n y)
-  MatMul m p o s x y -> MatMul m p o (LS n s) (broadcast n x) (broadcast n y)
+  BinOp op x y -> BinOp op (rec x) (rec y)
+  MatMul m p o s x y -> MatMul m p o (LS n s) (rec x) (rec y)
   Gather is s0 m s1 x ix
-    | finished ix -> Gather is (LS n s0) m s1 (broadcast n x) ix
+    | finished ix -> Gather is (LS n s0) m s1 (rec x) ix
     | otherwise -> error "broadcast on gather index not implemented"
-  Transpose t x -> Transpose (PermSkip t) (broadcast n x)
-  ReduceBy op s0 m s1 x -> ReduceBy op (LS n s0) m s1 (broadcast n x)
-  ReshapeFrom s x -> ReshapeFrom (LS n s) (broadcast n x)
-  Stack s0 m s1 xs -> Stack (LS n s0) m s1 (fmap (broadcast n) xs)
-  Concat s0 m o s1 x y -> Concat (LS n s0) m o s1 (broadcast n x) (broadcast n y) 
-  Index ix s0 m s1 x  -> Index ix (LS n s0) m s1 (broadcast n x)
+  Transpose t x -> Transpose (PermSkip t) (rec x)
+  ReduceBy op s0 m s1 x -> ReduceBy op (LS n s0) m s1 (rec x)
+  ReshapeFrom s x -> ReshapeFrom (LS n s) (rec x)
+  Stack s0 m s1 xs -> Stack (LS n s0) m s1 (fmap (rec) xs)
+  Concat s0 m o s1 x y -> Concat (LS n s0) m o s1 (rec x) (rec y) 
+  Index ix s0 m s1 x  -> Index ix (LS n s0) m s1 (rec x)
   Convolution bs inChans outChans filterShape x filters
     | finished filters ->
       prodAssocS n bs (productS (sl filterShape outChans)) $
       prodAssocS n bs (productS (sl filterShape inChans)) $
       knownSList (sl filterShape inChans)  $
       ReshapeFrom (LS (proxyMul n bs) (filterShape `sl` outChans)) $
-      Convolution (proxyMul n bs) inChans outChans filterShape (reshapeAuto (broadcast n x)) filters
+      Convolution (proxyMul n bs) inChans outChans filterShape (reshapeAuto (rec x)) filters
     | otherwise -> error "broadcast on convolution filter not implemented"
 
 proxyMul :: forall n m. Proxy n -> Proxy m -> Proxy (n*m)
@@ -145,7 +151,30 @@ productS :: SList s -> Proxy (Product s)
 productS _ = Proxy
 
 finished :: TF s t -> Bool
-finished rec = _
+finished = f where
+  f :: forall s' t'. TF s' t' -> Bool
+  f = memo (protoFinished f)
+
+protoFinished :: (forall s' t'. TF s' t' -> Bool) -> TF s t -> Bool
+protoFinished rec = \case
+  (Where cond x y) -> rec cond && recs [x,y]
+  (SimpleBroadcast _s0 _m _s1 x) -> rec x
+  T _ -> True
+  Share x -> rec x
+  ArgMax _s0 _m _s1 x -> rec x
+  SoftMax _s0 _m _s1 x -> rec x
+  Unbroadcast _p _x -> False
+  BinOp _op x y -> recs [x,y]
+  MatMul _m _p _o _s x y -> rec x && rec y
+  Gather _is _s0 _m _s1 x ix -> rec x && rec ix
+  Transpose _t x -> rec x
+  ReduceBy _op _s0 _m _s1 x -> rec x
+  ReshapeFrom _s x -> rec x
+  Stack _s0 _m _s1 xs -> all rec xs
+  Concat _s0 _m _o _s1 x y -> rec x && rec y
+  Index _ix _s0 _m _s1 x  -> rec x
+  Convolution _bs _inChans _outChans _filterShape x filters -> rec x && rec filters
+ where recs = all rec
 
 app :: SList' f xs -> SList' f ys -> SList' f (xs ++ ys)
 app LZ x = x
@@ -170,9 +199,6 @@ inversePerm (PermSkip x) = PermSkip (inversePerm x)
 inversePerm PermSwap = PermSwap
 inversePerm (PermTrans x y) = PermTrans (inversePerm y) (inversePerm x)
 
-atShape :: SList s -> TF s t -> TF s t
-atShape _ x = x
-
 reshapeAuto :: forall s s0 t. KnownLen s0 => Product s ~ Product s0 => TF s0 t -> TF s t
 reshapeAuto = ReshapeFrom (shapeSListProxy (Proxy @s0))
 
@@ -180,9 +206,6 @@ reshapeTo :: forall s s0 t. KnownLen s0 => Product s ~ Product s0 => SList s -> 
 reshapeTo _ = ReshapeFrom (shapeSListProxy (Proxy @s0))
 
 type SNMap k v = IORef (I.IntMap [(StableName k,v)])
-
-bc :: KnownNat n => Proxy n -> TF s t -> TF (n : s) t
-bc x y = memo (memo broadcast x) y
 
 memo :: (a -> b) -> a -> b
 memo f = unsafePerformIO (
