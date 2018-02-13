@@ -106,7 +106,7 @@ runLayer l (s,x) = do
   (s',y) <- runCell l (s,x')
   return (s',stack0 y)
 
--- | Construct a sell from an arbitrary stateful function
+-- | Construct a cell from an arbitrary stateful function
 mkCell :: ((HTV (Flt t) states,input) -> Gen (HTV (Flt t) states, output)) -> RnnCell t states input output
 mkCell cell = C . flip (curry cell)
 
