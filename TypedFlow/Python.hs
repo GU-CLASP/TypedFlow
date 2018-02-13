@@ -68,12 +68,15 @@ showTyp = text (show (typVal @t))
 showShape' ::  [Integer] -> DOC
 showShape' s = list (map (showDim' "None") s)
 
-showShape :: ∀ (s :: Shape). KnownShape s => DOC
-showShape = showShape' (shapeToList @s)
+showShape :: ∀ (s :: Shape). All KnownNat s => SList s -> DOC
+showShape s = showShape' (shapeToList'' s)
+
+showShape'' :: ∀ (s :: Shape). SShape s -> DOC
+showShape'' s = showShape' (shapeToList' s)
 
 -- | Show a shape, but "None" is replaced by "-1"
-showShapeMinus :: ∀ (s :: Shape). KnownShape s => DOC
-showShapeMinus = list (map (showDim' "-1") (shapeToList @ s))
+showShapeMinus :: forall (s::Shape). All KnownNat s => SList s -> DOC
+showShapeMinus s = list (map (showDim' "-1") (shapeToList'' s))
 
 showShapeLen :: ∀ (s::Shape). KnownLen s => DOC
 showShapeLen = (text . show) (listLen @ s)
@@ -142,7 +145,7 @@ peekAtAny p v = modify $ \GState{..} -> GState{genPeeks = if p `elem` map fst ge
 assign :: ∀s t. T s t -> Gen (T s t)
 assign x = do
   v <- newVar
-  v <-- generatePure x
+  v <-- generatePure _ x
   return (T v)
 
 lambda :: (T s t -> T s' t') -> Gen UntypedExpression
@@ -160,19 +163,43 @@ generate s = (renderWith (Options 92 (const id)) genText,genParams)
                                                     ,genTrainingPlaceholder = T "NO TRAINING PLACEHOLDER!"
                                                     ,genPeeks=[]})
 
-generatePure :: T s t -> DOC
-generatePure = error "TODO: generatePure"
---   ReduceBy  
--- UnOp op s _ _ x -> | (funcall ("tf.reduce_" ++ op) [x, text "axis=" <> integer (length s)])
--- UnOp op x -> T (funcall op [generatePure x])
--- binOp :: ∀ s1 s2 s3 t1 t2 t3. String -> Tensor s1 t1 -> Tensor s2 t2 -> Tensor s3 t3
--- binOp op (T x) (T y) = T (funcall op [ x , y])
--- UnOp (SliceOp lo hi) s _ _ x -> rec x <> list (replicate (listLen s) (text ":") ++ [integer lo <> text ".." <> integer hi])
--- BinOp (AxisOp op) s x y = T (funcall op  [list [x,y], named "axis" (integer (listLen @s))])
--- Reshape s2 ->  (funcall "tf.reshape" [t, showShapeMinus @s2])
--- (IndexOp n) (x <> list (replicate n (text ":") ++ [integer i]))
--- Stack T (funcall "tf.stack" [list [x | T x <- xs], text "axis=" <> integer (listLen @ s)])
+-- FIXME: sharing
+
+
+permToFun :: Permutation s t -> Integer -> Integer
+permToFun = \case
+  PermId -> \x -> x
+  PermTrans a b -> permToFun b . permToFun a
+  PermSwap -> \case
+    0 -> 1
+    1 -> 0
+    x -> x
+  PermSkip p -> \case
+    0 -> 0
+    x -> permToFun p (x-1) Prelude.+ 1
+
+generatePure :: forall s t. (forall s' t'. T s' t' -> DOC) -> T s t -> DOC
+generatePure rec = \case
+  T x -> x
+  SimpleBroadcast s m s' x ->
+   let sms' = (s `appSList` (LS (proxySat m) s'))
+   in knownSShape sms' $
+      funcall "tf.add" [func "tf.expand_dims" [rec x] [("axis", integer (sListLength s))], 
+                                                 func "tf.zeros" [showShape'' sms'] [("dtype", showTyp @t)]]
+  -- Nicer implementation upcoming?
+  -- https://github.com/tensorflow/tensorflow/pull/15243
+  -- https://github.com/tensorflow/tensorflow/issues/14509
+  UnOp (Axis1Op op n) s _ _ x -> funcall op [rec x, text "axis=" <> integer (sListLength s + n)]
+  UnOp (Simple1Op op) _ _ _ x -> funcall op [rec x]
+  UnOp (SliceOp lo hi) s _ _ x -> rec x <> list (replicate (fromIntegral (sListLength s)) (text ":") ++ [integer lo <> text ".." <> integer hi])
+  UnOp (IndexOp axis ix) s _ _ x -> rec x <> list (replicate (fromIntegral (axis + sListLength s)) (text ":") ++ [integer ix])
+  BinOp (Axis2Op op n) s _ _ _ x y -> funcall op  [list [rec x,rec y], named "axis" (integer (sListLength s + n))]
+  BinOp (Simple2Op op) _ _ _ _ x y -> funcall op [rec x, rec y]
+  ReshapeTo s2 t ->  funcall "tf.reshape" [rec t, showShapeMinus s2]
+  Stack s0 _ _ (V xs) -> funcall "tf.stack" [list (map rec xs), text "axis=" <> integer (sListLength s0)]
+  Transpose s p x -> func "tf.transpose" [rec x] [("perm",list (map (integer . permToFun p) [0.. sListLength s]))]
+
 -- broadcast0 :: forall n s t. KnownTyp t => KnownNat n => KnownShape s => Tensor s t -> Tensor (n ': s) t
--- broadcast0 x = binOp "tf.add" (zeros @t @(n ': s)) x
+-- broadcast0 x = binOp 
 --  -- this is some "hack to force the shape to that we want."
 

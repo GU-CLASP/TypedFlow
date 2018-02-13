@@ -52,18 +52,6 @@ import Data.IORef
 import System.IO.Unsafe
 import TypedFlow.Types (T(..))
 
-permToFun :: Permutation s t -> Int -> Int
-permToFun = \case
-  PermId -> \x -> x
-  PermTrans a b -> permToFun b . permToFun a
-  PermSwap -> \case
-    0 -> 1
-    1 -> 0
-    x -> x
-  PermSkip p -> \case
-    0 -> 0
-    x -> permToFun p (x-1) Prelude.+ 1
-
 appAssocS :: SList' f a -> SList' f b -> SList' f c -> ((a ++ b) ++ c) :~: (a ++ (b ++ c))
 appAssocS = unsafeCoerce Refl
 
@@ -127,14 +115,6 @@ productS _ = Proxy
 
 finished :: T s t -> Bool
 finished rec = _
-
-app :: SList' f xs -> SList' f ys -> SList' f (xs ++ ys)
-app LZ x = x
-app (LS x xs) ys = LS x (app xs ys)
-
-sl :: forall x xs f. SList' f xs -> f x -> SList' f (xs ++ '[x])
-sl xs x = app xs (LS x LZ) 
-
 
 perm210 :: Permutation (n ': m ': o ': s) (m ': o ': n ': s)
 perm210 = PermSwap `PermTrans` (PermSkip PermSwap)
