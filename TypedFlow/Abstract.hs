@@ -63,44 +63,46 @@ broadcastPerm n (PermTrans p q) = PermTrans (broadcastPerm n p) (broadcastPerm n
 proxyCons :: Proxy x -> Proxy xs -> Proxy (x ': xs)
 proxyCons _ _ = Proxy
 
-broadcast :: forall n s t. KnownNat n => Proxy n -> T s t -> T (n : s) t
-broadcast n = f
-  where f :: T s' t' -> T (n : s') t'
-        f = memo (protoBroadcast n f)
+-- broadcast :: forall n s t. KnownShape s => KnownNat n => Proxy n -> T s t -> T (n : s) t
+-- broadcast n = f
+--   where f :: KnownShape s' => T s' t' -> T (n : s') t'
+--         f = memo (protoBroadcast n f)
 
-protoBroadcast :: forall n s t. KnownNat n => Proxy n -> (forall s' t'. T s' t' -> T (n ': s') t') -> T s t -> T (n ': s) t
-protoBroadcast n rec tensor
-  | finished tensor = SimpleBroadcast LZ n _  tensor
+
+testSatEqual :: forall n m. Sat KnownNat n -> Sat KnownNat m -> Maybe (n :~: m)
+testSatEqual Sat Sat = testEqual (Proxy @n) (Proxy @m)
+
+protoBroadcast :: forall n s t. Sat KnownNat n -> (forall s' t'. KnownTyp t' => SShape s' -> T s' t' -> T (n ': s') t') -> (KnownTyp t => SShape s -> T s t -> T (n ': s) t)
+protoBroadcast n rec s tensor
+  | finished tensor = knownSShape s $ SimpleBroadcast LZ n s tensor
   | otherwise = case tensor of
-  (Where cond x y) -> Where (rec cond) (rec x) (rec y)
-  (SimpleBroadcast s0 m s1 x) -> SimpleBroadcast (LS (proxySat n) s0) m s1 (rec x)
+  Where cond x y -> Where (rec s cond) (rec s x) (rec s y)
+  SimpleBroadcast s0 m s1 x -> SimpleBroadcast (LS n s0) m s1 (rec (s0 <+> s1) x)
   T _ -> error "panic: broadcast constant should be finished!"
-  Share x -> Share (rec x)
-  -- ArgMax s0 m s1 x -> ArgMax (LS n s0) m s1 (rec x)
-  -- SoftMax s0 m s1 x -> SoftMax (LS n s0) m s1 (rec x)
-  Unbroadcast p x -> case testEqual p n of
+  Share x -> Share (rec s x)
+  Unbroadcast p x -> case testSatEqual p n of
      Nothing -> error "panic: Unbroadcast of wrong kind found!"
      Just Refl -> x
-  BinOp op s0 s1 s2 s3 x y -> BinOp op (LS n s0) s1 s2 s3 (rec x) (rec y)
-  UnOp op s0 s1 s2 x -> UnOp op (LS n s0) s1 s2 (rec x)
-  Gather is s0 m s1 x ix
-    | finished ix -> Gather is (LS n s0) m s1 (rec x) ix
-    | otherwise -> error "broadcast on gather index not implemented"
-  Transpose s t x -> Transpose (LS n s) (PermSkip t) (rec x)
-  -- ReduceBy op s0 m s1 x -> ReduceBy op (LS n s0) m s1 (rec x)
-  ReshapeTo s x -> ReshapeTo (LS n s) (rec x)
-  Stack s0 m s1 xs -> Stack (LS n s0) m s1 (fmap (rec) xs)
-  -- Concat s0 m o s1 x y -> Concat (LS n s0) m o s1 (rec x) (rec y) 
-  -- Index ix s0 m s1 x  -> Index ix (LS n s0) m s1 (rec x)
-  Convolution bs inChans outChans filterShape x filters
-    | finished filters ->
-      prodAssocS n bs (productS (sl filterShape outChans)) $
-      prodAssocS n bs (productS (sl filterShape inChans)) $
-      knownSList (sl filterShape outChans)  $
-      knownSList (sl filterShape inChans)  $
-      reshapeFrom (shapeProxySList (LS (proxyMul n bs) (filterShape `sl` outChans))) $
-      Convolution (proxyMul n bs) inChans outChans filterShape (reshapeAuto (rec x)) filters
-    | otherwise -> error "broadcast on convolution filter not implemented"
+  BinOp op s0 s1 s2 s3 x y -> BinOp op (LS n s0) s1 s2 s3 (rec (s0 <+> s1) x) (rec (s0 <+> s2) y)
+  UnOp op s0 s1 s2 x -> UnOp op (LS n s0) s1 s2 (rec (s0 <+> s1) x)
+  -- Gather is s0 m s1 x ix
+  --   | finished ix -> Gather is (LS n s0) m s1 (rec x) ix
+  --   | otherwise -> error "broadcast on gather index not implemented"
+  Transpose s0 t x -> Transpose (LS n s0) (PermSkip t) (rec s0 x)
+  -- -- ReduceBy op s0 m s1 x -> ReduceBy op (LS n s0) m s1 (rec x)
+  -- ReshapeTo s x -> ReshapeTo (LS n s) (rec x)
+  -- Stack s0 m s1 xs -> Stack (LS n s0) m s1 (fmap (rec) xs)
+  -- -- Concat s0 m o s1 x y -> Concat (LS n s0) m o s1 (rec x) (rec y) 
+  -- -- Index ix s0 m s1 x  -> Index ix (LS n s0) m s1 (rec x)
+  -- Convolution bs inChans outChans filterShape x filters
+  --   | finished filters ->
+  --     prodAssocS n bs (productS (sl filterShape outChans)) $
+  --     prodAssocS n bs (productS (sl filterShape inChans)) $
+  --     knownSList (sl filterShape outChans)  $
+  --     knownSList (sl filterShape inChans)  $
+  --     reshapeFrom (LS (proxyMul n bs) (filterShape `sl` outChans)) $
+  --     Convolution (proxyMul n bs) inChans outChans filterShape (reshapeAuto (rec x)) filters
+  --   | otherwise -> error "broadcast on convolution filter not implemented"
 
 proxyMul :: forall n m. Proxy n -> Proxy m -> Proxy (n*m)
 proxyMul _ _ = Proxy
@@ -131,7 +133,7 @@ protoFinished rec = \case
   Unbroadcast _p _x -> False
   BinOp _op _ _ _ _ x y -> rec x && rec y
   Gather _is _s0 _m _s1 x ix -> rec x && rec ix
-  Transpose _t _ x -> rec x
+  Transpose _ _t x -> rec x
   ReshapeTo _s x -> rec x
   Stack _s0 _m _s1 xs -> all rec xs
   Convolution _bs _inChans _outChans _filterShape x filters -> rec x && rec filters
@@ -155,13 +157,13 @@ atShape :: SList s -> T s t -> T s t
 atShape _ x = x
 
 reshapeAuto :: forall s s0 t. KnownShape s => Product s ~ Product s0 => T s0 t -> T s t
-reshapeAuto = ReshapeTo (shapeSList @s)
+reshapeAuto = ReshapeTo (typeSList @s)
 
-reshapeTo :: forall s s0 t. KnownShape s => Product s ~ Product s0 => SList s -> T s0 t -> T s t
-reshapeTo s = ReshapeTo s
+reshapeTo :: forall s s0 t proxy. KnownShape s => Product s ~ Product s0 => proxy s -> T s0 t -> T s t
+reshapeTo _ = ReshapeTo (typeSList @s)
 
-reshapeFrom :: forall s s0 t. KnownShape s => Product s ~ Product s0 => Proxy s0 -> T s0 t -> T s t
-reshapeFrom _ = ReshapeTo (shapeSList @s)
+reshapeFrom :: forall proxy s s0 t. KnownShape s => Product s ~ Product s0 => proxy s0 -> T s0 t -> T s t
+reshapeFrom _ = ReshapeTo (typeSList @s)
 
 type SNMap k v = IORef (I.IntMap [(StableName k,v)])
 
@@ -191,23 +193,23 @@ applyStable f tbl arg = unsafePerformIO (
 
 -- | Zeros
 zeros :: ∀ t (shape :: Shape). KnownShape shape => KnownTyp t => (T shape t)
-zeros = T (funcall "tf.zeros" [showShape @shape, named "dtype" (showTyp @t)])
+zeros = T (funcall "tf.zeros" [showShapeType @shape, named "dtype" (showTyp @t)])
 
 -- | Ones
 ones :: ∀ t (shape :: Shape). KnownShape shape => KnownTyp t => (T shape t)
-ones = T (funcall "tf.ones" [showShape @shape, named "dtype" (showTyp @t)])
+ones = T (funcall "tf.ones" [showShapeType @shape, named "dtype" (showTyp @t)])
 
 -- | Identity matrix in dimensions m,n (extended with zeros if m ≠ n), and repeated on shape s.
 eye :: ∀ m n s t. KnownShape s => KnownNat m => KnownNat n => KnownTyp t => (T (m ': n ': s) t)
 eye = T (funcall "tf.eye" [showDim @n,
                             named "num_columns" (showDim @m),
-                            named "batch_shape" (showShape @s),
+                            named "batch_shape" (showShapeType @s),
                             named "dtype" (showTyp @t)])
 
 
 -- | Constant
 constant :: forall s t w. KnownShape s => KnownBits w => KnownKind t => HostType t -> T s ('Typ t w)
-constant c = T (funcall "tf.constant" [pretty c, named "shape" (showShape @s), named "dtype" (showTyp @('Typ t w))])
+constant c = T (funcall "tf.constant" [pretty c, named "shape" (showShapeType @s), named "dtype" (showTyp @('Typ t w))])
 
 
 -- | Internal. Use 'reduceMeanAll', etc. instead.
@@ -222,7 +224,7 @@ reduceSumAll = reduceAll "sum"
 
 -- | Internal. Use 'reduceSum', etc. instead.
 reduce :: ∀ n s t. (KnownLen s,KnownPeano n) => String -> T s t -> T (Take n s ++ Drop ('Succ n) s) t
-reduce op x = UnOp (Axis1Op ("tf.reduce_" ++ op) (listLen @s)) LZ (Proxy @s)  (Proxy @(Take n s ++ Drop ('Succ n) s)) x
+reduce op x = UnOp (Axis1Op ("tf.reduce_" ++ op) (listTypeLen @s)) LZ (Proxy @s)  (Proxy @(Take n s ++ Drop ('Succ n) s)) x
 
 -- | Reduce along a given dimension
 reduceSum, reduceMean, reduceMax :: ∀n s t. (KnownLen s,KnownPeano n) => T s t -> T (Take n s ++ Drop ('Succ n) s) t
@@ -338,7 +340,7 @@ reshape = unsafeReshape
 
 
 unsafeReshape :: ∀ s2 s1 t. KnownShape s2 => Tensor s1 t -> Tensor s2 t
-unsafeReshape = ReshapeTo (shapeSList @s2)
+unsafeReshape = ReshapeTo (typeSList @s2)
 
 -- | Reshape a tensor so that the first two dimensions are collapsed
 flatten2 :: ∀ m n s t. (KnownNat m, KnownNat n, KnownShape s) => Tensor (m ': n ': s) t -> Tensor (m*n ': s) t
@@ -398,12 +400,12 @@ nth0' = nth0 (natVal (Proxy @n))
 -- unstack0 :: ∀ s (n::Nat) t. (KnownLen s, KnownNat n) => Tensor (n ': s) t -> Gen (V n (T s t))
 -- unstack0 (T x) = do
 --   v <- newVar
---   v <-- funcall "tf.unstack" [x, text "axis=" <> integer (listLen @ s)]
+--   v <-- funcall "tf.unstack" [x, text "axis=" <> integer (typeLen @ s)]
 --   return $ V $ [ T $ v <> brackets (integer i)| i <- [0..n Prelude.- 1] ]
 --         where n = natVal (Proxy @ n)
 
 stackT :: ∀ s0 s (n::Nat) t. (KnownLen s0) => V n (T (s0 ++ s) t) -> Tensor (s0 ++ (n ': s)) t
-stackT = Stack (shapeSList @s0) (Proxy @n) (Proxy @s)
+stackT = Stack (typeSList @s0) (Proxy @n) (Proxy @s)
 
 -- | Concatenate @n@ tensors along the first dimension
 stack0 :: ∀ s (n::Nat) t. (KnownLen s) => V n (T s t) -> Tensor (n ': s) t
@@ -430,20 +432,20 @@ permN01 LZ _ _ = PermSwap
 permN01 (LS _n s) m n = PermSkip (permN01 s m n)
 
 -- | Transposition. See the type for the permutation of dimensions.
-transposeN :: ∀ s n t. KnownLen s => T (n ': s) t -> T (s ++ '[n]) t
-transposeN  = Transpose (permN (shapeSList @s))
+transposeN :: ∀ s n t. KnownShape s => T (n ': s) t -> T (s ++ '[n]) t
+transposeN  = Transpose (permN (typeSList @s))
 
 -- | Transposition. See the type for the permutation of dimensions.
-transposeN' :: ∀ s n t. KnownLen s => T (s ++ '[n]) t -> T (n ': s) t
-transposeN' = Transpose (inversePerm (permN (shapeSList @s)))
+transposeN' :: ∀ s n t. KnownShape s => T (s ++ '[n]) t -> T (n ': s) t
+transposeN' = Transpose (inversePerm (permN (typeSList @s)))
 
 -- | Transposition. See the type for the permutation of dimensions.
-transpose01 :: ∀ s m n t. KnownLen s => T (m ': n ': s) t -> T (n ': m ': s) t
+transpose01 :: ∀ s m n t. KnownShape s => T (m ': n ': s) t -> T (n ': m ': s) t
 transpose01 = Transpose PermSwap
 
 -- | Transposition. See the type for the permutation of dimensions.
-transposeN01 :: ∀ s m n t. KnownLen s => T (s ++ [m,n]) t -> T (s ++ [n,m]) t
-transposeN01 = Transpose (permN01 (shapeSList @s) (Proxy @m) (Proxy @n))
+transposeN01 :: ∀ s m n t. KnownShape s => T (s ++ [m,n]) t -> T (s ++ [n,m]) t
+transposeN01 = Transpose (permN01 (typeSList @s) (Proxy @m) (Proxy @n))
 
 -- TODO: re-implement
 -- -- | Generate a mask of given length for each sequence.

@@ -71,15 +71,18 @@ showShape' s = list (map (showDim' "None") s)
 showShape :: ∀ (s :: Shape). All KnownNat s => SList s -> DOC
 showShape s = showShape' (shapeToList'' s)
 
-showShape'' :: ∀ (s :: Shape). SShape s -> DOC
-showShape'' s = showShape' (shapeToList' s)
+showSShape :: ∀ (s :: Shape). SShape s -> DOC
+showSShape s = showShape' (shapeToList' s)
+
+showShapeType :: ∀ (s :: Shape). KnownShape s => DOC
+showShapeType = showSShape (typeSShape @s)
 
 -- | Show a shape, but "None" is replaced by "-1"
-showShapeMinus :: forall (s::Shape). All KnownNat s => SList s -> DOC
+showShapeMinus :: forall (s::Shape) proxy. All KnownNat s => SList' proxy s -> DOC
 showShapeMinus s = list (map (showDim' "-1") (shapeToList'' s))
 
 showShapeLen :: ∀ (s::Shape). KnownLen s => DOC
-showShapeLen = (text . show) (listLen @ s)
+showShapeLen = (text . show) (listTypeLen @ s)
 
 showDim' :: String -> Integer -> DOC
 showDim' none n = text (if n == 514229 then none else show n)
@@ -142,10 +145,10 @@ peekAtAny p v = modify $ \GState{..} -> GState{genPeeks = if p `elem` map fst ge
 
 
 
-assign :: ∀s t. T s t -> Gen (T s t)
+assign :: ∀s t. KnownShape s => T s t -> Gen (T s t)
 assign x = do
   v <- newVar
-  v <-- generatePure x
+  v <-- generatePure typeSShape x
   return (T v)
 
 lambda :: (T s t -> T s' t') -> Gen UntypedExpression
@@ -178,26 +181,33 @@ permToFun = \case
     0 -> 0
     x -> permToFun p (x-1) Prelude.+ 1
 
-generatePure :: forall s t. T s t -> DOC
-generatePure = \case
+
+listProxyLen :: forall proxy s. KnownLen s => proxy s -> Integer
+listProxyLen _ = listTypeLen @s
+
+generatePure :: forall s t. KnownTyp t => SShape s -> T s t -> DOC
+generatePure sR = \case
   T x -> x
-  SimpleBroadcast s m s' x ->
-   let sms' = (s `appSList` (LS (proxySat m) s'))
-   in knownSShape sms' $
-      funcall "tf.add" [func "tf.expand_dims" [rec x] [("axis", integer (sListLength s))],
-                                                 func "tf.zeros" [showShape'' sms'] [("dtype", showTyp @t)]]
-  -- Nicer implementation upcoming?
-  -- https://github.com/tensorflow/tensorflow/pull/15243
-  -- https://github.com/tensorflow/tensorflow/issues/14509
-  UnOp (Axis1Op op n) s _ _ x -> funcall op [rec x, text "axis=" <> integer (sListLength s + n)]
-  UnOp (Simple1Op op) _ _ _ x -> funcall op [rec x]
-  UnOp (SliceOp lo hi) s _ _ x -> rec x <> list (replicate (fromIntegral (sListLength s)) (text ":") ++ [integer lo <> text ".." <> integer hi])
-  UnOp (IndexOp axis ix) s _ _ x -> rec x <> list (replicate (fromIntegral (axis + sListLength s)) (text ":") ++ [integer ix])
-  BinOp (Axis2Op op n) s _ _ _ x y -> funcall op  [list [rec x,rec y], named "axis" (integer (sListLength s + n))]
-  BinOp (Simple2Op op) _ _ _ _ x y -> funcall op [rec x, rec y]
-  ReshapeTo s2 t ->  funcall "tf.reshape" [rec t, showShapeMinus s2]
-  Stack s0 _ _ (V xs) -> funcall "tf.stack" [list (map rec xs), text "axis=" <> integer (sListLength s0)]
-  Transpose s p x -> func "tf.transpose" [rec x] [("perm",list (map (integer . permToFun p) [0.. sListLength s]))]
+  UnOp operation s0 s1 _s2 x -> case operation of
+    SimpleBroadCast n ->
+    -- Nicer implementation upcoming?
+    -- https://github.com/tensorflow/tensorflow/pull/15243
+    -- https://github.com/tensorflow/tensorflow/issues/14509
+      funcall "tf.add" [func "tf.expand_dims" [recx] [("axis", integer (n + sListLength s0))],
+                         func "tf.zeros" [showSShape s0] [("dtype", showTyp @t)]]
+    Axis1Op op n -> funcall op [recx, text "axis=" <> integer (sListLength s0 + n)]
+    Simple1Op op -> funcall op [recx]
+    SliceOp lo hi -> recx <> list (replicate (fromIntegral (sListLength s0)) (text ":") ++ [integer lo <> text ".." <> integer hi])
+    IndexOp axis ix -> recx <> list (replicate (fromIntegral (axis + sListLength s0)) (text ":") ++ [integer ix])
+   where recx = generatePure (s0 .+. s1) x
+  BinOp operation s0 s1 s2 _s3 x y -> case operation of
+     Axis2Op op n -> funcall op  [list [recx,recy], named "axis" (integer (sListLength s0 + n))]
+     Simple2Op op -> funcall op [recx, recy]
+   where recx = generatePure (s0 .+. s1) x
+         recy = generatePure (s0 .+. s2) y
+  ReshapeFrom s t ->  funcall "tf.reshape" [rec s t, knownSShape sR (showShapeMinus sR)]
+  Stack s0 _m s1 (V xs) -> funcall "tf.stack" [list (map (rec (s0 .+. s1)) xs), text "axis=" <> integer (sListLength s0)]
+  Transpose s p x -> func "tf.transpose" [rec s x] [("perm",list (map (integer . permToFun p) [0.. sListLength s]))]
  where rec = generatePure
 -- broadcast0 :: forall n s t. KnownTyp t => KnownNat n => KnownShape s => Tensor s t -> Tensor (n ': s) t
 -- broadcast0 x = binOp 

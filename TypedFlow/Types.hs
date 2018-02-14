@@ -117,7 +117,7 @@ knownProduct' LZ k = k
 knownProduct' (LS _ n) k = knownProduct' n k
 
 knownProduct :: forall s k. KnownShape s => (KnownNat (Product s) => k) -> k
-knownProduct = knownProduct' @s shapeSList
+knownProduct = knownProduct' @s typeSList
 
 appEmpty' :: (xs ++ '[]) :~: xs
 appEmpty' = unsafeCoerce Refl
@@ -131,7 +131,7 @@ initLast' (LS _ LZ) k = k
 initLast' (LS _ (LS y ys)) k = initLast' (LS y ys) k
 
 initLast :: forall s k. KnownShape s => ((Init s ++ '[Last s]) ~ s => k) -> k
-initLast = initLast' @s shapeSList
+initLast = initLast' @s typeSList
 
 knownLast' :: All KnownNat s => SList s -> (KnownNat (Last s) => k) -> k
 knownLast' LZ _ = error "knownLast: does not hold on empty lists"
@@ -139,7 +139,7 @@ knownLast' (LS _ LZ) k = k
 knownLast' (LS _ (LS y xs)) k = knownLast' (LS y xs) k
 
 knownLast :: forall s k. KnownShape s => (KnownNat (Last s) => k) -> k
-knownLast = knownLast' @s shapeSList
+knownLast = knownLast' @s typeSList
 
 splitApp' :: forall ys xs k. SList xs -> ((Take (PeanoLength xs) (xs ++ ys) ~ xs,
                                               Drop (PeanoLength xs) (xs ++ ys) ~ ys) => k) -> k
@@ -148,14 +148,14 @@ splitApp' (LS _ n) k = splitApp' @ys n k
 
 splitApp :: forall xs ys k. KnownLen xs => ((Take (PeanoLength xs) (xs ++ ys) ~ xs,
                                              Drop (PeanoLength xs) (xs ++ ys) ~ ys) => k) -> k
-splitApp = splitApp' @ys (shapeSList @xs)
+splitApp = splitApp' @ys (typeSList @xs)
 
 knownAppend' :: forall t s k. (All KnownNat s, KnownShape t) => SList s -> (KnownShape (s ++ t) => k) -> k
 knownAppend' LZ k = k
 knownAppend' (LS _ n) k = knownAppend' @t n k
 
 knownAppend :: forall s t k.  (KnownShape s, KnownShape t) => (KnownShape (s ++ t) => k) -> k
-knownAppend = knownAppend' @t (shapeSList @s)
+knownAppend = knownAppend' @t (typeSList @s)
 
 -- knownCons :: proxy x -> SList xs -> (KnownLen (x ': xs) => k) -> k
 -- knownCons _ LZ k = k
@@ -428,14 +428,14 @@ data SList' f s where
   LZ :: SList' f '[]
   LS :: forall x xs f. f x -> SList' f xs -> SList' f (x ': xs)
 
-appSList :: SList' f xs -> SList' f ys -> SList' f (xs ++ ys)
+appSList, (.+.) :: SList' f xs -> SList' f ys -> SList' f (xs ++ ys)
 appSList LZ x = x
 appSList (LS x xs) ys = LS x (appSList xs ys)
 
+(.+.) = appSList
+
 sl :: forall x xs f. SList' f xs -> f x -> SList' f (xs ++ '[x])
 sl xs x = appSList xs (LS x LZ) 
-
-
 
 sListLength :: SList' f s -> Integer
 sListLength LZ = 0
@@ -471,24 +471,24 @@ withKnownNat n f = withKnownNat (n `div` 2) (if n `mod` 2 == 0 then f2x else f2x
 
 class KnownLen s where
   shapePeano :: SPeano (PeanoLength s)
-  shapeSList :: SList s
+  typeSList :: SList s
 
 instance KnownLen '[] where
   shapePeano = SZero
-  shapeSList = LZ
-  
+  typeSList = LZ
+
 instance KnownLen xs => KnownLen (x ': xs) where
   shapePeano = SSucc (shapePeano @xs)
-  shapeSList = LS Proxy (shapeSList @xs)
+  typeSList = LS Proxy (typeSList @xs)
 
-listLen :: forall xs. KnownLen xs => Integer
-listLen = sListLength (shapeSList @xs)
+listTypeLen :: forall xs. KnownLen xs => Integer
+listTypeLen = sListLength (typeSList @xs)
 
-shapeSListProxy :: KnownLen xs => proxy xs -> SList xs
-shapeSListProxy _ = shapeSList
+typeSListProxy :: KnownLen xs => proxy xs -> SList xs
+typeSListProxy _ = typeSList
 
-shapeProxySList :: KnownLen xs => SList xs -> Proxy xs 
-shapeProxySList _ = Proxy
+sListProxy :: SList' f xs -> Proxy xs
+sListProxy _ = Proxy
 
 knownNatVal :: forall x. Sat KnownNat x -> Integer
 knownNatVal Sat = natVal (Proxy @x)
@@ -497,12 +497,22 @@ shapeToList' :: SShape s -> [Integer]
 shapeToList' LZ = []
 shapeToList' (LS x xs) = knownNatVal x : shapeToList' xs
 
-shapeToList'' :: All KnownNat s => SList s -> [Integer]
+shapeToList'' :: All KnownNat s => SList' proxy s -> [Integer]
 shapeToList'' LZ = []
 shapeToList'' (LS x xs) = natVal x : shapeToList'' xs
 
 shapeToList :: ∀(s::Shape). KnownShape s => [Integer]
-shapeToList = shapeToList'' (shapeSList @ s)
+shapeToList = shapeToList'' (typeSList @ s)
+
+typeSShape :: forall s. KnownShape s => SShape s
+typeSShape = sListSShape (typeSList @s)
+
+proxySShape :: forall s. KnownShape s => Proxy s -> SShape s
+proxySShape _ = typeSShape
+
+sListSShape :: forall s. All KnownNat s => SList s -> SShape s
+sListSShape LZ = LZ
+sListSShape (LS n s) = LS (proxySat n) (sListSShape s)
 
 rememberNat :: SNat n -> (KnownNat n => r) -> r
 rememberNat (SNat _) k = k
@@ -533,24 +543,18 @@ newtype Gen x = Gen {fromGen :: State GState x} deriving (Monad, MonadState GSta
 type UntypedExpression = DOC
 
 data T (s :: Shape) (t :: Typ) where
-  SimpleBroadcast :: (KnownNat m, KnownTyp t) => SShape s0 -> Proxy m -> SShape s1 -> T (s0 ++ s1) t -> T (s0 ++ (m ': s1)) t
   T :: UntypedExpression -> T s t
-  BinOp :: BinOp -> SList s0 -> Proxy s1 -> Proxy s2 -> Proxy s3 -> T (s0 ++ s1) t -> T (s0 ++ s2) t -> T (s0 ++ s3) u
-  UnOp :: UnOp -> SList s0 -> Proxy s1 -> Proxy s2 -> T (s0 ++ s1) t -> T (s0 ++ s2) u
-  Unbroadcast :: KnownNat n => Proxy n -> T (n ': s) t -> T s t
-  -- ReduceBy :: String -> SList s0 -> Proxy m -> SList s1 -> T (s0 ++ (m ': s1)) t -> T (s0 ++ s1) t
-  ReshapeTo :: All KnownNat s => SList s -> T s0 t -> T s t
-  Transpose :: SList s -> Permutation s0 s -> T s0 t -> T s t
+  BinOp :: KnownTyp t => BinOp -> SShape s0 -> SShape s1 -> SShape s2 -> SShape s3 -> T (s0 ++ s1) t -> T (s0 ++ s2) t -> T (s0 ++ s3) u
+  UnOp :: KnownTyp t => UnOp -> SShape s0 -> SShape s1 -> SShape s2 -> T (s0 ++ s1) t -> T (s0 ++ s2) u
+  Unbroadcast :: Sat KnownNat n -> T (n ': s) t -> T s t
+  ReshapeFrom :: SShape s0 -> T s0 t -> T s t
+  Transpose :: SShape s0 -> Permutation s0 s -> T s0 t -> T s t
   Share :: T s t -> T s t
-  Stack :: SList s0 -> Proxy m -> Proxy s1 -> V m (T (s0 ++ s1) t) -> T (s0 ++ (m ': s1)) t
-  -- Index :: Int -> SList s0 -> Proxy m ->  SList s1 -> T (s0 ++ (m ': s1))t -> T (s0 ++ s1) t
-  -- Concat :: SList s0 -> Proxy m -> Proxy o -> SList s1 -> T (s0 ++ (m ': s1))t -> T (s0 ++ (o ': s1))t -> T (s0 ++ ((m+o) ': s1))t
-  Gather :: SList indexShape -> SList s0 -> Proxy m -> SList s1 -> T (s0 ++ (m ': s1)) t -> T indexShape ('Typ 'Int w0) -> T (s0 ++ indexShape ++ s1) t
-  -- MatMul :: KnownLen s => Proxy m -> Proxy n ->  Proxy o -> SList s -> T (s ++ '[n,o]) t -> T (s ++ [o,m]) t -> T (s ++ [n,m]) t
-  -- ArgMax :: SList s0 -> Proxy m -> Proxy s1 -> T (s0 ++ (m ': s1)) t' -> T (s0 ++ s1) ('Typ 'Int w)
-  -- SoftMax :: SList s0 -> Proxy m ->  Proxy s1 -> T (s0 ++ (m ': s1)) t -> T (s0 ++ (m ': s1)) t
+  Stack :: SShape s0 -> Sat KnownNat m -> SShape s1 -> V m (T (s0 ++ s1) t) -> T (s0 ++ (m ': s1)) t
+  Gather :: SShape indexShape -> SShape s0 -> Sat KnownNat m -> SShape s1 -> T (s0 ++ (m ': s1)) t -> T indexShape ('Typ 'Int w0) -> T (s0 ++ indexShape ++ s1) t
+  -- MatMul :: KnownLen s => SShape m -> SShape n ->  SShape o -> SShape s -> T (s ++ '[n,o]) t -> T (s ++ [o,m]) t -> T (s ++ [n,m]) t
   Where :: T s TFBool  -> T s t -> T s t -> T s t
-  Convolution :: Proxy bs -> Proxy inChannels -> Proxy outChannels -> SList filterSpatialShape
+  Convolution :: Sat KnownNat bs -> Sat KnownNat inChannels -> Sat KnownNat outChannels -> SShape filterSpatialShape
             -> T (bs ': filterSpatialShape ++ '[inChannels]) t -- ^ input tensor (batched)
             -> T (filterSpatialShape ++ '[inChannels,outChannels]) t -- ^ filters
             -> T (bs ': filterSpatialShape ++ '[outChannels]) t
@@ -558,6 +562,7 @@ data T (s :: Shape) (t :: Typ) where
 type Tensor shape = T shape
 
 data UnOp  = Simple1Op String | SliceOp Integer Integer | Axis1Op String Integer | IndexOp {indexOpAxis :: Integer, indexOpIndex :: Integer}
+             | SimpleBroadCast Integer
 data BinOp = Simple2Op String | Axis2Op String Integer
 
 data Permutation (s :: [k]) (t :: [k]) where
