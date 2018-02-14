@@ -144,8 +144,7 @@ peekAtAny :: String -> UntypedExpression -> Gen ()
 peekAtAny p v = modify $ \GState{..} -> GState{genPeeks = if p `elem` map fst genPeeks then error ("duplicate name: " ++ p) else (p,v):genPeeks,..}
 
 
-
-assign :: ∀s t. KnownShape s => T s t -> Gen (T s t)
+assign :: ∀s t. (KnownShape s, KnownTyp t) => T s t -> Gen (T s t)
 assign x = do
   v <- newVar
   v <-- generatePure typeSShape x

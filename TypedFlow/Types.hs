@@ -42,9 +42,13 @@ data Sat (a :: k -> Constraint) (b::k) where
 proxySat :: forall (b::k) (a :: k -> Constraint). a b => Proxy b -> Sat a b
 proxySat _ = Sat
 
+natSat :: forall n. KnownNat n => Sat KnownNat n
+natSat = Sat @Nat @KnownNat
+
 type DOC = Doc ()
 
-type i < j = CmpNat i j ~ 'LT
+-- type i < j = CmpNat i j ~ 'LT
+type i < j = (i+1) <= j
 -- type i <= j = (i <=? j) ~ 'True
 
 type family Product xs where
@@ -77,7 +81,8 @@ type family Init xs where
 -- initLast' k = unsafeCoerce# k -- why not?
 
 
-succPos' :: CmpNat 0 (1 + n) :~: 'LT
+succPos' :: (1 <=? 1+j) :~: 'True
+  -- CmpNat 0 (1 + n) :~: 'LT
 succPos' = unsafeCoerce Refl
 
 succPos :: forall n k. ((0 < (1+n)) => k) -> k
@@ -326,9 +331,16 @@ type Axis1 = 'Succ Dim0
 type Axis2 = 'Succ Dim1
 type Axis3 = 'Succ Dim2
 
-class KnownPeano n where peanoInt :: Integer
-instance KnownPeano 'Zero where peanoInt = 0
-instance KnownPeano n => KnownPeano ('Succ n) where peanoInt = 1 + (peanoInt @n)
+class KnownPeano n where typeSPeano :: SPeano n
+instance KnownPeano 'Zero where typeSPeano = SZero
+instance KnownPeano n => KnownPeano ('Succ n) where typeSPeano = SSucc (typeSPeano @n)
+
+sPeanoInt :: SPeano n -> Integer
+sPeanoInt (SSucc n) = 1 + sPeanoInt n
+sPeanoInt SZero = 0
+
+peanoTypeInt :: forall n. KnownPeano n => Integer
+peanoTypeInt = sPeanoInt (typeSPeano @n)
 
 data SPeano n where
   SZero :: SPeano 'Zero
@@ -353,7 +365,7 @@ type family Take n xs where
 
 type family Drop n xs where
    Drop 'Zero xs            = xs
-   Drop ('Succ n) '[]       = '[]
+   Drop _ '[]       = '[]
    Drop ('Succ n) (x ': xs) = Drop n xs
 
 type family At n xs where
