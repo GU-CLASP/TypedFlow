@@ -34,12 +34,10 @@ tensor operations. It is not normally imported directly by users.
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE UnicodeSyntax #-}
 
-module TypedFlow.Abstract (broadcast
-                          ,permToFun) where
+module TypedFlow.Abstract where
 
 import TypedFlow.Python
 import Prelude hiding (tanh,Num(..),Floating(..),round,floor,(/),sqrt)
-import qualified Prelude
 import Prelude ((-))
 import GHC.TypeLits
 import Data.Proxy
@@ -72,10 +70,10 @@ broadcast n = f
 
 protoBroadcast :: forall n s t. KnownNat n => Proxy n -> (forall s' t'. T s' t' -> T (n ': s') t') -> T s t -> T (n ': s) t
 protoBroadcast n rec tensor
-  | finished tensor = SimpleBroadcast (Proxy @'[]) n (Proxy @s)  tensor
+  | finished tensor = SimpleBroadcast LZ n _  tensor
   | otherwise = case tensor of
   (Where cond x y) -> Where (rec cond) (rec x) (rec y)
-  (SimpleBroadcast s0 m s1 x) -> SimpleBroadcast (proxyCons n s0) m s1 (rec x)
+  (SimpleBroadcast s0 m s1 x) -> SimpleBroadcast (LS (proxySat n) s0) m s1 (rec x)
   T _ -> error "panic: broadcast constant should be finished!"
   Share x -> Share (rec x)
   -- ArgMax s0 m s1 x -> ArgMax (LS n s0) m s1 (rec x)
@@ -84,11 +82,11 @@ protoBroadcast n rec tensor
      Nothing -> error "panic: Unbroadcast of wrong kind found!"
      Just Refl -> x
   BinOp op s0 s1 s2 s3 x y -> BinOp op (LS n s0) s1 s2 s3 (rec x) (rec y)
-  -- MatMul m p o s x y -> MatMul m p o (LS n s) (rec x) (rec y)
+  UnOp op s0 s1 s2 x -> UnOp op (LS n s0) s1 s2 (rec x)
   Gather is s0 m s1 x ix
     | finished ix -> Gather is (LS n s0) m s1 (rec x) ix
     | otherwise -> error "broadcast on gather index not implemented"
-  Transpose t s x -> Transpose (PermSkip t) s (rec x)
+  Transpose s t x -> Transpose (LS n s) (PermSkip t) (rec x)
   -- ReduceBy op s0 m s1 x -> ReduceBy op (LS n s0) m s1 (rec x)
   ReshapeTo s x -> ReshapeTo (LS n s) (rec x)
   Stack s0 m s1 xs -> Stack (LS n s0) m s1 (fmap (rec) xs)
@@ -126,7 +124,7 @@ finished = f where
 
 protoFinished :: (forall s' t'. T s' t' -> Bool) -> T s t -> Bool
 protoFinished rec = \case
-  (Where cond x y) -> rec cond && recs [x,y]
+  (Where cond x y) -> rec cond && rec x && rec y
   (SimpleBroadcast _s0 _m _s1 x) -> rec x
   T _ -> True
   Share x -> rec x
@@ -156,13 +154,13 @@ inversePerm (PermTrans x y) = PermTrans (inversePerm y) (inversePerm x)
 atShape :: SList s -> T s t -> T s t
 atShape _ x = x
 
-reshapeAuto :: forall s s0 t. KnownLen s => Product s ~ Product s0 => T s0 t -> T s t
+reshapeAuto :: forall s s0 t. KnownShape s => Product s ~ Product s0 => T s0 t -> T s t
 reshapeAuto = ReshapeTo (shapeSList @s)
 
-reshapeTo :: forall s s0 t. KnownLen s => Product s ~ Product s0 => SList s -> T s0 t -> T s t
+reshapeTo :: forall s s0 t. KnownShape s => Product s ~ Product s0 => SList s -> T s0 t -> T s t
 reshapeTo s = ReshapeTo s
 
-reshapeFrom :: forall s s0 t. KnownLen s => Product s ~ Product s0 => Proxy s0 -> T s0 t -> T s t
+reshapeFrom :: forall s s0 t. KnownShape s => Product s ~ Product s0 => Proxy s0 -> T s0 t -> T s t
 reshapeFrom _ = ReshapeTo (shapeSList @s)
 
 type SNMap k v = IORef (I.IntMap [(StableName k,v)])
@@ -452,3 +450,15 @@ transposeN01 = Transpose (permN01 (shapeSList @s) (Proxy @m) (Proxy @n))
 -- sequenceMask :: forall maxlen bs. KnownNat maxlen => Tensor '[bs] Int32 -> Tensor '[maxlen,bs] TFBool
 -- sequenceMask (T x) = T (funcall "tf.sequence_mask" [x, named "maxlen" (showDim @maxlen)])
 
+
+-- | Map a function along the first dimension of a tensor
+mapT :: forall s t r u n. KnownNat n => KnownTyp u => KnownLen r => KnownLen s => (T s t -> T r u) ->  T (n ': s) t -> T (n ': r) u
+mapT f x = broadcast (Proxy @n) (f (Unbroadcast (Proxy @n) x))
+
+zipWithT :: forall (s :: [Nat]) (t :: Typ) (s1 :: [Nat]) (t1 :: Typ) (s2 :: Shape) (n :: Nat) (t2 :: Typ).
+            KnownNat n => (KnownLen s, KnownLen s2, KnownLen s1) => KnownTyp t2 =>
+                  (T s t -> T s1 t1 -> T s2 t2)
+                  -> Tensor (n ': s) t
+                  -> Tensor (n ': s1) t1
+                  -> Tensor (n ': s2) t2
+zipWithT f x y = broadcast (Proxy @n) (f (Unbroadcast (Proxy @n) x) (Unbroadcast (Proxy @n) y))

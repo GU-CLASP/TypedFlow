@@ -120,7 +120,7 @@ import Data.Proxy
 import TypedFlow.Types
 import TypedFlow.Python
 import Control.Monad (when)
-
+import TypedFlow.Abstract
 
 -- | Repeat a flexible-shape constant vector to form a heterogeneous tensor vector.
 repeatT :: forall (ss :: [Shape]) t. All KnownShape ss => KnownLen ss =>
@@ -403,47 +403,6 @@ infixl 7 ∙
 x · y = reduceSum0 (x ⊙ y)
 infixl 7 ·
 
--- mapT' :: forall s t r u n. KnownLen r => KnownLen s => KnownNat n => (T s t -> T r u) ->  T (n ': s) t -> Gen (T (n ': r) u)
--- mapT' f t = do
---   xs <- unstack t
---   return (stack (fmap f xs))
-
--- | Map a function along the first dimension of a tensor
-mapT :: forall s t r u n. KnownTyp u => KnownLen r => KnownLen s => (T s t -> T r u) ->  T (n ': s) t -> Gen (T (n ': r) u)
-mapT f x = do
-  x' <- mapTN @n f (transposeN @s @n x)
-  return (transposeN' @r x')
-
--- | Map a function along the last dimension of a tensor
-mapTN :: forall n s t r u. KnownTyp u => (T s t -> T r u) ->  T (s ++ '[n]) t -> Gen(T (r ++ '[n]) u)
-mapTN f t = do
-  fn <- lambda f
-  return (T (funcall "tf.map_fn" [fn, fromTensor t, named "dtype" (showTyp @u)]))
-
--- TODO: separate harmless and harmful effects. (the big question: are assignments harmful?)
-
-zipWithT :: forall (s :: [Nat]) (t :: Typ) (s1 :: [Nat]) (t1 :: Typ) (s2 :: Shape) (n :: Nat) (t2 :: Typ).
-            KnownNat n => (KnownLen s, KnownLen s2, KnownLen s1) => KnownTyp t2 =>
-                  (T s t -> T s1 t1 -> T s2 t2)
-                  -> Tensor (n ': s) t
-                  -> Tensor (n ': s1) t1
-                  -> Gen (Tensor (n ': s2) t2)
-zipWithT f x y = do
-  -- xs <- unstack x
-  -- ys <- unstack y
-  -- return (stack (f <$> xs <*> ys))
-  x' <- zipWithTN @n f (transposeN @s @n x) (transposeN @s1 @n y)
-  return (transposeN' @s2 x')
-
-zipWithTN :: forall (n :: Nat) (s :: [Nat]) (t :: Typ) (s1 :: [Nat]) (t1 :: Typ) (s2 :: Shape) (t2 :: Typ).
-            KnownTyp t2 =>
-                  (T s t -> T s1 t1 -> T s2 t2)
-                  -> Tensor (s ++ '[n]) t
-                  -> Tensor (s1 ++ '[n]) t1
-                  -> Gen (Tensor (s2 ++ '[n]) t2)
-zipWithTN f (T t) (T u) =  do
-  fn <- lambda2 f
-  return (T (funcall "tf.map_fn" [fn, tuple [t,u], named "dtype" (showTyp @t2)]))
 
 
 -- apparently tensorflow (python?) is not aware of 2-argument

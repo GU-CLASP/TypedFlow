@@ -145,7 +145,7 @@ peekAtAny p v = modify $ \GState{..} -> GState{genPeeks = if p `elem` map fst ge
 assign :: ∀s t. T s t -> Gen (T s t)
 assign x = do
   v <- newVar
-  v <-- generatePure _ x
+  v <-- generatePure x
   return (T v)
 
 lambda :: (T s t -> T s' t') -> Gen UntypedExpression
@@ -178,13 +178,13 @@ permToFun = \case
     0 -> 0
     x -> permToFun p (x-1) Prelude.+ 1
 
-generatePure :: forall s t. (forall s' t'. T s' t' -> DOC) -> T s t -> DOC
-generatePure rec = \case
+generatePure :: forall s t. T s t -> DOC
+generatePure = \case
   T x -> x
   SimpleBroadcast s m s' x ->
    let sms' = (s `appSList` (LS (proxySat m) s'))
    in knownSShape sms' $
-      funcall "tf.add" [func "tf.expand_dims" [rec x] [("axis", integer (sListLength s))], 
+      funcall "tf.add" [func "tf.expand_dims" [rec x] [("axis", integer (sListLength s))],
                                                  func "tf.zeros" [showShape'' sms'] [("dtype", showTyp @t)]]
   -- Nicer implementation upcoming?
   -- https://github.com/tensorflow/tensorflow/pull/15243
@@ -198,7 +198,7 @@ generatePure rec = \case
   ReshapeTo s2 t ->  funcall "tf.reshape" [rec t, showShapeMinus s2]
   Stack s0 _ _ (V xs) -> funcall "tf.stack" [list (map rec xs), text "axis=" <> integer (sListLength s0)]
   Transpose s p x -> func "tf.transpose" [rec x] [("perm",list (map (integer . permToFun p) [0.. sListLength s]))]
-
+ where rec = generatePure
 -- broadcast0 :: forall n s t. KnownTyp t => KnownNat n => KnownShape s => Tensor s t -> Tensor (n ': s) t
 -- broadcast0 x = binOp 
 --  -- this is some "hack to force the shape to that we want."
