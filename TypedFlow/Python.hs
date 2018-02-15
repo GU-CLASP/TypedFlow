@@ -189,8 +189,13 @@ generatePure :: forall s t. KnownTyp t => KnownShape s => T s t -> Gen DOC
 generatePure x = return (generatePure' typeSShape x)
 
 generatePure' :: forall s t. KnownTyp t => SShape s -> T s t -> DOC
-generatePure' sR = \case
+generatePure' sR = knownSShape sR $ \case
   T x -> x
+  If c x y -> func "tf.cond" [rec typeSShape c] [("true_fn", lambda0 (rec typeSShape x))
+                                                ,("false_fn", lambda0 (rec typeSShape y))
+                                                ,("strict","True")]
+    where lambda0 z = text "lambda: " <> z
+  Where c x y -> funcall "tf.where" [rec typeSShape c, rec typeSShape x, rec typeSShape y]
   UnOp operation s0 s1 _s2 x -> case operation of
     SimpleBroadCast n ->
     -- Nicer implementation upcoming?
@@ -212,6 +217,7 @@ generatePure' sR = \case
   ReshapeFrom s t ->  funcall "tf.reshape" [rec s t, knownSShape sR (showShapeMinus sR)]
   Stack s0 _m s1 (V xs) -> funcall "tf.stack" [list (map (rec (s0 .+. s1)) xs), text "axis=" <> integer (sListLength s0)]
   Transpose s p x -> func "tf.transpose" [rec s x] [("perm",list (map (integer . permToFun p) [0.. sListLength s]))]
+  Gather indexShape s0 m s1 x ix -> func "tf.gather" [rec (s0 .+. (LS m s1)) x, rec indexShape ix] []
   Convolution bs inChans outChans filterShape x filters ->
     func "tf.nn.convolution" [recx, recFilters] [("padding",text (show ("SAME"::String))),("data_format", text (show dataFormat))]
    where dataFormat = case sListLength filterShape of

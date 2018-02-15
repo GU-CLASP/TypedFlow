@@ -501,7 +501,7 @@ convolution :: forall outputChannels filterSpatialShape inChannels t.
                KnownNat inChannels => KnownNat outputChannels => KnownShape filterSpatialShape
             => KnownTyp t
             => Length filterSpatialShape <= 3
-            => T (filterSpatialShape ++ '[inChannels]) t -- ^ input tensor (batched)
+            => T (filterSpatialShape ++ '[inChannels]) t -- ^ input tensor
             -> T (filterSpatialShape ++ '[inChannels,outputChannels]) t -- ^ filters
             -> T (filterSpatialShape ++ '[outputChannels]) t
 convolution x filters = knownAppend @filterSpatialShape @'[outputChannels] $
@@ -615,3 +615,19 @@ randomOrthogonal = T (funcall' (funcall "tf.orthogonal_initializer" [named "dtyp
 -- | Clip a tensor
 clipByValue :: KnownShape s => KnownBits t => Float -> Float -> T s (Flt t) -> T s (Flt t)
 clipByValue lo hi = UnOp (Simple1Op "tf.clip_by_value" [float lo,float hi]) LZ typeSShape typeSShape
+
+
+
+-- | (where_ c x y)[i] = if c[i] then x[i] else y[i]
+where_ :: T s TFBool -> T s t -> T s t -> T s t
+where_ = Where
+
+
+-- | Selection of a tensor (note: this is a strict operation)
+if_ :: Scalar TFBool -> T s t -> T s t -> T s t
+if_ = If
+
+-- | @(gather x ix)[k] = x[ix[k]]@. See https://www.tensorflow.org/api_docs/python/tf/gather
+gather :: forall n indexShape s t. KnownShape s => KnownNat n => KnownShape indexShape => T (n ': s) t -> T indexShape Int32 -> T (indexShape ++ s) t
+gather = Gather typeSShape LZ (natSat @n) typeSShape
+

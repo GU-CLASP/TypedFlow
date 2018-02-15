@@ -72,7 +72,7 @@ module TypedFlow.TF (
   clipByGlobalNorm,
   clipByValue,
   -- ** Indexing
-  last0, nth0, nth0', -- gather,
+  last0, nth0, nth0', gather,
   -- ** Split and concatenate
   -- split0,
   slice, slice1,
@@ -255,7 +255,7 @@ varianceScaling factor mode distr = case distr of
     limit = Prelude.sqrt ((case distr of NormalDistr -> 1.3; UniformDistr -> 3) Prelude.* factor Prelude./ n)
 
 
-glorotUniform :: forall inDim outDim t. KnownNat inDim => (KnownNat outDim, KnownBits t) => Tensor '[inDim,outDim] ('Typ 'Float t)
+glorotUniform :: forall inDim outDim t. KnownNat inDim => (KnownNat outDim, KnownBits t) => Tensor '[outDim,inDim] ('Typ 'Float t)
 glorotUniform = varianceScaling 1 VSAvg UniformDistr
 
 -- | 'cons' an element and an array (in the first dimension)
@@ -285,20 +285,6 @@ infixl 7 ·
 
 
 
--- | Selection of a tensor (note: this is a strict operation)
-if_ :: Scalar TFBool -> T s t -> T s t -> T s t
-if_ (T c) (T x) (T y) = T (funcall "tf.cond" [-- named "pred" -- names have changed between TF 1.1 and TF 1.3
-                                              c,
-                                              -- named "true_fn"
-                                              (lambda0 x),
-                                              -- named "false_fn"
-                                              (lambda0 y),
-                                              named "strict" (bool True)])
-  where lambda0 z = text "lambda: " <> z
-
--- | (where_ c x y)[i] = if c[i] then x[i] else y[i]
-where_ :: T s TFBool -> T s t -> T s t -> T s t
-where_ (T c) (T x) (T y) = T (funcall "tf.where" [c, x, y])
 
 -------------------------
 -- Generic parameters
@@ -344,22 +330,20 @@ class KnownTensors p => ParamWithDefault p where
 -- flattenHTV Unit = zeros
 -- flattenHTV (F x :* xs) = concat0 (flattenAll x) (flattenHTV xs)
 
+-- class CProduct (xs :: [Nat])
+-- instance Fun CProduct where type Ap CProduct xs = Product xs
 
-class CProduct (xs :: [Nat])
-instance Fun CProduct where type Ap CProduct xs = Product xs
-
-inflateHTV :: ∀ xs s t. (All KnownShape xs, KnownLen s, KnownLen xs) =>
-          Tensor '[Sum (Ap (FMap CProduct) xs)] t -> Gen (HTV t xs)
-inflateHTV (T x) = do
-  v <- newVar
-  gen (v <> text " = " <> funcall "tf.split" [x, showShape' (prodshape @xs shapeSList), text "axis=0"])
-  return (mkArr @xs 0 shapeSList  v)
-  where mkArr :: forall zs. All KnownShape zs => Int -> SList zs -> DOC -> HTV t zs
-        mkArr _ LZ _ = Unit
-        mkArr i (LS _ n) v = F (unsafeReshape (T (v <> brackets (int i)) )):* mkArr (succ i) n v
-
-        prodshape :: forall zs. All KnownShape zs => SList zs -> [Integer]
-        prodshape LZ = []
-        prodshape (LS xx xs) = product (shapeToList' (shapeSListProxy xx)) : prodshape xs
+-- inflateHTV :: ∀ xs s t. (All KnownShape xs, KnownLen s, KnownLen xs) =>
+--           Tensor '[Sum (Ap (FMap CProduct) xs)] t -> Gen (HTV t xs)
+-- inflateHTV (T x) = do
+--   v <- newVar
+--   gen (v <> text " = " <> funcall "tf.split" [x, showShape' (prodshape @xs shapeSList), text "axis=0"])
+--   return (mkArr @xs 0 shapeSList  v)
+--   where mkArr :: forall zs. All KnownShape zs => Int -> SList zs -> DOC -> HTV t zs
+--         mkArr _ LZ _ = Unit
+--         mkArr i (LS _ n) v = F (unsafeReshape (T (v <> brackets (int i)) )):* mkArr (succ i) n v
+--         prodshape :: forall zs. All KnownShape zs => SList zs -> [Integer]
+--         prodshape LZ = []
+--         prodshape (LS xx xs) = product (shapeToList' (shapeSListProxy xx)) : prodshape xs
 
 

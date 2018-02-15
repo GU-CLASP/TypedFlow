@@ -138,6 +138,13 @@ initLast' (LS _ (LS y ys)) k = initLast' (LS y ys) k
 initLast :: forall s k. KnownShape s => ((Init s ++ '[Last s]) ~ s => k) -> k
 initLast = initLast' @s typeSList
 
+appRUnit' :: forall (s::[t]). (s ++ '[]) :~: s
+appRUnit' = unsafeCoerce Refl
+
+appRUnit :: forall (s::[t]) k. (((s ++ '[]) ~ s) => k) -> k
+appRUnit k = case appRUnit' @t @s of
+  Refl -> k
+
 knownLast' :: All KnownNat s => SList s -> (KnownNat (Last s) => k) -> k
 knownLast' LZ _ = error "knownLast: does not hold on empty lists"
 knownLast' (LS _ LZ) k = k
@@ -158,6 +165,7 @@ splitApp = splitApp' @ys (typeSList @xs)
 knownAppend' :: forall t s k. (All KnownNat s, KnownShape t) => SList s -> (KnownShape (s ++ t) => k) -> k
 knownAppend' LZ k = k
 knownAppend' (LS _ n) k = knownAppend' @t n k
+
 
 knownAppend :: forall s t k.  (KnownShape s, KnownShape t) => (KnownShape (s ++ t) => k) -> k
 knownAppend = knownAppend' @t (typeSList @s)
@@ -563,9 +571,11 @@ data T (s :: Shape) (t :: Typ) where
   Transpose :: SShape s0 -> Permutation s0 s -> T s0 t -> T s t
   Share :: T s t -> T s t
   Stack :: SShape s0 -> Sat KnownNat m -> SShape s1 -> V m (T (s0 ++ s1) t) -> T (s0 ++ (m ': s1)) t
-  Gather :: SShape indexShape -> SShape s0 -> Sat KnownNat m -> SShape s1 -> T (s0 ++ (m ': s1)) t -> T indexShape ('Typ 'Int w0) -> T (s0 ++ indexShape ++ s1) t
+  Gather :: KnownBits w => SShape indexShape -> SShape s0 -> Sat KnownNat m -> SShape s1 -> T (s0 ++ (m ': s1)) t -> T indexShape ('Typ 'Int w) -> T (s0 ++ indexShape ++ s1) t
   -- MatMul :: KnownLen s => SShape m -> SShape n ->  SShape o -> SShape s -> T (s ++ '[n,o]) t -> T (s ++ [o,m]) t -> T (s ++ [n,m]) t
   Where :: T s TFBool  -> T s t -> T s t -> T s t
+  If :: Scalar TFBool -> T s t -> T s t -> T s t
+
   Convolution :: Sat KnownNat bs -> Sat KnownNat inChannels -> Sat KnownNat outChannels -> SShape filterSpatialShape
             -> T (bs ': filterSpatialShape ++ '[inChannels]) t -- ^ input tensor (batched)
             -> T (filterSpatialShape ++ '[inChannels,outChannels]) t -- ^ filters

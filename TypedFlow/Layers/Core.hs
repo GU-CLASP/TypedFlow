@@ -38,7 +38,7 @@ module TypedFlow.Layers.Core
     -- * Dropout
     DropProb(..), mkDropout, mkDropouts,
     -- * Embedding
-    EmbeddingP(..), embedding, embedding',
+    EmbeddingP(..), embedding, 
     -- * Convolutional
     ConvP(..), conv, {-convValid,-} maxPool1D, maxPool2D)
 
@@ -78,14 +78,11 @@ instance (KnownNat numObjects, KnownBits b, KnownNat embeddingSize) => ParamWith
   defaultInitializer = EmbeddingP (randomUniform (-0.05) 0.05)
 
 -- | embedding layer
-embedding' :: ∀ embeddingSize numObjects batchSize t.
-             EmbeddingP numObjects embeddingSize t -> Tensor '[batchSize] Int32 -> Tensor '[embeddingSize,batchSize] ('Typ 'Float t)
-embedding' (EmbeddingP param) input = gather @ '[embeddingSize] (transpose param) input
+embedding :: ∀ embeddingSize numObjects t. KnownNat embeddingSize => KnownNat numObjects =>
+             EmbeddingP numObjects embeddingSize t -> Tensor '[] Int32 -> Tensor '[embeddingSize] ('Typ 'Float t)
+embedding (EmbeddingP param) input = gather param input
 
 
-embedding :: ∀ embeddingSize numObjects s t.
-             KnownNat embeddingSize => KnownShape s => EmbeddingP numObjects embeddingSize t -> Tensor s Int32 -> Tensor (embeddingSize ': s) ('Typ 'Float t)
-embedding e x = knownProduct @s $ reshape (embedding' e (reshape @'[Product s] x))
 
 instance (KnownNat a, KnownNat b, KnownBits t) => KnownTensors (DenseP t a b) where
   travTensor f s (DenseP x y) = DenseP <$> travTensor f (s<>"_w") x <*> travTensor f (s<>"_bias") y
@@ -94,7 +91,7 @@ instance (KnownNat n, KnownNat m, KnownBits b) => ParamWithDefault (DenseP b n m
   defaultInitializer = DenseP glorotUniform (truncatedNormal 0.1)
 
 -- | Dense layer (Apply a linear function)
-(#), dense :: ∀m n batchSize t. DenseP t n m -> Tensor '[n, batchSize] (Flt t) -> Tensor '[m, batchSize] (Flt t)
+(#), dense :: ∀m n t. KnownNat n => KnownNat m => KnownBits t => DenseP t n m -> Tensor '[n] (Flt t) -> Tensor '[m] (Flt t)
 (DenseP weightMatrix bias) # v = (weightMatrix ∙ v) + bias
 
 dense = (#)
@@ -120,7 +117,7 @@ newtype EndoTensor t s = EndoTensor (Tensor s t -> Tensor s t)
 
 -- | Generate a dropout function for an heterogeneous tensor vector.
 mkDropouts :: KnownBits t => KnownLen shapes => All KnownShape shapes => DropProb -> Gen (HTV ('Typ 'Float t) shapes -> HTV ('Typ 'Float t) shapes)
-mkDropouts d = appEndoTensor <$> mkDropouts' shapeSList where
+mkDropouts d = appEndoTensor <$> mkDropouts' typeSList where
    mkDropouts' :: forall shapes t. KnownBits t => All KnownShape shapes =>
                   SList shapes -> Gen (NP (EndoTensor ('Typ 'Float t)) shapes)
    mkDropouts' LZ = return Unit
@@ -138,28 +135,31 @@ mkDropouts d = appEndoTensor <$> mkDropouts' shapeSList where
 -- Convolutional layers
 
 data ConvP t outChannels inChannels filterSpatialShape
-  = ConvP (T ('[outChannels,inChannels] ++ filterSpatialShape)  ('Typ 'Float t)) (T '[outChannels] ('Typ 'Float t))
+  = ConvP (T (filterSpatialShape ++ '[inChannels,outChannels])  ('Typ 'Float t)) (T '[outChannels] ('Typ 'Float t))
 
 instance (KnownNat outChannels,KnownNat inChannels, KnownShape filterSpatialShape, KnownBits t) =>
   ParamWithDefault (ConvP t outChannels inChannels filterSpatialShape) where
-  defaultInitializer = prodHomo @filterSpatialShape @'[outChannels] $
-                       knownAppend @filterSpatialShape @'[outChannels] $
-                       ConvP (transposeN' (reshape i)) (constant 0.1)
-    where i :: T '[inChannels,Product filterSpatialShape* outChannels] (Flt t)
+  defaultInitializer = prodHomo @filterSpatialShape @'[inChannels, outChannels] $
+                       prodAssoc @(Product filterSpatialShape) @inChannels @outChannels $
+                       knownAppend @filterSpatialShape @'[inChannels,outChannels] $
+                       knownProduct @filterSpatialShape $
+                       ConvP (reshape i) (constant 0.1)
+    where i :: T '[Product filterSpatialShape*inChannels,outChannels] (Flt t)
           i = knownProduct @filterSpatialShape glorotUniform
 
 instance (KnownNat outChannels,KnownNat inChannels, KnownShape filterSpatialShape, KnownBits t) =>
   KnownTensors (ConvP t outChannels inChannels filterSpatialShape) where
-  travTensor f s (ConvP x y) = ConvP <$> travTensor f (s<>"_filters") x <*> travTensor f (s <> "_biases") y
+  travTensor f s (ConvP x y) = knownAppend @filterSpatialShape @'[inChannels,outChannels] $
+          ConvP <$> travTensor f (s<>"_filters") x <*> travTensor f (s <> "_biases") y
 
 -- | Size-preserving convolution layer
-conv :: forall outChannels filterSpatialShape inChannels s t.
-                  ((1 + Length filterSpatialShape) ~ Length s,
-                   Length filterSpatialShape <= 3,
-                   KnownLen filterSpatialShape) => -- the last dim of s is the batch size
-                  ConvP t outChannels inChannels filterSpatialShape ->
-                  T ('[inChannels] ++ s) ('Typ 'Float t) -> (T ('[outChannels] ++ s) ('Typ 'Float t))
-conv (ConvP filters bias) input = convolution input filters + bias
+conv :: forall outChannels filterSpatialShape inChannels t.
+               KnownNat inChannels => KnownNat outChannels => KnownShape filterSpatialShape => KnownBits t
+            => Length filterSpatialShape <= 3
+            => ConvP t outChannels inChannels filterSpatialShape
+            -> T (filterSpatialShape ++ '[inChannels]) ('Typ 'Float t)
+            -> T (filterSpatialShape ++ '[outChannels]) ('Typ 'Float t)
+conv (ConvP filters bias) input = mapT (+bias) (convolution @outChannels @filterSpatialShape @inChannels input filters)
 
 -- -- | Convolution layers with no padding (applying the filter only on
 -- -- positions where the input is fully defined, aka "VALID" in
