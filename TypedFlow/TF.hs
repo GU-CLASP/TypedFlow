@@ -125,7 +125,7 @@ import TypedFlow.Abstract
 -- | Repeat a flexible-shape constant vector to form a heterogeneous tensor vector.
 repeatT :: forall (ss :: [Shape]) t. All KnownShape ss => KnownLen ss =>
            (forall s. KnownShape s => T s t) -> HTV t ss
-repeatT f = zs (shapeSList @ss)
+repeatT f = zs (typeSList @ss)
   where zs :: forall (s :: [Shape]). All KnownShape s => SList s -> HTV t s
         zs LZ = Unit
         zs (LS _ n) = F f :* zs n
@@ -204,48 +204,6 @@ placeholder n = do
   return (T name)
 
 
-class LastEqual x xs
-instance                   LastEqual x (x ': '[])
-instance LastEqual x (y2 ': xs) => LastEqual x (y ': (y2 ': xs))
-
--- | Reverse sequences. See https://www.tensorflow.org/api_docs/python/tf/reverse_sequence
-reverseSequences :: forall bs n x t. KnownLen x => LastEqual bs x => T '[bs] Int32 -> T (n ': x) t -> T (n ': x) t
-reverseSequences (T seqLengths) (T input) =
-  T (funcall "tf.reverse_sequence" [input, seqLengths, named "seq_axis" (showShapeLen @x),named "batch_axis" (int 0)])
-
-
--- | @(gather x ix)[k] = x[ix[k]]@. See https://www.tensorflow.org/api_docs/python/tf/gather
-gather :: ∀s n indexShape t. T (s ++ '[n]) t -> T indexShape Int32 -> T (s ++ indexShape) t
-gather = binOp "tf.gather"
-
-
-untypedConvolution :: forall outputChannels filterSpatialShape inChannels s t y.
-               KnownLen filterSpatialShape
-            => Length filterSpatialShape <= 3
-            => ((1 + Length filterSpatialShape) ~ Length s) -- the last dim of s is the batch size
-            => String
-            -> T (inChannels ': y) t -- ^ input tensor (batched)
-            -> T ('[outputChannels,inChannels] ++ filterSpatialShape) t -- ^ filters
-            -> T ('[outputChannels] ++ s) t
-untypedConvolution padding (T input) (T filters) = T (funcall "tf.nn.convolution"
-                                                      [input,filters
-                                                      ,named "padding" (text (show padding)) 
-                                                      ,named "data_format" (text (show dataFormat))])
-  where dataFormat = case listLen @ filterSpatialShape of
-          1 -> "NWC"
-          2 -> "NHWC"
-          3 -> "NDHWC"
-          _ -> error "convolution: more than 3 spatial dimensions are not supported!"
-
--- | Size-preserving convolution operation.
-convolution :: forall outputChannels filterSpatialShape inChannels s t.
-               KnownLen filterSpatialShape
-            => Length filterSpatialShape <= 3
-            => ((1 + Length filterSpatialShape) ~ Length s) -- the last dim of s is the batch size
-            => T ('[inChannels] ++ s) t -- ^ input tensor (batched)
-            -> T ('[outputChannels,inChannels] ++ filterSpatialShape) t -- ^ filters
-            -> T ('[outputChannels] ++ s) t
-convolution = untypedConvolution "SAME"
 
 -- type family AddSpatialDims xs ys where
 --   AddSpatialDims '[x] '[] = '[x]

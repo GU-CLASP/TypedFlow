@@ -207,8 +207,14 @@ generatePure sR = \case
   ReshapeFrom s t ->  funcall "tf.reshape" [rec s t, knownSShape sR (showShapeMinus sR)]
   Stack s0 _m s1 (V xs) -> funcall "tf.stack" [list (map (rec (s0 .+. s1)) xs), text "axis=" <> integer (sListLength s0)]
   Transpose s p x -> func "tf.transpose" [rec s x] [("perm",list (map (integer . permToFun p) [0.. sListLength s]))]
+  Convolution bs inChans outChans filterShape x filters ->
+    func "tf.nn.convolution" [recx, recFilters] [("padding",text (show ("SAME"::String))),("data_format", text (show dataFormat))]
+   where dataFormat = case sListLength filterShape of
+           1 -> ("NWC" :: String)
+           2 -> "NHWC"
+           3 -> "NDHWC"
+           _ -> error "convolution: more than 3 spatial dimensions are not supported!"
+         recx = generatePure (LS bs (sl filterShape inChans)) x
+         recFilters = generatePure (filterShape .+. (LS inChans (LS outChans LZ))) filters
  where rec = generatePure
--- broadcast0 :: forall n s t. KnownTyp t => KnownNat n => KnownShape s => Tensor s t -> Tensor (n ': s) t
--- broadcast0 x = binOp 
---  -- this is some "hack to force the shape to that we want."
 

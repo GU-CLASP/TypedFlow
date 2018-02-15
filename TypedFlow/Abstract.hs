@@ -359,6 +359,9 @@ unsafeReshape = ReshapeFrom (typeSShape @s1)
 flatten2 :: ∀ m n s t. KnownTyp t => (KnownNat m, KnownNat n, KnownShape s) => Tensor (m ': n ': s) t -> Tensor (m*n ': s) t
 flatten2 = prodAssoc @m @n @(Product s) reshape
 
+squeeze0 :: ∀ s t. KnownTyp t => (KnownShape s) => Tensor (1 ': s) t -> Tensor s t
+squeeze0 = reshape
+
 -- | Reshape a tensor so that the last two dimensions are collapsed
 flattenN2 :: ∀ s m n t. KnownTyp t => (KnownNat m, KnownNat n, KnownShape s) => Tensor (s ++ '[m,n]) t -> Tensor (s ++ '[m*n]) t
 flattenN2  = prodHomo @s @'[m,n] $
@@ -478,3 +481,28 @@ zipWithT :: forall (s :: [Nat]) (t :: Typ) (s1 :: [Nat]) (t1 :: Typ) (s2 :: Shap
                   -> Tensor (n ': s1) t1
                   -> Tensor (n ': s2) t2
 zipWithT f x y = broadcast (Proxy @n) (f (Unbroadcast (natSat @n) x) (Unbroadcast (natSat @n) y))
+
+class LastEqual x xs
+instance                   LastEqual x (x ': '[])
+instance LastEqual x (y2 ': xs) => LastEqual x (y ': (y2 ': xs))
+
+
+-- -- | @(gather x ix)[k] = x[ix[k]]@. See https://www.tensorflow.org/api_docs/python/tf/gather
+-- gather :: ∀s n indexShape t. T (s ++ '[n]) t -> T indexShape Int32 -> T (s ++ indexShape) t
+-- gather = binOp "tf.gather"
+
+
+
+-- | Size-preserving convolution operation.
+convolution :: forall outputChannels filterSpatialShape inChannels t.
+               KnownNat inChannels => KnownNat outputChannels => KnownShape filterSpatialShape
+            => KnownTyp t
+            => Length filterSpatialShape <= 3
+            => T (filterSpatialShape ++ '[inChannels]) t -- ^ input tensor (batched)
+            -> T (filterSpatialShape ++ '[inChannels,outputChannels]) t -- ^ filters
+            -> T (filterSpatialShape ++ '[outputChannels]) t
+convolution x filters = knownAppend @filterSpatialShape @'[outputChannels] $
+                        knownAppend @filterSpatialShape @'[inChannels] $
+  squeeze0 (Convolution (natSat @1) (natSat @inChannels) (natSat @outputChannels) (typeSShape @filterSpatialShape)
+             (expandDim0 x)
+             filters)
