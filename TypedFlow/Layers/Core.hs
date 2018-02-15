@@ -50,7 +50,8 @@ import GHC.TypeLits
 -- import Text.PrettyPrint.Compact (float)
 import TypedFlow.TF
 import TypedFlow.Types
-import TypedFlow.Python
+import TypedFlow.Python (assign)
+import TypedFlow.Abstract
 import Control.Monad.State (gets)
 -- import Data.Type.Equality
 -- import Data.Kind (Type,Constraint)
@@ -159,7 +160,7 @@ conv :: forall outChannels filterSpatialShape inChannels t.
             => ConvP t outChannels inChannels filterSpatialShape
             -> T (filterSpatialShape ++ '[inChannels]) ('Typ 'Float t)
             -> T (filterSpatialShape ++ '[outChannels]) ('Typ 'Float t)
-conv (ConvP filters bias) input = mapT (+bias) (convolution @outChannels @filterSpatialShape @inChannels input filters)
+conv (ConvP filters bias) input = mapTT @filterSpatialShape (+bias) (convolution @outChannels @filterSpatialShape @inChannels input filters)
 
 -- -- | Convolution layers with no padding (applying the filter only on
 -- -- positions where the input is fully defined, aka "VALID" in
@@ -173,23 +174,4 @@ conv (ConvP filters bias) input = mapT (+bias) (convolution @outChannels @filter
 --           -> (T ('[outChannels] ++ s) ('Typ 'Float t))
 -- convValid (ConvP filters bias) input = convolutionValid input filters + bias
 
-
--- | x by y maxpool layer.
-maxPool2D :: forall windowx windowy batch height width channels t.
-             (KnownNat windowx, KnownNat windowy) =>
-             T '[channels,width*windowx,height*windowx,batch] (Flt t) -> T '[channels,width,height,batch] (Flt t)
-maxPool2D (T value) = T (funcall "tf.nn.max_pool" [value
-                                                  ,showShape @'[1,windowx,windowy,1]
-                                                  ,showShape @'[1,windowx,windowy,1]
-                                                  ,named "padding" (str "SAME") ])
-
--- | maxpool layer. window size is the first type argument.
-maxPool1D :: forall window batch width channels t.
-             (KnownNat window) =>
-             T '[channels,width*window,batch] (Flt t) -> T '[channels,width,batch] (Flt t)
-maxPool1D (T value) = T (funcall "tf.nn.pool" [named "input" value
-                                              ,named "window_shape" (showShape @'[1,window,1])
-                                              ,named "pooling_type" (str "MAX")
-                                              ,named "padding" (str "SAME")
-                                              ])
 

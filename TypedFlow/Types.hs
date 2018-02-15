@@ -575,11 +575,29 @@ data T (s :: Shape) (t :: Typ) where
   -- MatMul :: KnownLen s => SShape m -> SShape n ->  SShape o -> SShape s -> T (s ++ '[n,o]) t -> T (s ++ [o,m]) t -> T (s ++ [n,m]) t
   Where :: T s TFBool  -> T s t -> T s t -> T s t
   If :: Scalar TFBool -> T s t -> T s t -> T s t
-
   Convolution :: Sat KnownNat bs -> Sat KnownNat inChannels -> Sat KnownNat outChannels -> SShape filterSpatialShape
             -> T (bs ': filterSpatialShape ++ '[inChannels]) t -- ^ input tensor (batched)
             -> T (filterSpatialShape ++ '[inChannels,outChannels]) t -- ^ filters
             -> T (bs ': filterSpatialShape ++ '[outChannels]) t
+  Pool :: Length outSpatial ~ Length window =>
+          Sat KnownNat bs -> SShape window -> PoolingType -> Sat KnownNat numChannels -> SShape outSpatial
+            -> T (bs ': ZipWithMulShapes window outSpatial ++ '[numChannels]) t
+            -> T (bs ': outSpatial ++ '[numChannels]) t
+
+type family ZipWithMulShapes (xs::Shape) (xy::Shape) :: Shape
+type instance ZipWithMulShapes (x ': xs) (y ': ys) = x*y ': ZipWithMulShapes xs ys
+type instance ZipWithMulShapes '[] _ = '[]
+type instance ZipWithMulShapes _ '[] = '[]
+
+satMul :: forall n m. Sat KnownNat n -> Sat KnownNat m -> Sat KnownNat (n*m)
+satMul Sat Sat = Sat
+
+zipWithMulSShapes :: SShape xs -> SShape ys -> SShape (ZipWithMulShapes xs ys)
+zipWithMulSShapes LZ _ = LZ
+zipWithMulSShapes _ LZ = LZ
+zipWithMulSShapes (LS x xs) (LS y ys) = LS (satMul x y) (zipWithMulSShapes xs ys)
+
+data PoolingType = MaxPool | AvgPool
 
 type Tensor shape = T shape
 

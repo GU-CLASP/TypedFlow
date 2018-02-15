@@ -77,6 +77,9 @@ protoBroadcast :: forall n s t. Sat KnownNat n -> (forall s' t'. KnownTyp t' => 
 protoBroadcast n@(Sat) rec s tensor
   | finished tensor = knownSShape s $ UnOp (SimpleBroadCast 0) LZ s (LS n s) tensor
   | otherwise = case tensor of
+  If cond x y
+    | finished cond -> If cond (rec s x) (rec s y)
+    | otherwise ->  error "broadcast if condition not implemented"
   Where cond x y -> Where (rec s cond) (rec s x) (rec s y)
   T _ -> error "panic: broadcast constant should be finished!"
   Share x -> Share (rec s x)
@@ -85,9 +88,9 @@ protoBroadcast n@(Sat) rec s tensor
      Just Refl -> x
   BinOp op s0 s1 s2 s3 x y -> BinOp op (LS n s0) s1 s2 s3 (rec (s0 .+. s1) x) (rec (s0 .+. s2) y)
   UnOp op s0 s1 s2 x -> UnOp op (LS n s0) s1 s2 (rec (s0 .+. s1) x)
-  -- Gather is s0 m s1 x ix
-  --   | finished ix -> Gather is (LS n s0) m s1 (rec x) ix
-  --   | otherwise -> error "broadcast on gather index not implemented"
+  Gather is s0 m s1 x ix
+    | finished ix -> Gather is (LS n s0) m s1 (rec (s0 .+. LS m s1) x) ix
+    | otherwise -> error "broadcast on gather index not implemented"
   Transpose s0 t x -> Transpose (LS n s0) (PermSkip t) (rec s0 x)
   ReshapeFrom s0 x -> ReshapeFrom (LS n s0) (rec s0 x)
   -- Stack s0 m s1 xs -> Stack (LS n s0) m s1 (fmap (rec) xs)
@@ -100,9 +103,6 @@ protoBroadcast n@(Sat) rec s tensor
       ReshapeFrom (LS (satMul n bs) (filterShape `sl` outChans)) $
       Convolution (satMul n bs) inChans outChans filterShape (reshapeAuto (rec typeSShape x)) filters
     | otherwise -> error "broadcast on convolution filter not implemented"
-
-satMul :: forall n m. Sat KnownNat n -> Sat KnownNat m -> Sat KnownNat (n*m)
-satMul Sat Sat = Sat
 
 testEqual :: KnownNat m => KnownNat n => Proxy m -> Proxy n -> Maybe (m :~: n)
 testEqual m n = if natVal m == natVal n then Just (unsafeCoerce Refl) else Nothing
@@ -120,7 +120,8 @@ finished = f where
 
 protoFinished :: (forall s' t'. T s' t' -> Bool) -> T s t -> Bool
 protoFinished rec = \case
-  (Where cond x y) -> rec cond && rec x && rec y
+  If cond x y ->  rec cond && rec x && rec y
+  Where cond x y -> rec cond && rec x && rec y
   T _ -> True
   Share x -> rec x
   Unbroadcast _p _x -> False
@@ -131,6 +132,7 @@ protoFinished rec = \case
   ReshapeFrom _s x -> rec x
   Stack _s0 _m _s1 xs -> all rec xs
   Convolution _bs _inChans _outChans _filterShape x filters -> rec x && rec filters
+  Pool _ _ _ _ _ x  -> rec x
 
 perm210 :: Permutation (n ': m ': o ': s) (m ': o ': n ': s)
 perm210 = PermSwap `PermTrans` (PermSkip PermSwap)
@@ -477,6 +479,16 @@ transposeN01 = Transpose (typeSShape @s .+. typeSShape @'[m,n]) (permN01 (typeSL
 mapT :: forall s t r u n. KnownShape r => KnownNat n => KnownTyp u => KnownLen r => KnownLen s => (T s t -> T r u) ->  T (n ': s) t -> T (n ': r) u
 mapT f x = broadcast (Proxy @n) (f (Unbroadcast (natSat @n) x))
 
+
+mapTT :: forall a s t r u. KnownShape r => KnownShape a => KnownTyp u => KnownLen r => KnownShape s => KnownTyp t
+  => (T s t -> T r u) ->  T (a ++ s) t -> T (a ++ r) u
+mapTT f x = prodHomo @a @r $
+            prodHomo @a @s $
+            knownProduct @a $
+            knownAppend @a @r $
+            knownAppend @a @s $
+            reshape (broadcast (Proxy @(Product a)) (f (Unbroadcast (natSat @(Product a)) (reshape x))))
+
 zipWithT :: forall (s :: [Nat]) (t :: Typ) (s1 :: [Nat]) (t1 :: Typ) (s2 :: Shape) (n :: Nat) (t2 :: Typ).
             KnownShape s2 => KnownNat n => (KnownLen s, KnownLen s2, KnownLen s1) => KnownTyp t2 =>
                   (T s t -> T s1 t1 -> T s2 t2)
@@ -630,4 +642,18 @@ if_ = If
 -- | @(gather x ix)[k] = x[ix[k]]@. See https://www.tensorflow.org/api_docs/python/tf/gather
 gather :: forall n indexShape s t. KnownShape s => KnownNat n => KnownShape indexShape => T (n ': s) t -> T indexShape Int32 -> T (indexShape ++ s) t
 gather = Gather typeSShape LZ (natSat @n) typeSShape
+
+
+-- | x by y maxpool layer.
+maxPool2D :: forall windowx windowy height width channels t.
+             KnownNat height => KnownNat width => KnownNat channels => (KnownNat windowx, KnownNat windowy, KnownBits t) =>
+             T '[windowx*width,windowy*height,channels] (Flt t) -> T '[width,height,channels] (Flt t)
+maxPool2D x = squeeze0 (Pool (natSat @1) (typeSShape @'[windowx,windowy]) MaxPool (natSat @channels) (typeSShape @'[width,height]) (expandDim0 x))
+
+-- | maxpool layer. window size is the first type argument.
+maxPool1D :: forall window width channels t.
+             KnownNat width => KnownNat channels => (KnownNat window,KnownBits t) =>
+             T '[window*width,channels] (Flt t) -> T '[width,channels] (Flt t)
+maxPool1D x = squeeze0 (Pool (natSat @1) (typeSShape @'[window]) MaxPool (natSat @channels) (typeSShape @'[width]) (expandDim0 x))
+
 
