@@ -170,7 +170,7 @@ knownAppend = knownAppend' @t (typeSList @s)
 -- knownFmap' LZ = LZ
 -- knownFmap' (LS x n) = LS Proxy (knownFmap' @f n)
 
-knownSList :: SList xs -> (KnownLen xs => k) -> k
+knownSList :: SList' proxy xs -> (KnownLen xs => k) -> k
 knownSList LZ k = k
 knownSList (LS _ n) k = knownSList n k
 
@@ -556,7 +556,7 @@ type UntypedExpression = DOC
 
 data T (s :: Shape) (t :: Typ) where
   T :: UntypedExpression -> T s t
-  BinOp :: KnownTyp t => BinOp -> SShape s0 -> SShape s1 -> SShape s2 -> SShape s3 -> T (s0 ++ s1) t -> T (s0 ++ s2) t -> T (s0 ++ s3) u
+  BinOp :: (KnownTyp t, KnownTyp u) => BinOp -> SShape s0 -> SShape s1 -> SShape s2 -> SShape s3 -> T (s0 ++ s1) t -> T (s0 ++ s2) u -> T (s0 ++ s3) v
   UnOp :: KnownTyp t => UnOp -> SShape s0 -> SShape s1 -> SShape s2 -> T (s0 ++ s1) t -> T (s0 ++ s2) u
   Unbroadcast :: Sat KnownNat n -> T (n ': s) t -> T s t
   ReshapeFrom :: SShape s0 -> T s0 t -> T s t
@@ -573,9 +573,9 @@ data T (s :: Shape) (t :: Typ) where
 
 type Tensor shape = T shape
 
-data UnOp  = Simple1Op String | SliceOp Integer Integer | Axis1Op String Integer | IndexOp {indexOpAxis :: Integer, indexOpIndex :: Integer}
+data UnOp  = Simple1Op String [DOC] | SliceOp Integer Integer | Axis1Op String [(String,DOC)] Integer | IndexOp {indexOpAxis :: Integer, indexOpIndex :: Integer}
              | SimpleBroadCast Integer
-data BinOp = Simple2Op String | Axis2Op String Integer
+data BinOp = Simple2Op String (Maybe (String,String)) | Axis2Op String Integer
 
 data Permutation (s :: [k]) (t :: [k]) where
   PermId :: Permutation s t

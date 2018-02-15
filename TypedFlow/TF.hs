@@ -58,37 +58,38 @@ module TypedFlow.TF (
   -- ** indexwise unary operators
   round, sqrt, sigmoid, tanh, log, relu, floor, negate, square,
   -- ** Indexwise binary operators
-  add, addN, (+), (/), (⊕), (⊝), (⊙), (⊘), equal,
+  addN, (+), (/), (⊕), (⊝), (⊙), (⊘), equal,
   -- ** Products
   (∙), (·), matmul,
   -- ** Reducers
   reduceMeanAll, reduceSumAll, reduceMaxAll,
   reduceSum, reduceMean, reduceMax,
-  argmax, argmax0, argmax1,
+  -- argmax,
+  argmax0, argmax1,
   softmax0, softmax1,
   -- ** Gradients
   grad,
   clipByGlobalNorm,
   clipByValue,
   -- ** Indexing
-  last0, nth0, nth0', gather,
+  last0, nth0, nth0', -- gather,
   -- ** Split and concatenate
-  split0, slice, slice1,
-  stack0, unstack0, stackN,
+  -- split0,
+  slice, slice1,
+  stack0, -- unstack0, 
   stack1,
   concatT, concat0, concat1,
   -- ** Reshaping
   expandDim,
   expandDim0, squeeze0,
-  expandDim1, squeeze1,
+  expandDim1, 
   flatten2, flatten3, flatten12, flattenN2,
   inflate2, inflate3, inflate12,
-  broadcast0, broadcastN,
   reshape, flattenAll, inflateAll,
   -- ** Transposition
-  transpose, transposeN, transposeN', transpose01, transposeN01,
+  transposeN, transposeN', transpose01, transposeN01,
   -- ** Sequences
-  reverseSequences, sequenceMask,
+  -- reverseSequences, sequenceMask,
   -- ** Convolutions
   convolution, 
   -- ** Misc
@@ -98,7 +99,7 @@ module TypedFlow.TF (
   if_, where_,
   -- * Contrib
   -- ** Mapping
-  mapT, mapTN, zipWithT, zipWithTN,
+  mapT, zipWithT, 
   consT0, snocT0,
   -- ** Losses
   sigmoidCrossEntropyWithLogits,
@@ -113,7 +114,6 @@ module TypedFlow.TF (
 
 import Prelude hiding (tanh,Num(..),Floating(..),round,floor,(/),sqrt)
 import qualified Prelude
-import Prelude ((-))
 import Text.PrettyPrint.Compact hiding (Last, All,Product,Sum)
 import GHC.TypeLits
 import Data.Proxy
@@ -133,10 +133,11 @@ repeatT f = zs (typeSList @ss)
 -- TODO: use a different type for persistent?
 -- | Declare variable which persists between calls to session.run.
 persistent :: ∀ (shape :: Shape) t. (KnownTyp t,KnownShape shape) => Bool -> String -> T shape t -> Gen (T shape t)
-persistent trainable name (T initial) = do
+persistent trainable name initial = do
   v <- newVar
   when trainable (newParameter (ParamInfo name (shapeToList @shape) (typVal @t) (T v)))
-  v <-- funcall "tf.Variable" [initial, named "name" (string (show (name))), named "trainable" (bool trainable)]
+  i <- generatePure initial
+  v <-- funcall "tf.Variable" [i, named "name" (string (show (name))), named "trainable" (bool trainable)]
   return (T v)
 
 
@@ -147,8 +148,8 @@ parameter' :: ∀ (shape :: Shape) t. (KnownTyp t,KnownShape shape) => String ->
 parameter' = persistent True
 
 -- | Name a tensor so that it is made available for session.run.
-peekAt :: String -> Tensor s t -> Gen ()
-peekAt p (T v) = peekAtAny p v
+peekAt :: (KnownShape s,KnownTyp t) => String -> Tensor s t -> Gen ()
+peekAt p v = peekAtAny p =<< generatePure v
 
 peekAtMany :: String -> HTV t xs -> Gen ()
 peekAtMany p htv = peekAtAny p (list $ htoList $ hmap (\(F (T x)) -> K x) htv)
@@ -156,8 +157,11 @@ peekAtMany p htv = peekAtAny p (list $ htoList $ hmap (\(F (T x)) -> K x) htv)
 
 -- | Modify a mutable tensor. Attention: for the assignment to happen,
 -- the resulting tensor must be evaluated!
-modifyPersistent :: T s t -> T s t -> T s t
-modifyPersistent (T ref) (T value) = T (funcall "tf.assign" [ref,value])
+modifyPersistent :: (KnownShape s,KnownTyp t) => T s t -> T s t -> Gen (T s t)
+modifyPersistent (ref) (value) = do
+  r <- generatePure ref
+  v <- generatePure value
+  return (T (funcall "tf.assign" [r,v]))
 
 -- TODO: get the parameters from the genParams field
 -- | Return a list of parameters.
@@ -172,8 +176,10 @@ getParameters = do
 
 -- TODO: gradient wrt. a HTV
 -- | Gradient of wrt. given parameters.
-grad :: T s Float32 -> UntypedExpression -> UntypedExpression
-grad (T y) vars = funcall "tf.gradients" [y, vars]
+grad :: KnownShape s => T s Float32 -> UntypedExpression -> Gen UntypedExpression
+grad y0 vars = do
+  y <- generatePure y0
+  return (funcall "tf.gradients" [y, vars])
 
 -- -- | Gradient of wrt. given parameters.
 -- grad' :: KnownLen xs => T s Float32 -> HHTV xs -> Gen (HHTV xs)
@@ -191,18 +197,14 @@ clipByGlobalNorm :: Float -> UntypedExpression -> UntypedExpression
 clipByGlobalNorm maxNorm x = funcall "tf.clip_by_global_norm" [x,float maxNorm] <> brackets (int 0)
  -- clip_by_global_norm returns a couple (clipped grads, global_norm)
 
--- | Clip a tensor
-clipByValue :: Float -> Float -> T s (Flt t) -> T s (Flt t)
-clipByValue lo hi (T x) = T (funcall "tf.clip_by_value" [x, float lo, float hi])
 
 -- | Placeholder (to fill)
 placeholder :: ∀t s. (KnownShape s, KnownTyp t) => String -> Gen (T s t)
 placeholder n = do
   let name = text n
-  name <-- funcall "tf.placeholder" [showTyp @t, named "shape" (showShape @s), named "name" (text (show n))]
-  peekAt n (T name)
+  name <-- funcall "tf.placeholder" [showTyp @t, named "shape" (showShapeType @s), named "name" (text (show n))]
+  peekAt n (T name :: T s t)
   return (T name)
-
 
 
 -- type family AddSpatialDims xs ys where
@@ -229,89 +231,8 @@ placeholder n = do
 
 -- Difficulty: relate windowSize, inputSpatialShape, outputSpatialShape
 
--- | Softmax along the first dimension
-softmax0 :: T (n ': s) ('Typ 'Float w) -> T (n ': s) ('Typ 'Float w)
-softmax0 = unOp "tf.nn.softmax"
-
--- | Softmax along the second dimension
-softmax1 :: forall n m s w. KnownLen s => T (m ': n ': s) ('Typ 'Float w) -> T (m ': n ': s) ('Typ 'Float w)
-softmax1 (T x) = T (funcall "tf.nn.softmax" [x, named "dim" (showShapeLen @s)])
-
--- | Argmax along dimension @n@
-argmax :: forall n u m s t. (KnownLen s, KnownPeano n,KnownBits u) => Tensor (Take n s ++ (m ': Drop n s)) t -> Tensor s ('Typ 'Int u)
-argmax (T t) = T (funcall "tf.argmax" [t, named "axis" (integer ((listLen @ s) - peanoInt @n)) , named "output_type" (showTyp @('Typ 'Int u))])
-
--- | Argmax along the first dimension
-argmax0 :: forall u n s t. (KnownLen s, KnownBits u) => T (n ': s) t -> T s ('Typ 'Int u)
-argmax0 = argmax @Dim0
-
--- | Argmax along the second dimension
-argmax1 :: forall u m n s t. (KnownLen s, KnownBits u) => T (m ': n ': s) t -> T (m ': s) ('Typ 'Int u)
-argmax1 = argmax @Dim1
-
--- | Cast the element type.
-cast :: forall u s t. KnownTyp u => T s t -> T s u
-cast (T t) = T (funcall "tf.cast" [t, showTyp @ u])
 
 
--- | (dense) softmax cross entropy with logits.
-softmaxCrossEntropyWithLogits :: Tensor '[numClasses,batchSize] Float32 -- ^ labels
-                              -> Tensor '[numClasses,batchSize] Float32 -- ^ logits
-                              -> Tensor '[batchSize] Float32
-softmaxCrossEntropyWithLogits (T labels) (T logits) =
-  T (funcall "tf.nn.softmax_cross_entropy_with_logits" [named "labels" labels,named "logits" logits])
-
--- | Computes sigmoid cross entropy given logits. Measures the
--- probability error in discrete classification tasks in which each
--- class is independent and not mutually exclusive. For instance, one
--- could perform multilabel classification where a picture can contain
--- both an elephant and a dog at the same time. See
--- https://www.tensorflow.org/api_docs/python/tf/nn/sigmoid_cross_entropy_with_logits
-sigmoidCrossEntropyWithLogits :: Tensor s (Flt w) -- ^ labels
-                              -> Tensor s (Flt w) -- ^ logits
-                              -> Tensor s (Flt w)
-sigmoidCrossEntropyWithLogits (T labels) (T logits) =
-  T (funcall "tf.nn.sigmoid_cross_entropy_with_logits" [named "labels" labels,named "logits" logits])
-
--- | sparse softmax cross entropy with logits.
-sparseSoftmaxCrossEntropyWithLogits :: Tensor s Int32                   -- ^ desired labels
-                                    -> Tensor (numClasses ': s) (Flt t) -- ^ predictions
-                                    -> Tensor s (Flt t)
-sparseSoftmaxCrossEntropyWithLogits (T labels) (T logits) =
-  T (funcall "tf.nn.sparse_softmax_cross_entropy_with_logits" [named "labels" labels,named "logits" logits])
-
--- | One hot vector along axis @n@
-oneHot :: forall n numClasses s w t. KnownNat numClasses => KnownBits t =>
-  (KnownLen s, KnownPeano n) => Tensor s ('Typ 'Int w) -> Tensor (Take n s ++ (numClasses ': Drop n s)) (Flt t)
-oneHot (T x) = T (funcall "tf.one_hot" [x, named "depth" (showDim @numClasses), named "axis" (integer (listLen @s - peanoInt @n)), named "dtype" (showTyp @(Flt t))])
-
--- | One hot vector along axis 0
-oneHot0 :: forall numClasses w s t. KnownLen s => KnownNat numClasses => KnownBits t => Tensor s ('Typ 'Int w) -> Tensor (numClasses ': s) (Flt t)
-oneHot0 = oneHot @Dim0
-
--- | One hot vector along axis 1
-oneHot1 :: forall numClasses w s m t. KnownLen s => KnownNat numClasses => KnownBits t => Tensor (m ': s) ('Typ 'Int w) -> Tensor (m ': numClasses ': s) (Flt t)
-oneHot1 = oneHot @Dim1
-
--- | Generate a random tensor where each individual element is picked
--- in a normal distribution with given standard deviation.
-truncatedNormal :: forall s w. KnownShape s => KnownBits w => Float -> T s ('Typ 'Float w)
-truncatedNormal stddev = T (funcall "tf.truncated_normal" [showShape @s, named "stddev" (float stddev), named "dtype" (showTyp @(Flt w))])
-
--- | Generate a random tensor where each individual element is picked
--- in a uniform distribution with given bounds.
-randomUniform :: forall s t. (KnownShape s, KnownTyp t) => Float -> Float -> T s t
-randomUniform low high = T (funcall "tf.random_uniform" [showShape @s
-                                                        ,named "minval" (float low)
-                                                        ,named "maxval" (float high)
-                                                        ,named "dtype" (showTyp @t)])
-
-
--- | Generate an orthorgonal matrix. If the output has more dimensions
--- than 2 the matrix is reshaped.
-randomOrthogonal :: forall n s t. (KnownBits t, KnownNat n, KnownShape s) => T (n ':s) ('Typ 'Float t)
-randomOrthogonal = T (funcall' (funcall "tf.orthogonal_initializer" [named "dtype" (showTyp @('Typ 'Float t))])
-                               [named "shape" (showShape @(n ': s))])
 
 ---------------------------
 -- Contrib
@@ -338,11 +259,11 @@ glorotUniform :: forall inDim outDim t. KnownNat inDim => (KnownNat outDim, Know
 glorotUniform = varianceScaling 1 VSAvg UniformDistr
 
 -- | 'cons' an element and an array (in the first dimension)
-consT0 :: forall n s t. KnownLen s => T s t -> T (n ': s) t -> T (n+1 ': s) t
+consT0 :: forall n s t. KnownTyp t => KnownShape s => KnownNat n =>  T s t -> T (n ': s) t -> T (n+1 ': s) t
 consT0 x xs = plusComm @1 @n $ concat0 (expandDim0 x) xs
 
 -- | 'snoc' an element and an array (in the first dimension)
-snocT0 :: forall n s t. KnownLen s => T (n ': s) t -> T s t -> T (n+1 ': s) t
+snocT0 :: forall n s t. KnownTyp t => KnownShape s => KnownNat n =>  KnownLen s => T (n ': s) t -> T s t -> T (n+1 ': s) t
 snocT0 xs x = concat0 xs (expandDim0 x)
 
 ----------------
@@ -351,25 +272,18 @@ snocT0 xs x = concat0 xs (expandDim0 x)
 -- matvecmulBatch :: ∀ s cols rows t. (KnownLen s) =>  Tensor (cols ': rows ': s) t -> Tensor (cols ': s) t -> Tensor (rows ': s) t
 -- matvecmulBatch m v = squeeze0 (matmul m (expandDim0 v))
 
--- | Product of a matrix of weights with a (batched) vector .
-(∙) :: Tensor '[cols, rows] t -> Tensor '[cols,batchSize] t -> Tensor '[rows,batchSize] t
-m ∙ v = matmul v (transpose m)
+-- | Product of a matrix of weights with a vector .
+(∙) :: (KnownNat cols, KnownNat rows, KnownTyp t) => Tensor '[cols, rows] t -> Tensor '[cols] t -> Tensor '[rows] t
+m ∙ v = squeeze0 (matmul (expandDim0 v) m)
 infixl 7 ∙
 
--- | Dot product between two batched vectors.
-(·) :: ∀ cols batchSize t. Tensor '[cols,batchSize] t -> Tensor '[cols,batchSize] t -> Tensor '[batchSize] t
+-- | Dot product between two vectors.
+(·) :: ∀ n t. (KnownTyp t, KnownNat n) =>
+  Tensor '[n] t -> Tensor '[n] t -> Tensor '[] t
 x · y = reduceSum0 (x ⊙ y)
 infixl 7 ·
 
 
-
--- apparently tensorflow (python?) is not aware of 2-argument
--- functions; so we do this... thing.
-lambda2 :: (T s t -> T s1 t1 -> T s' t') -> Gen UntypedExpression
-lambda2 f = do
-  v <- newVar
-  let T body = f (T (v <> brackets (int 0))) (T (v <> brackets (int 1)))
-  return (text "lambda " <> v <> text ": " <> body)
 
 -- | Selection of a tensor (note: this is a strict operation)
 if_ :: Scalar TFBool -> T s t -> T s t -> T s t
@@ -425,17 +339,11 @@ instance (KnownTensors p1, KnownTensors p2, KnownTensors p3, KnownTensors p4) =>
 class KnownTensors p => ParamWithDefault p where
   defaultInitializer :: p
 
--- | Flatten all the dimensions of the tensor
-flattenAll :: forall s t. KnownShape s => Tensor s t -> Tensor '[Product s] t
-flattenAll = knownProduct @s reshape
 
+-- flattenHTV :: KnownTyp t => All KnownShape xs => HTV t xs -> Tensor '[Sum (Ap (FMap CProduct) xs)] t
+-- flattenHTV Unit = zeros
+-- flattenHTV (F x :* xs) = concat0 (flattenAll x) (flattenHTV xs)
 
-flattenHTV :: KnownTyp t => All KnownShape xs => HTV t xs -> Tensor '[Sum (Ap (FMap CProduct) xs)] t
-flattenHTV Unit = zeros
-flattenHTV (F x :* xs) = concat0 (flattenAll x) (flattenHTV xs)
-
-inflateAll :: forall s t. KnownShape s => Tensor '[Product s] t -> Tensor s t
-inflateAll = knownProduct @s reshape
 
 class CProduct (xs :: [Nat])
 instance Fun CProduct where type Ap CProduct xs = Product xs

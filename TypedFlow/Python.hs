@@ -147,7 +147,8 @@ peekAtAny p v = modify $ \GState{..} -> GState{genPeeks = if p `elem` map fst ge
 assign :: ∀s t. (KnownShape s, KnownTyp t) => T s t -> Gen (T s t)
 assign x = do
   v <- newVar
-  v <-- generatePure typeSShape x
+  e <- generatePure x
+  v <-- e
   return (T v)
 
 lambda :: (T s t -> T s' t') -> Gen UntypedExpression
@@ -184,8 +185,11 @@ permToFun = \case
 listProxyLen :: forall proxy s. KnownLen s => proxy s -> Integer
 listProxyLen _ = listTypeLen @s
 
-generatePure :: forall s t. KnownTyp t => SShape s -> T s t -> DOC
-generatePure sR = \case
+generatePure :: forall s t. KnownTyp t => KnownShape s => T s t -> Gen DOC
+generatePure x = return (generatePure' typeSShape x)
+
+generatePure' :: forall s t. KnownTyp t => SShape s -> T s t -> DOC
+generatePure' sR = \case
   T x -> x
   UnOp operation s0 s1 _s2 x -> case operation of
     SimpleBroadCast n ->
@@ -194,16 +198,17 @@ generatePure sR = \case
     -- https://github.com/tensorflow/tensorflow/issues/14509
       funcall "tf.add" [func "tf.expand_dims" [recx] [("axis", integer (n + sListLength s0))],
                          func "tf.zeros" [showSShape s0] [("dtype", showTyp @t)]]
-    Axis1Op op n -> funcall op [recx, text "axis=" <> integer (sListLength s0 + n)]
-    Simple1Op op -> funcall op [recx]
+    Axis1Op op args n -> func op [recx] (("axis",integer (sListLength s0 + n)):args)
+    Simple1Op op args -> funcall op (recx:args)
     SliceOp lo hi -> recx <> list (replicate (fromIntegral (sListLength s0)) (text ":") ++ [integer lo <> text ".." <> integer hi])
     IndexOp axis ix -> recx <> list (replicate (fromIntegral (axis + sListLength s0)) (text ":") ++ [integer ix])
-   where recx = generatePure (s0 .+. s1) x
+   where recx = rec (s0 .+. s1) x
   BinOp operation s0 s1 s2 _s3 x y -> case operation of
      Axis2Op op n -> funcall op  [list [recx,recy], named "axis" (integer (sListLength s0 + n))]
-     Simple2Op op -> funcall op [recx, recy]
-   where recx = generatePure (s0 .+. s1) x
-         recy = generatePure (s0 .+. s2) y
+     Simple2Op op Nothing -> funcall op [recx, recy]
+     Simple2Op op (Just (nx,ny)) -> func op [] [(nx,recx), (ny,recy)]
+   where recx = rec (s0 .+. s1) x
+         recy = rec (s0 .+. s2) y
   ReshapeFrom s t ->  funcall "tf.reshape" [rec s t, knownSShape sR (showShapeMinus sR)]
   Stack s0 _m s1 (V xs) -> funcall "tf.stack" [list (map (rec (s0 .+. s1)) xs), text "axis=" <> integer (sListLength s0)]
   Transpose s p x -> func "tf.transpose" [rec s x] [("perm",list (map (integer . permToFun p) [0.. sListLength s]))]
@@ -214,7 +219,8 @@ generatePure sR = \case
            2 -> "NHWC"
            3 -> "NDHWC"
            _ -> error "convolution: more than 3 spatial dimensions are not supported!"
-         recx = generatePure (LS bs (sl filterShape inChans)) x
-         recFilters = generatePure (filterShape .+. (LS inChans (LS outChans LZ))) filters
- where rec = generatePure
+         recx = rec (LS bs (sl filterShape inChans)) x
+         recFilters = rec (filterShape .+. (LS inChans (LS outChans LZ))) filters
+ where rec :: forall s' t'. KnownTyp t' => SShape s' -> T s' t' -> DOC
+       rec = generatePure' 
 
