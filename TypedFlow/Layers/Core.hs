@@ -47,20 +47,15 @@ where
 import Prelude hiding (tanh,Num(..),Floating(..),floor)
 import qualified Prelude
 import GHC.TypeLits
--- import Text.PrettyPrint.Compact (float)
 import TypedFlow.TF
 import TypedFlow.Types
 import TypedFlow.Python (assign)
 import TypedFlow.Abstract
 import Control.Monad.State (gets)
--- import Data.Type.Equality
--- import Data.Kind (Type,Constraint)
 import Data.Monoid ((<>))
 ---------------------
 -- Linear functions
 
-
--- type (a ⊸ b) = DenseP Float32 a b
 
 -- | A dense layer is a linear function form a to b: a transformation matrix and a bias.
 data DenseP t a b = DenseP {denseWeights :: Tensor '[a,b] (Flt t)
@@ -177,66 +172,9 @@ conv = initLast @s $
         incrPos @(Length filterSpatialShape) $
         lengthInit @s $
         incrCong @(Length filterSpatialShape) @(Length (Init s)) $
-        knownInit @s $ 
-        conv' @(Init s) 
+        knownInit @s $
+        conv' @(Init s)
 
--- warning: [-Wdeferred-type-errors]
---     • Could not deduce: Length filterSpatialShape ~ Length (Init s)
---         arising from a use of ‘conv’
---       from the context: (KnownShape s,
---                          KnownNat inChannels,
---                          KnownNat outChannels,
---                          KnownShape filterSpatialShape,
---                          KnownBits t,
---                          Length filterSpatialShape <= 3,
---                          (Length filterSpatialShape + 1) ~ Length s,
---                          Last s ~ outChannels)
---         bound by the type signature for:
---                    conv' :: (KnownShape s, KnownNat inChannels, KnownNat outChannels,
---                              KnownShape filterSpatialShape, KnownBits t,
---                              Length filterSpatialShape <= 3,
---                              (Length filterSpatialShape + 1) ~ Length s,
---                              Last s ~ outChannels) =>
---                             ConvP t outChannels inChannels filterSpatialShape
---                             -> T (Init s ++ '[inChannels]) ('Typ 'Float t)
---                             -> T s ('Typ 'Float t)
---         at /tmp/dante9507pzG.hs:(168,1)-(175,34)
---       or from: (Init s ++ '[Last s]) ~ s
---         bound by a type expected by the context:
---                    (Init s ++ '[Last s]) ~ s =>
---                    ConvP t outChannels inChannels filterSpatialShape
---                    -> T (Init s ++ '[inChannels]) ('Typ 'Float t)
---                    -> T s ('Typ 'Float t)
---         at /tmp/dante9507pzG.hs:(176,9)-(179,67)
---       or from: 0 < (Length filterSpatialShape + 1)
---         bound by a type expected by the context:
---                    (0 < (Length filterSpatialShape + 1)) =>
---                    ConvP t outChannels inChannels filterSpatialShape
---                    -> T (Init s ++ '[inChannels]) ('Typ 'Float t)
---                    -> T s ('Typ 'Float t)
---         at /tmp/dante9507pzG.hs:(177,9)-(179,67)
---       or from: (Length (Init s) + 1) ~ Length s
---         bound by a type expected by the context:
---                    (Length (Init s) + 1) ~ Length s =>
---                    ConvP t outChannels inChannels filterSpatialShape
---                    -> T (Init s ++ '[inChannels]) ('Typ 'Float t)
---                    -> T s ('Typ 'Float t)
---         at /tmp/dante9507pzG.hs:(178,9)-(179,67)
---       NB: ‘Length’ is a type function, and may not be injective
---     • In the second argument of ‘($)’, namely
---         ‘conv @outChannels @filterSpatialShape @inChannels @(Init s)’
---       In the second argument of ‘($)’, namely
---         ‘lengthInit @s
---          $ conv @outChannels @filterSpatialShape @inChannels @(Init s)’
---       In the second argument of ‘($)’, namely
---         ‘incrPos @(Length filterSpatialShape)
---          $ lengthInit @s
---            $ conv @outChannels @filterSpatialShape @inChannels @(Init s)’
---     • Relevant bindings include
---         conv' :: ConvP t outChannels inChannels filterSpatialShape
---                  -> T (Init s ++ '[inChannels]) ('Typ 'Float t)
---                  -> T s ('Typ 'Float t)
---           (bound at /tmp/dante9507pzG.hs:176:1)
 
 -- -- | Convolution layers with no padding (applying the filter only on
 -- -- positions where the input is fully defined, aka "VALID" in

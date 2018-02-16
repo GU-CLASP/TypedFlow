@@ -249,14 +249,9 @@ transposeV (LS _ n) xxs  = F ys' :* yys'
         help :: forall ys x tt. V n (HTV tt (x ': ys)) -> (V n (T x tt) , V n (HTV tt ys))
         help (V xs) = (V (map (fromF . hhead) xs),V (map htail xs))
 
--- | @(gatherFinalStates dynLen states)[i] = states[dynLen[i]]@
-gatherFinalStates :: KnownShape x => KnownLen x => KnownNat n => T '[] Int32 -> T (n ': x) t -> T x t
+-- | @(gatherFinalStates dynLen states)[i] = states[dynLen[i]-1]@
+gatherFinalStates :: KnownShape x => KnownNat n => T '[] Int32 -> T (n ': x) t -> T x t
 gatherFinalStates dynLen states = gather states (dynLen ⊝ constant 1)
-
--- a more efficient algorithm (perhaps:)
--- gatherFinalStates' :: forall x n bs t. KnownLen x => KnownNat n => LastEqual bs x => T '[bs] Int32 -> T (x ++ '[n,bs]) t -> T x (x ++ '[bs])
--- gatherFinalStates' (T dynLen)t = gather (flattenN2 @x @n @bs t) indexInFlat
---  where indexInFlat = (dynLen - 1) + tf.range(0, bs) * n
 
 gathers :: forall n xs t. All KnownShape xs => KnownNat n =>
             SList xs -> T '[] Int32 -> HTV (Flt t) (Ap (FMap (Cons n)) xs) -> HTV (Flt t) xs

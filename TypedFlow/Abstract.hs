@@ -398,6 +398,7 @@ flatten3  =  -- (m * (n * (o * Product s)))
              prodAssoc @(m * n) @o @(Product s) $
              -- ((m * n) * o) * Product s
              reshape
+
 -- | Reshape a tensor so that the first two dimensions are collapsed
 flatten12 :: ∀ m n o s t. KnownTyp t => KnownNat o => (KnownNat m, KnownNat n, KnownShape s) => Tensor (o ': m ': n ': s) t -> Tensor (o ': m*n ': s) t
 flatten12 = prodAssoc @m @n @(Product s) reshape
@@ -486,6 +487,7 @@ mapT :: forall n s t r u. KnownShape r => KnownNat n => KnownTyp u => KnownLen r
 mapT f x = broadcast (Proxy @n) (f (Unbroadcast (natSat @n) x))
 
 
+-- | Map a function along the few first dimensions of a tensor, given by the first type parameter
 mapTT :: forall a s t r u. KnownShape r => KnownShape a => KnownTyp u => KnownLen r => KnownShape s => KnownTyp t
   => (T s t -> T r u) ->  T (a ++ s) t -> T (a ++ r) u
 mapTT f x = prodHomo @a @r $
@@ -495,6 +497,7 @@ mapTT f x = prodHomo @a @r $
             knownAppend @a @s $
             reshape (broadcast (Proxy @(Product a)) (f (Unbroadcast (natSat @(Product a)) (reshape x))))
 
+-- | zip  a function along the first dimension of two tensors tensors
 zipWithT :: forall (n :: Nat) (s :: [Nat]) (t :: Typ) (s1 :: [Nat]) (t1 :: Typ) (s2 :: Shape)  (t2 :: Typ).
             KnownShape s2 => KnownNat n => (KnownLen s, KnownLen s2, KnownLen s1) => KnownTyp t2 =>
                   (T s t -> T s1 t1 -> T s2 t2)
@@ -502,17 +505,6 @@ zipWithT :: forall (n :: Nat) (s :: [Nat]) (t :: Typ) (s1 :: [Nat]) (t1 :: Typ) 
                   -> Tensor (n ': s1) t1
                   -> Tensor (n ': s2) t2
 zipWithT f x y = broadcast (Proxy @n) (f (Unbroadcast (natSat @n) x) (Unbroadcast (natSat @n) y))
-
-class LastEqual x xs
-instance                   LastEqual x (x ': '[])
-instance LastEqual x (y2 ': xs) => LastEqual x (y ': (y2 ': xs))
-
-
--- -- | @(gather x ix)[k] = x[ix[k]]@. See https://www.tensorflow.org/api_docs/python/tf/gather
--- gather :: ∀s n indexShape t. T (s ++ '[n]) t -> T indexShape Int32 -> T (s ++ indexShape) t
--- gather = binOp "tf.gather"
-
-
 
 -- | Size-preserving convolution operation.
 convolution :: forall outputChannels filterSpatialShape inChannels s t.
