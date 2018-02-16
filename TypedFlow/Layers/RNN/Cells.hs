@@ -26,13 +26,12 @@ module TypedFlow.Layers.RNN.Cells (
   GRUP(..),
   gru,
   StackP(..),
-  stackRU,
+  -- stackRU,
   ) where
 
 import TypedFlow.Layers.RNN.Base
 import TypedFlow.TF
 import TypedFlow.Types
-import TypedFlow.Python
 import GHC.TypeLits
 import TypedFlow.Layers.Core (DenseP(..),(#))
 import Prelude hiding (tanh,Num(..),Floating(..),floor)
@@ -61,17 +60,17 @@ instance (KnownNat n, KnownNat x, KnownBits t) => ParamWithDefault (LSTMP t n x)
     where forgetInit = DenseP (denseWeights cellInitializerBit) ones
 
 -- | Standard LSTM
-lstm :: ∀ n x bs t. LSTMP t n x ->
-        RnnCell t '[ '[n,bs], '[n,bs]] (Tensor '[x,bs] (Flt t)) (Tensor '[n,bs] (Flt t))
-lstm (LSTMP wf wi wc wo) input = C $ \(VecPair ht1 ct1) -> do
-  hx <- assign (concat0 ht1 input)
+lstm :: ∀ n x t. KnownNat x => KnownNat n => KnownBits t
+  => LSTMP t n x -> RnnCell t '[ '[n], '[n]] (Tensor '[x] (Flt t)) (Tensor '[n] (Flt t))
+lstm (LSTMP wf wi wc wo) input = C $ \(VecPair ht1 ct1) -> 
   let f = sigmoid (wf # hx)
+      hx = (concat0 ht1 input)
       i = sigmoid (wi # hx)
       cTilda = tanh (wc # hx)
       o = sigmoid (wo # hx)
-  c <- assign ((f ⊙ ct1) + (i ⊙ cTilda))
-  h <- assign (o ⊙ tanh c)
-  return (VecPair h c, h)
+      c = ((f ⊙ ct1) + (i ⊙ cTilda))
+      h = (o ⊙ tanh c)
+  in (VecPair h c, h)
 
 -- | Parameter for a GRU
 data GRUP t n x = GRUP (T [n+x,n] ('Typ 'Float t)) (T [n+x,n] ('Typ 'Float t)) (T [n+x,n] ('Typ 'Float t))
@@ -83,15 +82,15 @@ instance (KnownNat n, KnownNat x, KnownBits t) => ParamWithDefault (GRUP t n x) 
 
 
 -- | Standard GRU cell
-gru :: ∀ n x bs t. (KnownNat bs, KnownNat n, KnownBits t) => GRUP t n x ->
-        RnnCell t '[ '[n,bs] ] (Tensor '[x,bs] (Flt t)) (Tensor '[n,bs] (Flt t))
-gru (GRUP wz wr w) xt = C $ \(VecSing ht1) -> do
-  hx <- assign (concat0 ht1 xt)
-  let zt = sigmoid (wz ∙ hx)
+gru :: ∀ n x t. KnownNat x => (KnownNat n, KnownBits t) => GRUP t n x ->
+        RnnCell t '[ '[n] ] (Tensor '[x] (Flt t)) (Tensor '[n] (Flt t))
+gru (GRUP wz wr w) xt = C $ \(VecSing ht1) ->
+  let hx =  (concat0 ht1 xt)
+      zt = sigmoid (wz ∙ hx)
       rt = sigmoid (wr ∙ hx)
       hTilda = tanh (w ∙ (concat0 (rt ⊙ ht1) xt))
-  ht <- assign ((ones ⊝ zt) ⊙ ht1 + zt ⊙ hTilda)
-  return (VecSing ht, ht)
+      ht = ((ones ⊝ zt) ⊙ ht1 + zt ⊙ hTilda)
+  in (VecSing ht, ht)
 
 
 data StackP w n = StackP (DenseP w (n + n) 3)
@@ -106,24 +105,24 @@ instance (KnownNat n, KnownBits w) => KnownTensors (StackP w n) where
 instance (KnownNat n, KnownBits w) => (ParamWithDefault (StackP w n)) where
   defaultInitializer = defStackP
 
--- | A stack recurrent unit. The input has two purposes: 1. it is
--- saved in a stack. 2. it controls (a dense layer which gives) the
--- operation to apply on the stack.  The first type argument is the
--- depth of the stack.
-stackRU :: ∀k n bs w. KnownNat k => KnownNat n => (KnownNat bs) => (KnownBits w) => StackP w n ->
-        RnnCell w '[ '[k+1,n,bs]] (Tensor '[n,bs] (Flt w)) (Tensor '[n,bs] (Flt w))
-stackRU (StackP w) input = C $ \(VecSing st1) ->
-  succPos @k $
-  plusComm @k @1 $ do
-  let ct1 = nth0' @0 st1
-      hx = concat0 ct1 input
-      action :: T '[3,bs] (Flt w)
-      action = softmax0 (w # hx)
-  (_,tl) <- split0 @1 @k st1
-  (it,_) <- split0 @k @1 st1
-  let stTilda :: T '[3,k+1,n,bs] (Flt w)
-      stTilda = stack0 (V [st1, tl `concat0` zeros, (expandDim0 input) `concat0` it])
-  st <- assign (squeeze0 (inflate12 (matmul (flatten12 @(k+1) @n stTilda) (expandDim0 action))))
-  let ct = nth0' @0 st
-  return (VecSing st, ct)
+-- -- | A stack recurrent unit. The input has two purposes: 1. it is
+-- -- saved in a stack. 2. it controls (a dense layer which gives) the
+-- -- operation to apply on the stack.  The first type argument is the
+-- -- depth of the stack.
+-- stackRU :: ∀k n bs w. KnownNat k => KnownNat n => (KnownNat bs) => (KnownBits w) => StackP w n ->
+--         RnnCell w '[ '[k+1,n]] (Tensor '[n] (Flt w)) (Tensor '[n] (Flt w))
+-- stackRU (StackP w) input = C $ \(VecSing st1) ->
+--   succPos @k $
+--   plusComm @k @1 $ 
+--   let ct1 = nth0' @0 st1
+--       hx = concat0 ct1 input
+--       action :: T '[3] (Flt w)
+--       action = softmax0 (w # hx)
+--       tl = slice0 @k @(k+1) st1
+--       it = slice0 @0 @k  st1
+--       stTilda :: T '[3,k+1,n] (Flt w)
+--       stTilda = stack0 (V [st1, tl `concat0` zeros, (expandDim0 input) `concat0` it])
+--       st = (squeeze0 (inflate12 (matmul (flatten12 @(k+1) @n stTilda) (expandDim0 action))))
+--       ct = nth0' @0 st
+--   in (VecSing st, ct)
 

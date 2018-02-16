@@ -54,82 +54,44 @@ import Data.Monoid ((<>))
 import TypedFlow.Layers.RNN.Base
 
 -- | An attention scoring function. This function should produce a
--- score (between 0 and 1) for each of the @nValues@ entries of size
--- @valueSize@.
-type AttentionScoring t batchSize keySize valueSize nValues = 
-  Tensor '[keySize,batchSize] ('Typ 'Float t) -> Tensor '[nValues,valueSize,batchSize] ('Typ 'Float t) -> Tensor '[nValues,batchSize] ('Typ 'Float t)
+-- score (between 0 and 1).
+type AttentionScoring t keySize valueSize = 
+  Tensor '[keySize] ('Typ 'Float t) -> Tensor '[valueSize] ('Typ 'Float t) -> Tensor '[] ('Typ 'Float t)
 
 -- | A function which attends to an external input. Typically a
 -- function of this type is a closure which has the attended input in
--- its environment.
-type AttentionFunction t batchSize keySize valueSize =
-  T '[keySize,batchSize] (Flt t) -> Gen (T '[valueSize,batchSize] (Flt t))
-
-{- NICER, SLOW
-
-type AttentionScoring t batchSize keySize valueSize =
-  Tensor '[keySize,batchSize] ('Typ 'Float t) -> Tensor '[valueSize,batchSize] ('Typ 'Float t) -> Tensor '[batchSize] ('Typ 'Float t)
-
+-- its environment. This environment is interpreted as an associative
+-- memory form key to value.
+type AttentionFunction t keySize valueSize =
+  T '[keySize] (Flt t) -> T '[valueSize] (Flt t)
 
 -- | @attnExample1 θ h st@ combines each element of the vector h with
 -- s, and applies a dense layer with parameters θ. The "winning"
 -- element of h (using softmax) is returned.
-uniformAttn :: ∀ valueSize m keySize batchSize t. KnownNat m => KnownBits t =>
-               T '[batchSize] Int32 ->
-               AttentionScoring t batchSize keySize valueSize ->
-               T '[m,valueSize,batchSize] (Flt t) -> AttentionFunction t batchSize keySize valueSize
-uniformAttn lengths score hs_ ht = do
-  xx <- mapT (score ht) hs_
-  let   αt :: T '[m,batchSize] (Flt t)
+uniformAttn :: ∀ valueSize m keySize t. KnownNat valueSize => KnownNat m => KnownBits t
+            => AttentionScoring t keySize valueSize -- ^ scoring function
+            -> T '[] Int32 -- ^ length of the input
+            -> T '[m,valueSize] (Flt t) -- ^ input
+            -> AttentionFunction t keySize valueSize
+uniformAttn score lengths hs_ ht =
+  let   αt :: T '[m] (Flt t)
+        xx = mapT (score ht) hs_
         αt = softmax0 (mask ⊙ xx)
-        ct :: T '[valueSize,batchSize] (Flt t)
-        ct = squeeze0 (matmul hs_ (expandDim0 αt))
+        ct :: T '[valueSize] (Flt t)
+        ct = hs_ ∙ αt
         mask = cast (sequenceMask @m lengths) -- mask according to length
-  return ct
-
-
-
--- | A multiplicative scoring function. See 
--- https://github.com/tensorflow/nmt#background-on-the-attention-mechanism
--- commit 75aa22dfb159f10a1a5b4557777d9ff547c1975a
-multiplicativeScoring :: forall valueSize keySize batchSize t.
-  T [keySize,valueSize] ('Typ 'Float t) ->  AttentionScoring t batchSize keySize valueSize
-multiplicativeScoring w dt h = h · ir
-  where ir :: T '[valueSize,batchSize] ('Typ 'Float t)
-        ir = w ∙ dt
-
-
-additiveScoring :: AdditiveScoringP sz keySize valueSize t -> AttentionScoring t batchSize valueSize keySize
-additiveScoring (AdditiveScoringP v w1 w2) dt h = squeeze0 (v ∙ tanh ((w1 ∙ h) ⊕ (w2 ∙ dt)))
-
--}
-
--- | @attnExample1 θ h st@ combines each element of the vector h with
--- s, and applies a dense layer with parameters θ. The "winning"
--- element of h (using softmax) is returned.
-uniformAttn :: ∀ valueSize m keySize batchSize t. KnownNat m => KnownBits t
-            => AttentionScoring t batchSize keySize valueSize m -- ^ scoring function
-            -> T '[batchSize] Int32 -- ^ lengths of the inputs
-            -> T '[m,valueSize,batchSize] (Flt t) -- ^ inputs
-            -> AttentionFunction t batchSize keySize valueSize
-uniformAttn score lengths hs_ ht = do
-  let   αt :: T '[m,batchSize] (Flt t)
-        xx = score ht hs_
-        αt = softmax0 (mask ⊙ xx)
-        ct :: T '[valueSize,batchSize] (Flt t)
-        ct = squeeze0 (matmul hs_ (expandDim0 αt))
-        mask = cast (sequenceMask @m lengths) -- mask according to length
-  return ct
+  in ct
 
 -- | Add some attention to an RnnCell, and feed the attention vector to
 -- the next iteration in the rnn. (This follows the diagram at
 -- https://github.com/tensorflow/nmt#background-on-the-attention-mechanism
 -- commit 75aa22dfb159f10a1a5b4557777d9ff547c1975a).
-attentiveWithFeedback ::forall attSize cellSize inputSize bs w ss. KnownLen ss =>
-  AttentionFunction w bs cellSize attSize ->
-  RnnCell w ss                      (T '[inputSize+attSize,bs] (Flt w)) (T '[cellSize,bs] (Flt w)) ->
-  RnnCell w ('[attSize,bs] ': ss)   (T '[inputSize        ,bs] (Flt w)) (T '[attSize,bs] (Flt w))
-attentiveWithFeedback attn cell = appEmpty @ss $ withFeedback (cell .-. timeDistribute' attn)
+attentiveWithFeedback ::forall attSize cellSize inputSize w ss. KnownNat inputSize => KnownNat attSize => KnownLen ss =>
+  KnownBits w =>
+  AttentionFunction w cellSize attSize ->
+  RnnCell w ss                   (T '[inputSize+attSize] (Flt w)) (T '[cellSize] (Flt w)) ->
+  RnnCell w ('[attSize] ': ss)   (T '[inputSize        ] (Flt w)) (T '[attSize] (Flt w))
+attentiveWithFeedback attn cell = appEmpty @ss $ withFeedback (cell .-. timeDistribute attn)
 
 
 -- -- | LSTM for an attention model. The result of attention is fed to the next step.
@@ -144,27 +106,28 @@ attentiveWithFeedback attn cell = appEmpty @ss $ withFeedback (cell .-. timeDist
 -- https://github.com/tensorflow/nmt#background-on-the-attention-mechanism
 -- commit 75aa22dfb159f10a1a5b4557777d9ff547c1975a).
 -- Essentially a dense layer with tanh activation, on top of uniform attention.
-luongAttention :: ∀ attnSize d m e batchSize w. KnownNat m => KnownBits w
+luongAttention :: ∀ attnSize d m e w. KnownNat e => KnownNat d => KnownNat attnSize => KnownNat m => KnownBits w
   => Tensor '[d+e,attnSize] (Flt w)     -- ^ weights for the dense layer
-  -> AttentionScoring w batchSize e d m -- ^ scoring function
-  -> Tensor '[batchSize] Int32          -- ^ length of the input
-  -> T '[m,d,batchSize] (Flt w)         -- ^ inputs
-  -> AttentionFunction w batchSize e attnSize
-luongAttention w scoring lens hs_ ht = do
-  ct <- uniformAttn scoring lens hs_ ht
-  return (tanh (w ∙ (concat0 ct ht)))
+  -> AttentionScoring w e d -- ^ scoring function
+  -> Tensor '[] Int32          -- ^ length of the input
+  -> T '[m,d] (Flt w)         -- ^ inputs
+  -> AttentionFunction w e attnSize
+luongAttention w scoring lens hs_ ht = 
+  let ct = uniformAttn scoring lens hs_ ht
+  in (tanh (w ∙ (concat0 ct ht)))
 
 -- | Multiplicative scoring function
-multiplicativeScoring :: forall valueSize keySize batchSize nValues t.
-  KnownNat batchSize => T [keySize,valueSize] ('Typ 'Float t) -- ^ weights
-  ->  AttentionScoring t batchSize keySize valueSize nValues
-multiplicativeScoring w dt hs = squeeze1 (matmul (expandDim1 ir) hs)
-  where ir :: T '[valueSize,batchSize] ('Typ 'Float t)
+multiplicativeScoring :: forall valueSize keySize t.
+  KnownBits t => KnownNat valueSize => KnownNat keySize
+  => T [keySize,valueSize] ('Typ 'Float t) -- ^ weights
+  ->  AttentionScoring t keySize valueSize
+multiplicativeScoring w dt hs = ir · hs
+  where ir :: T '[valueSize] ('Typ 'Float t)
         ir = w ∙ dt
 
 
 data AdditiveScoringP sz keySize valueSize t = AdditiveScoringP
-  (Tensor '[sz, 1]         ('Typ 'Float t))
+  (Tensor '[1,sz]         ('Typ 'Float t))
   (Tensor '[keySize, sz]   ('Typ 'Float t))
   (Tensor '[valueSize, sz] ('Typ 'Float t))
 
@@ -174,13 +137,13 @@ instance (KnownNat n, KnownNat k, KnownNat v, KnownBits t) => ParamWithDefault (
   defaultInitializer = AdditiveScoringP glorotUniform glorotUniform glorotUniform
 
 -- | An additive scoring function. See https://arxiv.org/pdf/1412.7449.pdf
-additiveScoring :: forall sz keySize valueSize t nValues batchSize. KnownNat sz => KnownNat keySize => (KnownNat nValues, KnownNat batchSize) =>
-  AdditiveScoringP sz keySize valueSize t -> AttentionScoring t batchSize valueSize keySize nValues
-additiveScoring (AdditiveScoringP v w1 w2) dt h = transpose r''
-  where w1h :: Tensor '[sz,batchSize, nValues] ('Typ 'Float t)
-        w1h = transposeN01 @'[sz] (reshape @'[sz,nValues, batchSize] w1h')
-        w1h' = matmul (reshape @'[keySize, nValues*batchSize] (transpose01 h)) (transpose01 w1)
+additiveScoring :: forall sz keySize valueSize t. KnownNat valueSize => KnownNat sz => KnownNat keySize => KnownBits t =>
+  AdditiveScoringP sz keySize valueSize t -> AttentionScoring t valueSize keySize
+additiveScoring (AdditiveScoringP v w1 w2) dt h =  r''
+  where w1h :: Tensor '[sz] ('Typ 'Float t)
+        w1h = w1 ∙ h
         w2dt = w2 ∙ dt
-        z' = reshape @'[sz,batchSize*nValues] (tanh (w1h + w2dt))
-        r'' = reshape @[batchSize,nValues] (matmul z' (transpose v))
+        z' :: Tensor '[sz] ('Typ 'Float t)
+        z' = tanh (w1h + w2dt)
+        r'' = z' · squeeze0 v
 

@@ -207,6 +207,9 @@ eye = T (funcall "tf.eye" [showDim @n,
                             named "batch_shape" (showShapeType @s),
                             named "dtype" (showTyp @t)])
 
+-- | range[i] = i
+range :: forall n w. KnownNat n => KnownBits w => T '[n] ('Typ 'Int w)
+range = T (func "tf.range" [] [("limit",integer (natVal (Proxy @n))),("dtype",showTyp @('Typ 'Int w))])
 
 -- | Constant
 constant :: forall s t w. KnownShape s => KnownBits w => KnownKind t => HostType t -> T s ('Typ t w)
@@ -277,6 +280,9 @@ equal = binOp "tf.equal"
 (⊙) = binOp "tf.multiply"
 (⊕) = binOp "tf.add"
 
+lessThan :: ∀ (s :: Shape) t. (KnownShape s, KnownTyp t) => Tensor s t -> Tensor s t -> Tensor s TFBool
+lessThan = binOp "tf.less"
+
 infixl 7 ⊙,⊘
 infixl 6 ⊕,⊝
 
@@ -317,7 +323,11 @@ slice = UnOp (SliceOp (natVal (Proxy @i)) (natVal (Proxy @j))) LZ (typeSShape @s
 
 slice1 :: forall i j m n s t. KnownShape s => KnownNat m => KnownNat n => KnownTyp t => KnownNat j => KnownNat i => (i <= j, j <= m, KnownLen s) =>
          Tensor (n ': m ': s) t -> Tensor (n ': (j-i) ': s) t
-slice1 = slice @Dim1 @i @j
+slice1 = slice @Axis1 @i @j
+
+slice0 :: forall i j m s t. KnownShape s => KnownNat m => KnownTyp t => KnownNat j => KnownNat i => (i <= j, j <= m, KnownLen s) =>
+         Tensor (m ': s) t -> Tensor ((j-i) ': s) t
+slice0 = slice @Axis0 @i @j
 
 -- | Concatenate tensors on dimension @n@
 concatT :: ∀ n d1 d2 s t. KnownNat d2 => KnownNat d1 => KnownShape s => (KnownTyp t, KnownPeano n, (d1+d2) ~ At n s) =>
@@ -422,15 +432,6 @@ nth0 i = UnOp (IndexOp 0 i) LZ (typeSShape @(n ': s)) (typeSShape @s)
 nth0' :: ∀ n m s t. KnownNat m => KnownTyp t => KnownShape s => KnownNat n => KnownLen s => n < m => T (m ': s) t -> Tensor s t
 nth0' = nth0 (natVal (Proxy @n))
 
-
--- -- | Split a tensors into @n@ tensors along the first dimension
--- unstack0 :: ∀ s (n::Nat) t. (KnownLen s, KnownNat n) => Tensor (n ': s) t -> Gen (V n (T s t))
--- unstack0 (T x) = do
---   v <- newVar
---   v <-- funcall "tf.unstack" [x, text "axis=" <> integer (typeLen @ s)]
---   return $ V $ [ T $ v <> brackets (integer i)| i <- [0..n Prelude.- 1] ]
---         where n = natVal (typeSShape @ n)
-
 stackT :: ∀ s0 s (n::Nat) t. KnownShape s => KnownShape s0 => KnownNat n => (KnownLen s0) => V n (T (s0 ++ s) t) -> Tensor (s0 ++ (n ': s)) t
 stackT = Stack (typeSShape @s0) (natSat @n) (typeSShape @s)
 
@@ -447,6 +448,7 @@ stackN :: ∀ s (n::Nat) t. KnownNat n => KnownShape s => V n (T s t) -> Tensor 
 stackN = appRUnit @Nat @s $
          stackT @s @'[]
 
+-- | Split a tensors into @n@ tensors along the first dimension
 unstack0 :: ∀ s (n::Nat) t. KnownTyp t => KnownNat n => KnownShape s => (KnownLen s) => Tensor (n ': s) t -> V n (T s t)
 unstack0 x = V [nth0 i x | i <- [0..natVal (Proxy @n) - 1]  ]
 
@@ -474,10 +476,9 @@ transpose01 = Transpose typeSShape PermSwap
 transposeN01 :: ∀ s m n t. KnownNat n => KnownNat m => KnownShape s => T (s ++ [m,n]) t -> T (s ++ [n,m]) t
 transposeN01 = Transpose (typeSShape @s .+. typeSShape @'[m,n]) (permN01 (typeSList @s) (Proxy @m) (Proxy @n))
 
--- TODO: re-implement
--- -- | Generate a mask of given length for each sequence.
--- sequenceMask :: forall maxlen bs. KnownNat maxlen => Tensor '[bs] Int32 -> Tensor '[maxlen,bs] TFBool
--- sequenceMask (T x) = T (funcall "tf.sequence_mask" [x, named "maxlen" (showDim @maxlen)])
+-- | Generate a mask of given length for each sequence.
+sequenceMask :: forall maxlen. KnownNat maxlen => Tensor '[] Int32 -> Tensor '[maxlen] TFBool
+sequenceMask lens = mapT (lens `lessThan`) (range @maxlen)
 
 
 -- | Map a function along the first dimension of a tensor

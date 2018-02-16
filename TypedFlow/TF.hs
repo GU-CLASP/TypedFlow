@@ -75,8 +75,7 @@ module TypedFlow.TF (
   -- ** Indexing
   last0, nth0, nth0', gather,
   -- ** Split and concatenate
-  -- split0,
-  slice, slice1,
+  slice, slice0, slice1,
   stack0, unstack0,
   stack1,
   concatT, concat0, concat1,
@@ -90,7 +89,7 @@ module TypedFlow.TF (
   -- ** Transposition
   transposeN, transposeN', transpose01, transposeN01,
   -- ** Sequences
-  -- reverseSequences, sequenceMask,
+  sequenceMask,
   -- ** Convolutions
   convolution, 
   -- ** Misc
