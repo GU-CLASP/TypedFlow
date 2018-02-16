@@ -23,12 +23,12 @@ mnist = do
   filters2 <- parameterDefault "f2"
   w1 <- parameterDefault "w1"
   w2 <- parameterDefault "w2"
-  return $ \input gold -> 
-    let nn = reshape @'[28,28,1]      #>
+  return $ \input gold ->
+    let nn = reshape @'[28,28,1]                #>
              (relu . conv @32 @'[5,5] filters1) #>
-             atShape @'[28,28,32]     #>
+             atShape @'[28,28,32]               #>
              maxPool2D @2 @2                    #>
-             atShape @'[14,14,32]     #>
+             atShape @'[14,14,32]               #>
              (relu . conv @64 @'[5,5] filters2) #>
              maxPool2D @2 @2                    #>
              flatten3                           #>

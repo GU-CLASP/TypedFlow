@@ -77,7 +77,7 @@ module TypedFlow.TF (
   -- ** Split and concatenate
   -- split0,
   slice, slice1,
-  stack0, -- unstack0, 
+  stack0, unstack0,
   stack1,
   concatT, concat0, concat1,
   -- ** Reshaping

@@ -46,7 +46,7 @@ module TypedFlow.Layers.RNN.Base (
   withBypass, withFeedback,
   onStates,
   -- * RNN unfolding functions
-  timeDistribute, timeDistribute',
+  timeDistribute,
   iterateCell,
   iterateCellBackward,
   iterateWithCull,
@@ -61,30 +61,28 @@ import TypedFlow.Types
 -- import Data.Type.Equality
 -- import Data.Kind (Type,Constraint)
 
-newtype Component t states a = C {runC :: HTV (Flt t) states -> Gen (HTV (Flt t) states , a)}
+newtype Component t states a = C {runC :: HTV (Flt t) states -> (HTV (Flt t) states , a)}
 
 instance Functor (Component t states) where
   fmap = mapC
 
 mapC :: (a -> b) -> Component t s a -> Component t s b
-mapC f c = C $ \s ->  do
-  (s',x) <- runC c s
-  return (s', f x)
+mapC f c = C $ \s -> 
+  let (s',x) = runC c s
+  in (s', f x)
 
 returnC :: a -> Component t '[] a
-returnC x = C $ \Unit -> return (Unit,x)
+returnC x = C $ \Unit -> (Unit,x)
 
 bindC :: forall t s0 s1 a b. KnownLen s1
   => Component t s0 a -> (a -> Component t s1 b) -> Component t (s1++s0) b
-bindC f g = C $ \(hsplit @s1 -> (s1,s0)) -> do
-  (s0',x) <- runC f s0
-  (s1',y) <- runC (g x) s1
-  return (happ s1' s0',y)
+bindC f g = C $ \(hsplit @s1 -> (s1,s0)) -> 
+  let (s0',x) = runC f s0
+      (s1',y) = runC (g x) s1
+  in (happ s1' s0',y)
 
-liftC :: Gen a -> Component t '[] a
-liftC f = C $ \Unit -> do
-  x <-  f
-  return (Unit,x)
+liftC :: a -> Component t '[] a
+liftC f = C $ \Unit -> (Unit,f)
 
 -- | A cell in an rnn. @state@ is the state propagated through time.
 type RnnCell t states input output = input -> Component t states output
@@ -93,21 +91,21 @@ type RnnCell t states input output = input -> Component t states output
 type RnnLayer n b state input output = RnnCell b state (V n input) (V n output) 
 
 -- | Run a cell
-runCell :: RnnCell t states input output -> (HTV (Flt t) states,input) -> Gen (HTV (Flt t) states, output)
+runCell :: RnnCell t states input output -> (HTV (Flt t) states,input) -> (HTV (Flt t) states, output)
 runCell cell = uncurry (flip (runC . cell))
 
 -- | Run a layer on a tensor
-runLayer :: KnownNat n => (KnownLen s, KnownLen s1) =>
+runLayer :: KnownShape s => KnownNat n => (KnownLen s, KnownShape s1, KnownTyp t1) =>
                   RnnLayer n t2 states (T s1 t1) (T s t)
                   -> (HTV (Flt t2) states, Tensor (n : s1) t1)
-                  -> Gen (HTV (Flt t2) states, Tensor (n : s) t)
-runLayer l (s,x) = do
-  x' <- unstack0 x
-  (s',y) <- runCell l (s,x')
-  return (s',stack0 y)
+                  -> (HTV (Flt t2) states, Tensor (n : s) t)
+runLayer l (s,x) =
+  let x' = unstack0 x
+      (s',y) = runCell l (s,x')
+  in (s',stack0 y)
 
 -- | Construct a cell from an arbitrary stateful function
-mkCell :: ((HTV (Flt t) states,input) -> Gen (HTV (Flt t) states, output)) -> RnnCell t states input output
+mkCell :: ((HTV (Flt t) states,input) -> (HTV (Flt t) states, output)) -> RnnCell t states input output
 mkCell cell = C . flip (curry cell)
 
 ----------------------
@@ -116,12 +114,7 @@ mkCell cell = C . flip (curry cell)
 -- | Convert a pure function (feed-forward layer) to an RNN cell by
 -- ignoring the RNN state.
 timeDistribute :: (a -> b) -> RnnCell t '[] a b
-timeDistribute pureLayer = timeDistribute' (return . pureLayer)
-
--- | Convert a stateless generator into an RNN cell by ignoring the
--- RNN state.
-timeDistribute' :: (a -> Gen b) -> RnnCell t '[] a b
-timeDistribute' stateLess a = liftC (stateLess a)
+timeDistribute stateLess a = liftC (stateLess a)
 
 --------------------------------------
 -- Combinators
@@ -137,8 +130,10 @@ infixr .--.
 (.--.) = stackRnnLayers
 
 -- | Compose two rnn layers in parallel.
-bothRnnLayers,(.++.)  :: forall s1 s2 a b c n bs bits t. KnownLen s1 => KnownLen s2 => KnownNat n => KnownLen bs
-  => RnnLayer n bits s1 a (T (b ': bs) t) -> RnnLayer n bits s2 a (T (c ': bs) t) -> RnnLayer n bits (s2 ++ s1) a (T ((b+c) ': bs) t)
+bothRnnLayers,(.++.)  :: forall s1 s2 a b c n bits t.
+  KnownTyp t => KnownLen s1 => KnownLen s2 => KnownNat n
+  => KnownNat b => KnownNat c 
+  => RnnLayer n bits s1 a (T '[b] t) -> RnnLayer n bits s2 a (T '[c] t) -> RnnLayer n bits (s2 ++ s1) a (T ('[b+c]) t)
 bothRnnLayers f g x =
   f x `bindC` \y ->
   g x `bindC` \z ->
@@ -160,10 +155,12 @@ stackRnnCells l1 l2 x = l1 x `bindC` l2
 
 
 -- | Compose two rnn cells in parallel.
-bothRnnCells, (.|.) :: forall s0 s1 a b c t bs bits. KnownLen s0 => KnownLen s1
-  => RnnCell t s0 a (T '[b,bs] (Flt bits))
-  -> RnnCell t s1 a (T '[c,bs] (Flt bits))
-  -> RnnCell t (s1 ++ s0) a (T '[b+c,bs] (Flt bits))
+bothRnnCells, (.|.) :: forall s0 s1 a b c t bits. KnownLen s0 => KnownLen s1
+  => KnownBits bits
+  => KnownNat b => KnownNat c 
+  => RnnCell t s0 a (T '[b] (Flt bits))
+  -> RnnCell t s1 a (T '[c] (Flt bits))
+  -> RnnCell t (s1 ++ s0) a (T '[b+c] (Flt bits))
 bothRnnCells l1 l2 x  = 
   l1 x `bindC` \y -> 
   l2 x `bindC` \z -> 
@@ -173,19 +170,21 @@ bothRnnCells l1 l2 x  =
 
 
 -- | Run the cell, and forward the input to the output, by concatenation with the output of the cell.
-withBypass :: forall x y bs t b s0. KnownLen s0
-  => RnnCell b s0 (T '[x,bs] t) (T '[y,bs] t) -> RnnCell b s0 (T '[x,bs] t) (T '[x+y,bs] t)
+withBypass :: forall x y t b s0. KnownNat x => KnownNat y => KnownLen s0
+  => KnownTyp t
+  => RnnCell b s0 (T '[x] t) (T '[y] t) -> RnnCell b s0 (T '[x] t) (T '[x+y] t)
 withBypass cell x = appEmpty @s0 $
   cell x `bindC` \y ->
   returnC (concat0 x y)
 
 -- | Run the cell, and feeds its output as input to the next time-step
-withFeedback :: forall outputSize inputSize bs w ss.
-  RnnCell w ss                       (T '[inputSize+outputSize,bs] (Flt w)) (T '[outputSize,bs] (Flt w)) ->
-  RnnCell w ('[outputSize,bs] ': ss) (T '[inputSize           ,bs] (Flt w)) (T '[outputSize,bs] (Flt w))
-withFeedback cell x = C $ \(F prevoutputnVector :* s) -> do
-  (s',y) <- runC (cell (concat0 x prevoutputnVector)) s
-  return (F y :* s',y)
+withFeedback :: forall outputSize inputSize w ss.
+  KnownBits w => KnownNat outputSize => KnownNat inputSize =>
+  RnnCell w ss                    (T '[inputSize+outputSize] (Flt w)) (T '[outputSize] (Flt w)) ->
+  RnnCell w ('[outputSize] ': ss) (T '[inputSize           ] (Flt w)) (T '[outputSize] (Flt w))
+withFeedback cell x = C $ \(F prevoutputnVector :* s) -> 
+  let (s',y) = runC (cell (concat0 x prevoutputnVector)) s
+  in  (F y :* s',y)
 
 ---------------------------------------------------------
 -- RNN unfolding
@@ -205,33 +204,33 @@ iterateCellBackward :: ∀ n state input output b.
 iterateCellBackward c x = C $ \s -> chainBackward (\(t,y) -> runC (c y) t) (s,x)
 
 -- | RNN helper
-chainForward :: ∀ state a b n. ((state , a) -> Gen (state , b)) → (state , V n a) -> Gen (state , V n b)
-chainForward _ (s0 , V []) = return (s0 , V [])
-chainForward f (s0 , V (x:xs)) = do
-  (s1,x') <- f (s0 , x)
-  (sFin,V xs') <- chainForward f (s1 , V xs)
-  return (sFin,V (x':xs'))
+chainForward :: ∀ state a b n. ((state , a) -> (state , b)) → (state , V n a) -> (state , V n b)
+chainForward _ (s0 , V []) = (s0 , V [])
+chainForward f (s0 , V (x:xs)) = 
+  let (s1,x') = f (s0 , x)
+      (sFin,V xs') = chainForward f (s1 , V xs)
+  in  (sFin,V (x':xs'))
 
 -- | RNN helper
-chainBackward :: ∀ state a b n. ((state , a) -> Gen (state , b)) → (state , V n a) -> Gen (state , V n b)
-chainBackward _ (s0 , V []) = return (s0 , V [])
-chainBackward f (s0 , V (x:xs)) = do
-  (s1,V xs') <- chainBackward f (s0,V xs)
-  (sFin, x') <- f (s1,x)
-  return (sFin,V (x':xs'))
+chainBackward :: ∀ state a b n. ((state , a) -> (state , b)) → (state , V n a) -> (state , V n b)
+chainBackward _ (s0 , V []) = (s0 , V [])
+chainBackward f (s0 , V (x:xs)) =
+  let (s1,V xs') = chainBackward f (s0,V xs)
+      (sFin, x') = f (s1,x)
+  in (sFin,V (x':xs'))
 
 
 -- | RNN helper
-chainForwardWithState :: ∀ state a b n. ((state , a) -> Gen (state , b)) → (state , V n a) -> Gen (V n b, V n state)
-chainForwardWithState _ (_s0 , V []) = return (V [], V [])
-chainForwardWithState f (s0 , V (x:xs)) = do
-  (s1,x') <- f (s0 , x)
-  (V xs',V ss) <- chainForwardWithState f (s1 , V xs)
-  return (V (x':xs'), V (s1:ss) )
+chainForwardWithState :: ∀ state a b n. ((state , a) -> (state , b)) → (state , V n a) -> (V n b, V n state)
+chainForwardWithState _ (_s0 , V []) = (V [], V [])
+chainForwardWithState f (s0 , V (x:xs)) =
+  let (s1,x') = f (s0 , x)
+      (V xs',V ss) = chainForwardWithState f (s1 , V xs)
+  in (V (x':xs'), V (s1:ss) )
 
 -- -- | RNN helper
 -- chainBackwardWithState ::
---   ∀ state a b n. ((state , a) -> Gen (state , b)) → (state , V n a) -> Gen (state , V n b, V n state)
+--   ∀ state a b n. ((state , a) -> (state , b)) → (state , V n a) -> (state , V n b, V n state)
 -- chainBackwardWithState _ (s0 , V []) = return (s0 , V [], V [])
 -- chainBackwardWithState f (s0 , V (x:xs)) = do
 --   (s1,V xs',V ss') <- chainBackwardWithState f (s0,V xs)
@@ -239,7 +238,7 @@ chainForwardWithState f (s0 , V (x:xs)) = do
 --   return (sFin,V (x':xs'),V (sFin:ss'))
 
 -- | RNN helper
-transposeV :: forall n xs t. All KnownLen xs =>
+transposeV :: forall n xs t. All KnownShape xs => KnownNat n =>
                SList xs -> V n (HTV (Flt t) xs) -> HTV (Flt t) (Ap (FMap (Cons n)) xs)
 transposeV LZ _ = Unit
 transposeV (LS _ n) xxs  = F ys' :* yys'
@@ -251,28 +250,28 @@ transposeV (LS _ n) xxs  = F ys' :* yys'
         help (V xs) = (V (map (fromF . hhead) xs),V (map htail xs))
 
 -- | @(gatherFinalStates dynLen states)[i] = states[dynLen[i]]@
-gatherFinalStates :: KnownLen x => KnownNat n => LastEqual bs x => T '[bs] Int32 -> T (n ': x) t -> T x t
-gatherFinalStates dynLen states = nth0 0 (reverseSequences dynLen states)
+gatherFinalStates :: KnownShape x => KnownLen x => KnownNat n => T '[] Int32 -> T (n ': x) t -> T x t
+gatherFinalStates dynLen states = gather states (dynLen ⊝ constant 1)
 
 -- a more efficient algorithm (perhaps:)
 -- gatherFinalStates' :: forall x n bs t. KnownLen x => KnownNat n => LastEqual bs x => T '[bs] Int32 -> T (x ++ '[n,bs]) t -> T x (x ++ '[bs])
 -- gatherFinalStates' (T dynLen)t = gather (flattenN2 @x @n @bs t) indexInFlat
 --  where indexInFlat = (dynLen - 1) + tf.range(0, bs) * n
 
-gathers :: forall n bs xs t. All (LastEqual bs) xs => All KnownLen xs => KnownNat n =>
-            SList xs -> T '[bs] Int32 -> HTV (Flt t) (Ap (FMap (Cons n)) xs) -> HTV (Flt t) xs
+gathers :: forall n xs t. All KnownShape xs => KnownNat n =>
+            SList xs -> T '[] Int32 -> HTV (Flt t) (Ap (FMap (Cons n)) xs) -> HTV (Flt t) xs
 gathers LZ _ Unit = Unit
 gathers (LS _ n) ixs (F x :* xs) = F (gatherFinalStates ixs x) :* gathers @n n ixs xs
 
 -- | @rnnWithCull dynLen@ constructs an RNN as normal, but returns the
 -- state after step @dynLen@ only.
-iterateWithCull :: forall n bs x y ls b.
-  KnownLen ls => KnownNat n => All KnownLen ls => All (LastEqual bs) ls =>
-  T '[bs] Int32 -> RnnCell b ls x y -> RnnLayer n b ls x y
-iterateWithCull dynLen cell xs = C $ \s0 -> do
-  (us,ss) <- chainForwardWithState (uncurry (flip (runC . cell))) (s0,xs)
-  let sss = transposeV @n (shapeSList @ls) ss
-  return (gathers @n (shapeSList @ls) dynLen sss,us)
+iterateWithCull :: forall n x y ls b.
+  KnownLen ls => KnownNat n => All KnownShape ls =>
+  T '[] Int32 -> RnnCell b ls x y -> RnnLayer n b ls x y
+iterateWithCull dynLen cell xs = C $ \s0 -> 
+  let (us,ss) = chainForwardWithState (uncurry (flip (runC . cell))) (s0,xs)
+      sss = transposeV @n (typeSList @ls) ss
+  in (gathers @n (typeSList @ls) dynLen sss,us)
 
 -- -- | Like @rnnWithCull@, but states are threaded backwards.
 -- rnnBackwardsWithCull :: forall n bs x y ls b.

@@ -442,13 +442,13 @@ stack0 = stackT @'[]
 stack1 :: ∀ s (n::Nat) m t. KnownNat n => KnownNat m => KnownShape s => (KnownLen s) => V n (T (m ': s) t) -> Tensor (m ': n ': s) t
 stack1 = stackT @'[m]
 
--- -- | Concatenate @n@ tensors along the last dimension
--- stackN :: ∀ s (n::Nat) t. V n (T s t) -> Tensor (s ++ '[n]) t
--- stackN = stackT @s @'[]
+-- | Concatenate @n@ tensors along the last dimension
+stackN :: ∀ s (n::Nat) t. KnownNat n => KnownShape s => V n (T s t) -> Tensor (s ++ '[n]) t
+stackN = appRUnit @Nat @s $
+         stackT @s @'[]
 
--- -- | Transposition. See the type for the permutation of dimensions.
--- transpose :: ∀ s t. T (Reverse s) t -> T s t
--- transpose = unOp "tf.transpose"
+unstack0 :: ∀ s (n::Nat) t. KnownTyp t => KnownNat n => KnownShape s => (KnownLen s) => Tensor (n ': s) t -> V n (T s t)
+unstack0 x = V [nth0 i x | i <- [0..natVal (Proxy @n) - 1]  ]
 
 permN :: SList s -> Permutation (n ': s) (s ++ '[n])
 permN LZ = PermId
