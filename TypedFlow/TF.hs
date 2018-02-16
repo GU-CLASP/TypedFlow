@@ -109,7 +109,7 @@ module TypedFlow.TF (
   truncatedNormal, randomUniform, randomOrthogonal, varianceScaling, glorotUniform,
 
   -- ** Heterogeneous vectors
-  repeatT, KnownTensors(..), LastEqual
+  repeatT, KnownTensors(..)
   ) where
 
 import Prelude hiding (tanh,Num(..),Floating(..),round,floor,(/),sqrt)
