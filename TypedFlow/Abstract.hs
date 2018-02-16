@@ -324,7 +324,7 @@ concatT = BinOp (Axis2Op "tf.concat" (peanoTypeInt @n)) LZ
   where s = typeSShape @s; n = typeSPeano @n; d1 = natSat @d1; d2 = natSat @d2
 
 -- | Concatenate tensors on the first dimension
-concat0 :: ∀ ys d1 d2 t. KnownTyp t => KnownShape ys => KnownNat d2 => KnownNat d1 => (KnownLen ys) => T (d1 ': ys) t -> T (d2 ': ys) t -> T ((d1 + d2) ': ys) t
+concat0 :: ∀ d1 d2 ys t. KnownTyp t => KnownShape ys => KnownNat d2 => KnownNat d1 => (KnownLen ys) => T (d1 ': ys) t -> T (d2 ': ys) t -> T ((d1 + d2) ': ys) t
 concat0 = concatT @Dim0
 
 -- | Concatenate tensors on the second dimension

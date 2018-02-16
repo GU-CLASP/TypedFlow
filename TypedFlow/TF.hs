@@ -176,10 +176,8 @@ getParameters = do
 
 -- TODO: gradient wrt. a HTV
 -- | Gradient of wrt. given parameters.
-grad :: KnownShape s => T s Float32 -> UntypedExpression -> Gen UntypedExpression
-grad y0 vars = do
-  y <- generatePure y0
-  return (funcall "tf.gradients" [y, vars])
+grad :: UntypedExpression -> UntypedExpression -> UntypedExpression
+grad y vars = funcall "tf.gradients" [y, vars]
 
 -- -- | Gradient of wrt. given parameters.
 -- grad' :: KnownLen xs => T s Float32 -> HHTV xs -> Gen (HHTV xs)

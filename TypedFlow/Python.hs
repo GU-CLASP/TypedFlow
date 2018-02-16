@@ -146,10 +146,14 @@ peekAtAny p v = modify $ \GState{..} -> GState{genPeeks = if p `elem` map fst ge
 
 assign :: ∀s t. (KnownShape s, KnownTyp t) => T s t -> Gen (T s t)
 assign x = do
-  v <- newVar
   e <- generatePure x
-  v <-- e
-  return (T v)
+  T <$> assignAny e
+
+assignAny :: UntypedExpression -> Gen UntypedExpression
+assignAny x = do
+  v <- newVar
+  v <-- x
+  return v
 
 lambda :: (T s t -> T s' t') -> Gen UntypedExpression
 lambda f = do

@@ -40,7 +40,7 @@ import GHC.TypeLits
 import Control.Monad.State (modify, gets)
 
 -- | Triple of values that are always output in a model: prediction, loss and accuracy.
-data ModelOutput s t = forall n.
+data ModelOutput s t = forall n. KnownNat n =>
                        ModelOutput {modelY :: T s t -- ^ prediction
                                    ,modelLoss :: Scalar Float32
                                    ,modelCorrect :: T '[n] Float32 -- ^ correctness of a bit of the output, within [0,1]
@@ -49,35 +49,36 @@ data ModelOutput s t = forall n.
 -- | A standard modelling function: (input value, gold value) ↦ (prediction, accuracy, loss)
 type Model input tIn output tOut = T input tIn -> T output tOut -> Gen (ModelOutput output tOut)
 
-modelBoth :: forall n m s t. KnownLen s => ModelOutput (n ': s) t -> ModelOutput (m ': s) t -> ModelOutput (n + m ': s) t
+modelBoth :: forall n m s t. KnownTyp t => KnownShape s => KnownNat m => KnownNat n =>
+    ModelOutput (n ': s) t -> ModelOutput (m ': s) t -> ModelOutput (n + m ': s) t
 modelBoth (ModelOutput y1 l1 c1) (ModelOutput y2 l2 c2) = ModelOutput (concat0 y1 y2) (l1 + l2) (concat0 c1 c2)
 
 -- | First type argument is the number of classes.
 -- @categorical logits gold@
 -- return (prediction, accuraccy, loss)
 -- accuracy and prediction are averaged over the batch.
-categorical :: forall nCat bs. KnownNat nCat => Model '[nCat,bs] Float32 '[bs] Int32
+categorical :: forall nCat. KnownNat nCat => Model '[nCat] Float32 '[] Int32
 categorical logits' y = do
   logits <- assign logits'
   let y_ = argmax0 logits
       modelY = y_
-      modelCorrect = cast (equal y_ y)
+      modelCorrect = expandDim0 (cast (equal y_ y))
       modelLoss = reduceMeanAll (sparseSoftmaxCrossEntropyWithLogits y logits)
   return ModelOutput{..}
-
+;
 -- | First type argument is the number of classes.
 -- @categoricalDistribution logits gold@
 -- return (prediction, accuraccy, loss)
 -- accuracy and prediction are averaged over the batch.
-categoricalDistribution :: forall nCat bs. Model '[nCat,bs] Float32 '[nCat,bs] Float32
+categoricalDistribution :: forall nCat. KnownNat nCat => Model '[nCat] Float32 '[nCat] Float32
 categoricalDistribution logits' y = do
   logits <- assign logits'
   let y_ = softmax0 logits
       modelY = y_
-      modelCorrect = cast (equal (argmax0 @'B32 logits) (argmax0 y))
+      modelCorrect = expandDim0 (cast (equal (argmax0 @'B32 logits) (argmax0 y)))
       modelLoss = reduceMeanAll (softmaxCrossEntropyWithLogits y logits)
   return ModelOutput{..}
-
+;
 -- | @timedCategorical targetWeights logits y@
 --
 -- targetWeights: a zero-one matrix of the same size as
@@ -87,25 +88,30 @@ categoricalDistribution logits' y = do
 -- Note that the accuracy is computed by weigthing the accuracies at
 -- individual time steps with the targetWeights.
 
-timedCategorical :: forall len nCat bs bits. KnownNat nCat => KnownNat bs => KnownNat len => KnownBits bits =>
-  Tensor '[len,bs] (Flt bits) -> Tensor '[len,nCat,bs] (Flt bits) -> Tensor '[len,bs] Int32 -> Gen (ModelOutput '[len,nCat,bs] (Flt bits))
+timedCategorical :: forall len nCat bits. KnownNat nCat => KnownNat len => KnownBits bits =>
+  Tensor '[len] (Flt bits) -> Tensor '[nCat,len] (Flt bits) -> Tensor '[len] Int32 -> Gen (ModelOutput '[nCat,len] (Flt bits))
 timedCategorical targetWeights logits' y = do
   logits <- assign logits'
-  let y_ = argmax1 logits
-      modelY = softmax1 logits
+  let y_ :: Tensor '[len] Int32
+      y_ = argmax0 logits
+      modelY = softmax0 logits
+      correctPrediction :: Tensor '[len] TFBool
       correctPrediction = equal y_ y
-      modelCorrect = cast ((reduceSum @Axis0 (cast @(Flt bits) correctPrediction ⊙ targetWeights)) ⊘ reduceSum @Axis0 targetWeights)
-      crossEntropies = sparseSoftmaxCrossEntropyWithLogits y (transpose01 logits)
+      correctPredictionWeighted :: Tensor '[len] (Flt bits)
+      correctPredictionWeighted = cast @(Flt bits) correctPrediction ⊙ targetWeights
+      modelCorrect :: Tensor '[1] Float32
+      modelCorrect = expandDim0 (cast ((reduceSumAll correctPredictionWeighted) ⊘ reduceSumAll targetWeights))
+      crossEntropies = zipWithT sparseSoftmaxCrossEntropyWithLogits y (transpose01 logits)
       modelLoss = cast @Float32 (reduceMeanAll (crossEntropies ⊙ targetWeights))
   return ModelOutput{..}
 
 -- | Model with several binary outputs.
-binary :: forall n bs. KnownNat n => (KnownNat bs) => Model '[n,bs] Float32 '[n,bs] Int32
+binary :: forall n. KnownNat n => Model '[n] Float32 '[n] Int32
 binary logits y = do
   sigy_ <- assign (sigmoid logits)
   let y_ = cast @Int32 (round sigy_)
       modelY = y_
-      modelCorrect = cast (flatten2 (equal y_ y))
+      modelCorrect = cast (equal y_ y)
       modelLoss = reduceMeanAll (sigmoidCrossEntropyWithLogits (cast @Float32 y) logits)
   return ModelOutput{..}
 
@@ -119,7 +125,7 @@ defaultOptions = Options {maxGradientNorm = Nothing}
 
 -- | compile a standard model
 compile :: forall sx tx sy ty sy_ ty_.
-           (KnownShape sx, KnownTyp tx, KnownShape sy, KnownTyp ty, KnownShape sy_) =>
+           (KnownShape sx, KnownTyp tx, KnownShape sy, KnownTyp ty, KnownShape sy_, KnownTyp ty_) =>
            Options -> (Tensor sx tx -> Tensor sy ty -> Gen (ModelOutput sy_ ty_))
            -- Model input tIn output tOut
         -> Gen ()
@@ -135,13 +141,13 @@ addRegularizer r = modify $ \GState{..} -> GState{genRegularizers=r:genRegulariz
 
 -- | Generic a model with non-standard parameters ("x" and "y" must be
 -- provided as placeholders manually).
-compileGen :: forall sy ty. (KnownShape sy) =>
+compileGen :: forall sy ty. (KnownShape sy, KnownTyp ty) =>
            Options -> Gen (ModelOutput sy ty) -> Gen ()
 compileGen Options{..} model = knownLast @sy $ do
   gen (text "import tensorflow as tf")
   genFun "mkModel" [text "optimizer=tf.train.AdamOptimizer()"] $ do
-    peekAt "optimizer" (T (text "optimizer"))
-    peekAt "batch_size" (T (showDim @ (Last sy)))
+    peekAtAny "optimizer" (text "optimizer")
+    peekAtAny "batch_size" (showDim @ (Last sy))
     trainingPhasePlaceholder <- placeholder "training_phase"
     modify $ \GState{..} -> GState{genTrainingPlaceholder = trainingPhasePlaceholder,..}
     ModelOutput{..} <- model
@@ -153,10 +159,11 @@ compileGen Options{..} model = knownLast @sy $ do
     accuracy <- assign (reduceMeanAll (cast @Float32 modelCorrect))
     peekAt "accuracy" accuracy
     params <- getParameters
-    peekAt "params" (T params)
-    trainStep <- assign $ case maxGradientNorm of
-      Nothing -> T (funcall "optimizer.minimize" [fromTensor loss])
-      Just clip -> T (funcall "optimizer.apply_gradients" [funcall "zip" [clipByGlobalNorm clip (grad loss params),params]])
-    peekAt "train" trainStep
+    peekAtAny "params" params
+    l <- generatePure loss
+    trainStep <- assignAny $ case maxGradientNorm of
+      Nothing -> funcall "optimizer.minimize" [l]
+      Just clip -> funcall "optimizer.apply_gradients" [funcall "zip" [clipByGlobalNorm clip (grad l params),params]]
+    peekAtAny "train" trainStep
     peeks <- gets genPeeks
     gen (text "return " <> dict peeks)
