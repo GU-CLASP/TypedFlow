@@ -155,13 +155,13 @@ atShape :: SList s -> T s t -> T s t
 atShape _ x = x
 
 reshapeAuto :: forall s s0 t. KnownShape s0 => Product s ~ Product s0 => T s0 t -> T s t
-reshapeAuto = ReshapeFrom (typeSShape @s0)
+reshapeAuto = reshapeFrom (Proxy @s0)
 
 reshapeTo :: forall s s0 t proxy. KnownShape s0=> Product s ~ Product s0 => proxy s -> T s0 t -> T s t
 reshapeTo _ = reshapeAuto
 
-reshapeFrom :: forall proxy s s0 t. KnownShape s0=> Product s ~ Product s0 => proxy s0 -> T s0 t -> T s t
-reshapeFrom _ = reshapeAuto
+reshapeFrom :: forall proxy s s0 t. KnownShape s0 => Product s ~ Product s0 => proxy s0 -> T s0 t -> T s t
+reshapeFrom _ = unsafeReshape
 
 
 
@@ -337,8 +337,9 @@ reshape :: ∀ s2 s1 t. KnownShape s1 => KnownTyp t => KnownShape s2 => Product 
 reshape = unsafeReshape
 
 
-unsafeReshape :: ∀ s2 s1 t. KnownShape s1 => KnownTyp t => KnownShape s2 => Tensor s1 t -> Tensor s2 t
-unsafeReshape = ReshapeFrom (typeSShape @s1)
+unsafeReshape :: ∀ s2 s1 t. KnownShape s1 => Tensor s1 t -> Tensor s2 t
+unsafeReshape (ReshapeFrom s1 x) = ReshapeFrom s1 x -- avoid reshaping over and over
+unsafeReshape x = ReshapeFrom (typeSShape @s1) x
 
 -- | Flatten all the dimensions of the tensor
 flattenAll :: forall s t. KnownTyp t => KnownShape s => Tensor s t -> Tensor '[Product s] t
