@@ -77,7 +77,8 @@ protoBroadcast n@(Sat) rec s tensor
   Pool bs@Sat window pt numChans outSpatial x ->
     knownSShape (zipWithMulSShapes window outSpatial .+. LS numChans LZ) $
     prodAssocS n bs (productS (zipWithMulSShapes window outSpatial .+. LS numChans LZ)) $
-    ReshapeFrom (LS (satMul n bs) (outSpatial `sl` numChans)) $
+    prodAssocS n bs (productS (outSpatial .+. LS numChans LZ)) $
+    reshapeFrom (LS (satMul n bs) (outSpatial `sl` numChans)) $
     Pool (satMul n bs) window pt numChans outSpatial (reshapeAuto (rec typeSShape x))
   If cond x y
     | finished cond -> If cond (rec s x) (rec s y)
@@ -101,8 +102,9 @@ protoBroadcast n@(Sat) rec s tensor
   Convolution bs@(Sat) inChans outChans filterShape s0 x filters
     | finished filters ->
       prodAssocS n bs (productS (sl s0 inChans)) $
+      prodAssocS n bs (productS (sl s0 outChans)) $
       knownSShape (sl s0 inChans)  $
-      ReshapeFrom (LS (satMul n bs) (s0 `sl` outChans)) $
+      reshapeFrom (LS (satMul n bs) (s0 `sl` outChans)) $
       Convolution (satMul n bs) inChans outChans filterShape s0 (reshapeAuto (rec typeSShape x)) filters
     | otherwise -> error "broadcast on convolution filter not implemented"
 
@@ -155,13 +157,13 @@ atShape :: SList s -> T s t -> T s t
 atShape _ x = x
 
 reshapeAuto :: forall s s0 t. KnownShape s0 => Product s ~ Product s0 => T s0 t -> T s t
-reshapeAuto = reshapeFrom (Proxy @s0)
+reshapeAuto = reshapeFrom typeSShape
 
 reshapeTo :: forall s s0 t proxy. KnownShape s0=> Product s ~ Product s0 => proxy s -> T s0 t -> T s t
 reshapeTo _ = reshapeAuto
 
-reshapeFrom :: forall proxy s s0 t. KnownShape s0 => Product s ~ Product s0 => proxy s0 -> T s0 t -> T s t
-reshapeFrom _ = unsafeReshape
+reshapeFrom :: forall s s0 t. Product s ~ Product s0 => SShape s0 -> T s0 t -> T s t
+reshapeFrom s = knownSShape s unsafeReshape
 
 
 
