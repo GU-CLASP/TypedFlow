@@ -39,7 +39,7 @@ library
        TypedFlow.Layers.RNN.Cells,
        TypedFlow.Layers.RNN.Attention,
        TypedFlow.Learn,
-       -- TypedFlow.Models.Topic,
+       TypedFlow.Models.Topic,
        TypedFlow.Python,
        TypedFlow.TF,
        TypedFlow.Types

@@ -40,7 +40,7 @@ module TypedFlow.Layers.Core
     -- * Embedding
     EmbeddingP(..), embedding, 
     -- * Convolutional
-    ConvP(..), conv, {-convValid,-} maxPool1D, maxPool2D)
+    ConvP(..), conv, conv', {-convValid,-} maxPool1D, maxPool2D)
 
 where
 
@@ -154,7 +154,7 @@ instance (KnownNat outChannels,KnownNat inChannels, KnownShape filterSpatialShap
           ConvP <$> travTensor f (s<>"_filters") x <*> travTensor f (s <> "_biases") y
 
 -- | Size-preserving convolution layer
-conv' :: forall outChannels filterSpatialShape inChannels s t.
+conv' :: forall s outChannels filterSpatialShape inChannels t.
                KnownShape s => KnownNat inChannels => KnownNat outChannels => KnownShape filterSpatialShape => KnownBits t
             => Length filterSpatialShape <= 3
             => Length filterSpatialShape ~ Length s
@@ -178,7 +178,7 @@ conv = initLast @s $
         lengthInit @s $
         incrCong @(Length filterSpatialShape) @(Length (Init s)) $
         knownInit @s $ 
-        conv' @outChannels @filterSpatialShape @inChannels @(Init s)
+        conv' @(Init s) 
 
 -- warning: [-Wdeferred-type-errors]
 --     • Could not deduce: Length filterSpatialShape ~ Length (Init s)

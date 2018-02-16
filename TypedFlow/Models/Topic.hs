@@ -35,7 +35,6 @@ import Prelude hiding ((/), sqrt, tanh, Num(..))
 import TypedFlow.TF
 import TypedFlow.Layers
 import TypedFlow.Types
-import TypedFlow.Python (assign)
 import TypedFlow.Learn
 import GHC.TypeLits
 import Data.Monoid ((<>))
@@ -48,13 +47,15 @@ tldmDocsummary :: forall
   (a :: Nat) -- document vector summary size
   (n :: Nat) -- length of the document
   (filterSize :: Nat) -- size of the convolution filter
-  (batchSize :: Nat)
-   (t :: NBits) -- size of floats
-  .  KnownNat e => KnownNat a => KnownNat n => KnownNat batchSize => KnownBits t
-  =>  (EmbeddingP vocSize e t) -> (ConvP t a e '[filterSize]) -> DropProb -> Gen (T '[n,batchSize] Int32 -> T '[a,batchSize] (Flt t))
+  (t :: NBits) -- size of floats
+  .  KnownNat vocSize => KnownNat filterSize => KnownNat e => KnownNat a => KnownNat n => KnownBits t
+  =>  (EmbeddingP vocSize e t) -> (ConvP t a e '[filterSize]) -> DropProb -> Gen (T '[n] Int32 -> T '[a] (Flt t))
 tldmDocsummary embs filters dropProb = do
   drpEmb <- mkDropout dropProb
-  return (\document -> reduceMax @Dim1 (conv filters (drpEmb (embedding @e @vocSize embs document))))
+  return $ \document ->
+    let embeddedDoc :: Tensor [n,e] (Flt t)
+        embeddedDoc = drpEmb (mapT (embedding @e @vocSize embs) document)
+    in reduceMax @Dim0 (conv' @'[n] filters embeddedDoc)
 
 -- | Parameter for topics. This is effectively map from document
 -- features (a) to topic representations (vectors of size b) via k
@@ -79,13 +80,12 @@ mkTdlmTopic :: forall
   (a :: Nat) -- document vector summary size
   (b :: Nat) -- topic representation size
   (t :: NBits) -- size of floats
-  (batchSize :: Nat)
-  . KnownNat kk => KnownNat a => KnownNat b => KnownBits t => KnownNat batchSize
-  => Float -> TopicP t a kk b -> Gen (T '[a,batchSize] (Flt t) -> Tensor '[b, batchSize] (Flt t))
+  . KnownNat kk => KnownNat a => KnownNat b => KnownBits t
+  => Float -> TopicP t a kk b -> Gen (T '[a] (Flt t) -> Tensor '[b] (Flt t))
 mkTdlmTopic separationConstant (TopicP topicInput topicOutput) = do
   drpS   <- mkDropout (DropProb 0.1)
-  let topicNormalized :: T '[b,kk] (Flt t)
-      topicNormalized = transpose01 topicOutput / (sqrt (reduceSum @Dim0 (square topicOutput)) :: T '[b] (Flt t))
+  let topicNormalized :: T '[kk,b] (Flt t)
+      topicNormalized = mapT (/ (sqrt (reduceSum @Dim0 (square topicOutput)) :: T '[b] (Flt t))) topicOutput
       -- matrix of correlation between the topics
       topicCorrelation :: T '[b,b] (Flt t)
       topicCorrelation = matmul (transpose01 topicNormalized) topicNormalized
@@ -93,7 +93,7 @@ mkTdlmTopic separationConstant (TopicP topicInput topicOutput) = do
       topicOverlap = reduceMaxAll (square (topicCorrelation ⊝ eye))
   addRegularizer (constant separationConstant ⊙ cast topicOverlap) -- regularizer which ensures that topics are disjoint
 
-  return (\d -> let p :: T '[kk,batchSize] (Flt t)
+  return (\d -> let p :: T '[kk] (Flt t)
                     p = softmax0 (topicInput ∙ d) -- attention distribution (among the topics)
                 in drpS (topicOutput ∙ p))
 
@@ -101,10 +101,10 @@ mkTdlmTopic separationConstant (TopicP topicInput topicOutput) = do
 -- external information source (eg. topic representation).  Described
 -- 'Topically Driven Neural Language Model' by Lau, Baldwin and Cohn;
 -- formula (3)
-tldmGatingUnit :: KnownBits t => KnownNat bs => KnownNat m => (GRUP t m n) -> T '[n,bs] (Flt t) -> T '[m,bs] (Flt t) -> Gen (T '[m,bs] (Flt t))
-tldmGatingUnit (GRUP wz wr w) s h = do
-  x <- assign (concat0 h s)
-  let z = sigmoid (wz ∙ x)
+tldmGatingUnit :: KnownNat n => KnownBits t => KnownNat m => (GRUP t m n) -> T '[n] (Flt t) -> T '[m] (Flt t) -> (T '[m] (Flt t))
+tldmGatingUnit (GRUP wz wr w) s h = 
+  let x = concat0 h s
+      z = sigmoid (wz ∙ x)
       r = sigmoid (wr ∙ x)
       hTilda = tanh (w ∙ (concat0 (r ⊙ h) s))
-  assign ((ones ⊝ z) ⊙ h + z ⊙ hTilda)
+  in ((ones ⊝ z) ⊙ h + z ⊙ hTilda)
