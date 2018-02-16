@@ -43,3 +43,6 @@ library
        TypedFlow.Python,
        TypedFlow.TF,
        TypedFlow.Types
+
+  other-modules:
+        TypedFlow.Memo
