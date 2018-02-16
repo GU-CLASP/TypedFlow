@@ -42,8 +42,8 @@ import Data.Proxy
 import GHC.TypeLits
 import Control.Monad.State
 import TypedFlow.Types
+import TypedFlow.Memo
 import Text.PrettyPrint.Compact hiding (All,Last,Product,Sum)
-
 
 generateFile :: String -> Gen () -> IO ()
 generateFile fname g = do
@@ -168,6 +168,7 @@ generate s = (renderWith (Options 92 (const id)) genText,genParams)
                                                     ,genParams=[]
                                                     ,genRegularizers=[]
                                                     ,genTrainingPlaceholder = T "NO TRAINING PLACEHOLDER!"
+                                                    ,genPureTable = mempty
                                                     ,genPeeks=[]})
 
 -- FIXME: sharing
@@ -190,17 +191,35 @@ listProxyLen :: forall proxy s. KnownLen s => proxy s -> Integer
 listProxyLen _ = listTypeLen @s
 
 generatePure :: forall s t. KnownTyp t => KnownShape s => T s t -> Gen DOC
-generatePure x = return (generatePure' typeSShape x)
+generatePure x = do
+  let sn = makeSn2 x
+  mv <- snMapLookup2 sn <$> gets genPureTable
+  case mv of
+    Just v -> return v
+    Nothing -> do
+      v <- newVar
+      e <- generatePure' (\s x' -> knownSShape s $ generatePure x') typeSShape x
+      v <-- e
+      modify (\g -> g {genPureTable = (snMapInsert2 sn v) (genPureTable g)}) 
+      return v
 
-generatePure' :: forall s t. KnownTyp t => SShape s -> T s t -> DOC
-generatePure' sR = knownSShape sR $ \case
-  T x -> x
-  If c x y -> func "tf.cond" [rec typeSShape c] [("true_fn", lambda0 (rec typeSShape x))
-                                                ,("false_fn", lambda0 (rec typeSShape y))
-                                                ,("strict","True")]
+generatePure' :: forall s t. KnownTyp t => (forall s' t'. KnownTyp t' => SShape s' -> T s' t' -> Gen DOC) -> SShape s -> T s t -> Gen DOC
+generatePure' rec sR = knownSShape sR $ \case
+  T x -> return x
+  If c x y -> do
+    rc <- rec typeSShape c
+    rx <- rec typeSShape x
+    ry <- rec typeSShape y
+    return (func "tf.cond" [rc] [("true_fn", lambda0 rx) ,("false_fn", lambda0 ry) ,("strict","True")])
     where lambda0 z = text "lambda: " <> z
-  Where c x y -> funcall "tf.where" [rec typeSShape c, rec typeSShape x, rec typeSShape y]
-  UnOp operation s0 s1 _s2 x -> case operation of
+  Where c x y -> do
+    rc <- rec typeSShape c
+    rx <- rec typeSShape x
+    ry <- rec typeSShape y
+    return (funcall "tf.where" [rc, rx, ry])
+  UnOp operation s0 s1 _s2 x -> do
+   recx <- rec (s0 .+. s1) x
+   return $ case operation of
     SimpleBroadCast n ->
     -- Nicer implementation upcoming?
     -- https://github.com/tensorflow/tensorflow/pull/15243
@@ -212,29 +231,39 @@ generatePure' sR = knownSShape sR $ \case
     Simple1Op op args -> funcall op (recx:args)
     SliceOp lo hi -> recx <> list (replicate (fromIntegral (sListLength s0)) (text ":") ++ [integer lo <> text ".." <> integer hi])
     IndexOp axis ix -> recx <> list (replicate (fromIntegral (axis + sListLength s0)) (text ":") ++ [integer ix])
-   where recx = rec (s0 .+. s1) x
-  BinOp operation s0 s1 s2 _s3 x y -> case operation of
+  BinOp operation s0 s1 s2 _s3 x y -> do
+   recx <- rec (s0 .+. s1) x
+   recy <- rec (s0 .+. s2) y
+   return $ case operation of
      Axis2Op op n -> funcall op  [list [recx,recy], named "axis" (integer (sListLength s0 + n))]
      Simple2Op op Nothing -> funcall op [recx, recy]
      Simple2Op op (Just (nx,ny)) -> func op [] [(nx,recx), (ny,recy)]
-   where recx = rec (s0 .+. s1) x
-         recy = rec (s0 .+. s2) y
-  ReshapeFrom s t ->  funcall "tf.reshape" [rec s t, knownSShape sR (showShapeMinus sR)]
-  Stack s0 _m s1 (V xs) -> funcall "tf.stack" [list (map (rec (s0 .+. s1)) xs), text "axis=" <> integer (sListLength s0)]
-  Transpose s p x -> func "tf.transpose" [rec s x] [("perm",list (map (integer . permToFun p) [0.. sListLength s]))]
-  Gather indexShape s0 m s1 x ix -> func "tf.gather" [rec (s0 .+. (LS m s1)) x, rec indexShape ix] []
-  Convolution bs inChans outChans filterShape s0 x filters ->
-    func "tf.nn.convolution" [recx, recFilters] [("padding",text (show ("SAME"::String))),("data_format", text (show dataFormat))]
+  ReshapeFrom s t -> do
+    rt <- rec s t
+    return (funcall "tf.reshape" [rt, knownSShape sR (showShapeMinus sR)])
+  Stack s0 _m s1 (V xs) -> do
+    rxs <- mapM (rec (s0 .+. s1)) xs
+    return (funcall "tf.stack" [list rxs, text "axis=" <> integer (sListLength s0)])
+  Transpose s p x -> do
+    rx <- rec s x
+    return (func "tf.transpose" [rx] [("perm",list (map (integer . permToFun p) [0.. sListLength s]))])
+  Gather indexShape s0 m s1 x ix -> do
+    rx <- rec (s0 .+. (LS m s1)) x
+    rix <- rec indexShape ix
+    return (func "tf.gather" [rx, rix] [])
+  Convolution bs inChans outChans filterShape s0 x filters -> do
+    recx <- rec (LS bs (sl s0 inChans)) x
+    recFilters <- rec (filterShape .+. (LS inChans (LS outChans LZ))) filters
+    return (func "tf.nn.convolution" [recx, recFilters] [("padding",text (show ("SAME"::String))),("data_format", text (show dataFormat))])
    where dataFormat = case sListLength filterShape of
            1 -> ("NWC" :: String)
            2 -> "NHWC"
            3 -> "NDHWC"
            _ -> error "convolution: more than 3 spatial dimensions are not supported!"
-         recx = rec (LS bs (sl s0 inChans)) x
-         recFilters = rec (filterShape .+. (LS inChans (LS outChans LZ))) filters
-  Pool bs window typ numChans outSpatial x ->
-     func "tf.nn.pool" [rec (LS bs (zipWithMulSShapes window outSpatial .+. LS numChans LZ)) x, showSShape window, typ'] []
-   where typ' = text $ show $ case typ of MaxPool -> "MAX"; AvgPool -> "AVG"
- where rec :: forall s' t'. KnownTyp t' => SShape s' -> T s' t' -> DOC
-       rec = generatePure' 
+  Pool bs window typ numChans outSpatial x -> do
+     rx <- rec (LS bs (zipWithMulSShapes window outSpatial .+. LS numChans LZ)) x
+     return (func "tf.nn.pool" [rx, showSShape window, typ'] [])
+   where typ' = text $ (show $ case typ of MaxPool -> "MAX"; AvgPool -> "AVG" :: String)
+ -- where rec :: forall s' t'. KnownTyp t' => SShape s' -> T s' t' -> DOC
+ --       rec = generatePure' 
 

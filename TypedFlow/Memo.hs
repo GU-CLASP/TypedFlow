@@ -1,12 +1,16 @@
+{-# LANGUAGE TypeInType #-}
+{-# LANGUAGE PolyKinds #-}
+{-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE GADTs #-}
 module TypedFlow.Memo where
 
 import qualified Data.IntMap as I
 import System.Mem.StableName
 import Data.IORef
 import System.IO.Unsafe
-
+import Data.Kind (Type)
 type SNMap k v = I.IntMap [(StableName k,v)]
 
 snMapLookup :: StableName k -> SNMap k v -> Maybe v
@@ -35,18 +39,21 @@ applyStable f tbl arg = unsafePerformIO (
               ; return res
               }})
 
+data Some2 k1 k2 (f :: k1 -> k2 -> Type) where
+  Some2 :: forall k1 k2 f a b. StableName (f a b) -> Some2 k1 k2 f
 
-memoEffect :: forall a m b. (a -> m b) -> a -> m b
-memoEffect f a = 
-  let tref = unsafePerformIO (newIORef (I.empty))
-  in applyStable f tref a
+instance Eq (Some2 k1 k2 f) where
+  Some2 sn1 == Some2 sn2 = eqStableName sn1 sn2
 
-applyStableEffect :: Monad m => (a -> m b) -> IORef (SNMap a b) -> a -> m b
-applyStableEffect f tbl arg = do
-  let sn = unsafePerformIO (makeStableName arg)
-  let lkp = snMapLookup sn (unsafePerformIO (readIORef tbl))
-  case lkp of
-    Just result -> return result
-    Nothing -> do
-      res <- f arg
-      return (unsafePerformIO (modifyIORef tbl (snMapInsert sn res)) `seq` res)
+type SSNMap2 k1 k2 (f :: k1 -> k2 -> Type) v = I.IntMap [(Some2 k1 k2 f,v)]
+
+makeSn2 :: f a b -> Some2 k1 k2 f
+makeSn2 = Some2 . unsafePerformIO . makeStableName
+
+snMapLookup2 :: Some2 k1 k2 f -> SSNMap2 k1 k2 f v -> Maybe v
+snMapLookup2 (Some2 sn) m = do
+  x <- I.lookup (hashStableName sn) m
+  lookup (Some2 sn) x
+
+snMapInsert2 :: Some2 k1 k2 f -> v -> SSNMap2 k1 k2 f v -> SSNMap2 k1 k2 f v
+snMapInsert2 (Some2 sn) res = I.insertWith (++) (hashStableName sn) [(Some2 sn,res)]

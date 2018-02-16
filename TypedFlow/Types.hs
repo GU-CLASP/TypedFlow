@@ -35,6 +35,7 @@ import Control.Monad.State
 import Data.Char (toLower)
 import Data.Kind (Constraint)
 import Data.Type.Equality
+import TypedFlow.Memo
 
 data Sat (a :: k -> Constraint) (b::k) where
   Sat :: forall b a. a b => Sat a b
@@ -576,6 +577,7 @@ type None = 514229 --  fibonnaci prime.
 --------------------------------
 -- Generation Effects
 
+
 data ParamInfo = ParamInfo {paramName :: String
                            ,paramShape :: [Integer]
                            ,paramDType :: Typ
@@ -585,6 +587,7 @@ data GState = GState {nextVar :: Integer, -- ^ next free variable
                       genParams :: [ParamInfo], -- ^ optimizable parameters
                       genRegularizers :: [Scalar Float32], -- ^ accumulated regularizers
                       genTrainingPlaceholder :: Scalar TFBool, -- ^ flag which is true when training
+                      genPureTable :: SSNMap2 Shape Typ T DOC,
                       genPeeks :: [(String,UntypedExpression)]}
 newtype Gen x = Gen {fromGen :: State GState x} deriving (Monad, MonadState GState, Functor, Applicative)
 

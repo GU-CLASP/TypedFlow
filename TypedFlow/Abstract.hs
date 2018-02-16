@@ -58,9 +58,6 @@ broadcastPerm n (PermSkip p) = PermSkip (broadcastPerm n p)
 broadcastPerm _ PermSwap = PermSwap
 broadcastPerm n (PermTrans p q) = PermTrans (broadcastPerm n p) (broadcastPerm n q)
 
-proxyCons :: Proxy x -> Proxy xs -> Proxy (x ': xs)
-proxyCons _ _ = Proxy
-
 broadcast :: forall n s t. KnownTyp t => KnownShape s => KnownNat n => Proxy n -> T s t -> T (n : s) t
 broadcast n = f
   where f :: forall s' t'. KnownTyp t' => KnownShape s' => T s' t' -> T (n : s') t'
@@ -137,15 +134,6 @@ protoFinished rec = \case
   Stack _s0 _m _s1 xs -> all rec xs
   Convolution _bs _inChans _outChans _filterShape _s x filters -> rec x && rec filters
   Pool _ _ _ _ _ x  -> rec x
-
-perm210 :: Permutation (n ': m ': o ': s) (m ': o ': n ': s)
-perm210 = PermSwap `PermTrans` (PermSkip PermSwap)
-
-perm021 :: Permutation (m ': o ': n ': s) (n ': m ': o ': s) 
-perm021 = inversePerm perm210
-
--- >>> map (permToFun perm210) [0..5::Int]
--- [2,0,1,3,4,5]
 
 inversePerm :: Permutation a b -> Permutation b a
 inversePerm PermId = PermId
