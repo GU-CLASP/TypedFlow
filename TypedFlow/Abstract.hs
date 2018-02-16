@@ -45,12 +45,9 @@ import TypedFlow.Types hiding (T)
 import Data.Type.Equality
 import Unsafe.Coerce
 import Data.Kind (Type,)
-import qualified Data.IntMap as I
-import System.Mem.StableName
-import Data.IORef
-import System.IO.Unsafe
 import TypedFlow.Types (T(..))
 import Text.PrettyPrint.Compact hiding (All,Last,Product,Sum)
+import TypedFlow.Memo
 
 appAssocS :: SList' f a -> SList' f b -> SList' f c -> ((a ++ b) ++ c) :~: (a ++ (b ++ c))
 appAssocS = unsafeCoerce Refl
@@ -166,30 +163,6 @@ reshapeTo _ = reshapeAuto
 reshapeFrom :: forall proxy s s0 t. KnownShape s0=> Product s ~ Product s0 => proxy s0 -> T s0 t -> T s t
 reshapeFrom _ = reshapeAuto
 
-type SNMap k v = IORef (I.IntMap [(StableName k,v)])
-
-memo :: (a -> b) -> a -> b
-memo f = unsafePerformIO (
-  do { tref <- newIORef (I.empty)
-     ; return (applyStable f tref)
-     })
-
-lk :: StableName k -> I.IntMap [(StableName k,v)] -> Maybe v
-lk sn m = do
-  x <- I.lookup (hashStableName sn) m
-  lookup sn x
-
-applyStable :: (a -> b) -> SNMap a b -> a -> b
-applyStable f tbl arg = unsafePerformIO (
-  do { sn <- makeStableName arg
-     ; lkp <- lk sn <$> readIORef tbl
-     ; case lkp of
-         Just result -> return result
-         Nothing ->
-           do { let res = f arg
-              ; modifyIORef tbl (I.insertWith (++) (hashStableName sn) [(sn,res)])
-              ; return res
-              }})
 
 
 -- | Zeros

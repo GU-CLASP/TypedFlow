@@ -205,6 +205,7 @@ generatePure' sR = knownSShape sR $ \case
     -- Nicer implementation upcoming?
     -- https://github.com/tensorflow/tensorflow/pull/15243
     -- https://github.com/tensorflow/tensorflow/issues/14509
+    -- TODO: do not do the "add zero" part if the context is a broadcastable operation
       funcall "tf.add" [func "tf.expand_dims" [recx] [("axis", integer (n + sListLength s0))],
                          func "tf.zeros" [showSShape s0] [("dtype", showTyp @t)]]
     Axis1Op op args n -> func op [recx] (("axis",integer (sListLength s0 + n)):args)
