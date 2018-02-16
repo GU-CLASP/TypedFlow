@@ -130,7 +130,30 @@ appEmpty' = unsafeCoerce Refl
 appEmpty :: forall xs k. (((xs ++ '[]) ~ xs) => k) -> k
 appEmpty k = case appEmpty' @xs of Refl -> k
 
-initLast' :: forall s k. SList s -> ((Init s ++ '[Last s]) ~ s => k) -> k
+lengthHomo' :: forall x y. Length (x ++ y) :~: Length x + Length y
+lengthHomo' = unsafeCoerce Refl
+
+lengthInit' :: forall s k. (0 < Length s) => SList s -> ((Length (Init s) + 1) ~ Length s => k) -> k
+lengthInit' x k = case lengthHomo' @(Init s) @'[Last s] of
+  Refl -> initLast' x k
+
+lengthInit :: forall s k. KnownLen s => (0 < Length s) => ((Length (Init s) + 1) ~ Length s => k) -> k
+lengthInit = lengthInit' (typeSList @s)
+
+incrPos' :: forall x. (1 <=? x+1) :~: 'True
+incrPos' = unsafeCoerce Refl
+
+incrPos :: forall x k. ((0 < (x + 1)) => k) -> k
+incrPos k = case incrPos' @x of Refl -> k
+
+incrCong' :: forall x y. ((x+1) ~ (y+1)) => x :~: y
+incrCong' = unsafeCoerce Refl
+
+incrCong :: forall x y k. ((x+1) ~ (y+1)) => ((x ~ y) => k) -> k
+incrCong k = case incrCong' @x @y of Refl -> k
+
+
+initLast' :: forall s k. {-(0 < Length s) => FIXME -} SList s -> ((Init s ++ '[Last s]) ~ s => k) -> k
 initLast' LZ _ = error "initLast': does not hold on empty lists"
 initLast' (LS _ LZ) k = k
 initLast' (LS _ (LS y ys)) k = initLast' (LS y ys) k
@@ -152,6 +175,14 @@ knownLast' (LS _ (LS y xs)) k = knownLast' (LS y xs) k
 
 knownLast :: forall s k. KnownShape s => (KnownNat (Last s) => k) -> k
 knownLast = knownLast' @s typeSList
+
+knownInit' :: All KnownNat s => SList s -> (KnownShape (Init s) => k) -> k
+knownInit' LZ _ = error "knownLast: does not hold on empty lists"
+knownInit' (LS _ LZ) k = k
+knownInit' (LS _ (LS y xs)) k = knownInit' (LS y xs) k
+
+knownInit :: forall s k. KnownShape s => (KnownShape (Init s) => k) -> k
+knownInit = knownInit' @s typeSList
 
 splitApp' :: forall ys xs k. SList xs -> ((Take (PeanoLength xs) (xs ++ ys) ~ xs,
                                               Drop (PeanoLength xs) (xs ++ ys) ~ ys) => k) -> k
@@ -575,10 +606,10 @@ data T (s :: Shape) (t :: Typ) where
   -- MatMul :: KnownLen s => SShape m -> SShape n ->  SShape o -> SShape s -> T (s ++ '[n,o]) t -> T (s ++ [o,m]) t -> T (s ++ [n,m]) t
   Where :: T s TFBool  -> T s t -> T s t -> T s t
   If :: Scalar TFBool -> T s t -> T s t -> T s t
-  Convolution :: Sat KnownNat bs -> Sat KnownNat inChannels -> Sat KnownNat outChannels -> SShape filterSpatialShape
-            -> T (bs ': filterSpatialShape ++ '[inChannels]) t -- ^ input tensor (batched)
+  Convolution :: Sat KnownNat bs -> Sat KnownNat inChannels -> Sat KnownNat outChannels -> SShape filterSpatialShape -> SShape s
+            -> T (bs ': s ++ '[inChannels]) t -- ^ input tensor (batched)
             -> T (filterSpatialShape ++ '[inChannels,outChannels]) t -- ^ filters
-            -> T (bs ': filterSpatialShape ++ '[outChannels]) t
+            -> T (bs ': s ++ '[outChannels]) t
   Pool :: Length outSpatial ~ Length window =>
           Sat KnownNat bs -> SShape window -> PoolingType -> Sat KnownNat numChannels -> SShape outSpatial
             -> T (bs ': ZipWithMulShapes window outSpatial ++ '[numChannels]) t

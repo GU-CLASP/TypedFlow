@@ -77,6 +77,11 @@ protoBroadcast :: forall n s t. Sat KnownNat n -> (forall s' t'. KnownTyp t' => 
 protoBroadcast n@(Sat) rec s tensor
   | finished tensor = knownSShape s $ UnOp (SimpleBroadCast 0) LZ s (LS n s) tensor
   | otherwise = case tensor of
+  Pool bs@Sat window pt numChans outSpatial x ->
+    knownSShape (zipWithMulSShapes window outSpatial .+. LS numChans LZ) $
+    prodAssocS n bs (productS (zipWithMulSShapes window outSpatial .+. LS numChans LZ)) $
+    ReshapeFrom (LS (satMul n bs) (outSpatial `sl` numChans)) $
+    Pool (satMul n bs) window pt numChans outSpatial (reshapeAuto (rec typeSShape x))
   If cond x y
     | finished cond -> If cond (rec s x) (rec s y)
     | otherwise ->  error "broadcast if condition not implemented"
@@ -96,12 +101,12 @@ protoBroadcast n@(Sat) rec s tensor
   -- Stack s0 m s1 xs -> Stack (LS n s0) m s1 (fmap (rec) xs)
   -- -- Concat s0 m o s1 x y -> Concat (LS n s0) m o s1 (rec x) (rec y) 
   -- -- Index ix s0 m s1 x  -> Index ix (LS n s0) m s1 (rec x)
-  Convolution bs@(Sat) inChans outChans filterShape x filters
+  Convolution bs@(Sat) inChans outChans filterShape s0 x filters
     | finished filters ->
-      prodAssocS n bs (productS (sl filterShape inChans)) $
-      knownSShape (sl filterShape inChans)  $
-      ReshapeFrom (LS (satMul n bs) (filterShape `sl` outChans)) $
-      Convolution (satMul n bs) inChans outChans filterShape (reshapeAuto (rec typeSShape x)) filters
+      prodAssocS n bs (productS (sl s0 inChans)) $
+      knownSShape (sl s0 inChans)  $
+      ReshapeFrom (LS (satMul n bs) (s0 `sl` outChans)) $
+      Convolution (satMul n bs) inChans outChans filterShape s0 (reshapeAuto (rec typeSShape x)) filters
     | otherwise -> error "broadcast on convolution filter not implemented"
 
 testEqual :: KnownNat m => KnownNat n => Proxy m -> Proxy n -> Maybe (m :~: n)
@@ -131,7 +136,7 @@ protoFinished rec = \case
   Transpose _ _t x -> rec x
   ReshapeFrom _s x -> rec x
   Stack _s0 _m _s1 xs -> all rec xs
-  Convolution _bs _inChans _outChans _filterShape x filters -> rec x && rec filters
+  Convolution _bs _inChans _outChans _filterShape _s x filters -> rec x && rec filters
   Pool _ _ _ _ _ x  -> rec x
 
 perm210 :: Permutation (n ': m ': o ': s) (m ': o ': n ': s)
@@ -476,7 +481,7 @@ transposeN01 = Transpose (typeSShape @s .+. typeSShape @'[m,n]) (permN01 (typeSL
 
 
 -- | Map a function along the first dimension of a tensor
-mapT :: forall s t r u n. KnownShape r => KnownNat n => KnownTyp u => KnownLen r => KnownLen s => (T s t -> T r u) ->  T (n ': s) t -> T (n ': r) u
+mapT :: forall n s t r u. KnownShape r => KnownNat n => KnownTyp u => KnownLen r => KnownLen s => (T s t -> T r u) ->  T (n ': s) t -> T (n ': r) u
 mapT f x = broadcast (Proxy @n) (f (Unbroadcast (natSat @n) x))
 
 
@@ -489,7 +494,7 @@ mapTT f x = prodHomo @a @r $
             knownAppend @a @s $
             reshape (broadcast (Proxy @(Product a)) (f (Unbroadcast (natSat @(Product a)) (reshape x))))
 
-zipWithT :: forall (s :: [Nat]) (t :: Typ) (s1 :: [Nat]) (t1 :: Typ) (s2 :: Shape) (n :: Nat) (t2 :: Typ).
+zipWithT :: forall (n :: Nat) (s :: [Nat]) (t :: Typ) (s1 :: [Nat]) (t1 :: Typ) (s2 :: Shape)  (t2 :: Typ).
             KnownShape s2 => KnownNat n => (KnownLen s, KnownLen s2, KnownLen s1) => KnownTyp t2 =>
                   (T s t -> T s1 t1 -> T s2 t2)
                   -> Tensor (n ': s) t
@@ -509,16 +514,17 @@ instance LastEqual x (y2 ': xs) => LastEqual x (y ': (y2 ': xs))
 
 
 -- | Size-preserving convolution operation.
-convolution :: forall outputChannels filterSpatialShape inChannels t.
-               KnownNat inChannels => KnownNat outputChannels => KnownShape filterSpatialShape
+convolution :: forall outputChannels filterSpatialShape inChannels s t.
+               KnownShape s => KnownNat inChannels => KnownNat outputChannels => KnownShape filterSpatialShape
             => KnownTyp t
             => Length filterSpatialShape <= 3
-            => T (filterSpatialShape ++ '[inChannels]) t -- ^ input tensor
+            => Length s ~ Length filterSpatialShape
+            => T (s ++ '[inChannels]) t -- ^ input tensor
             -> T (filterSpatialShape ++ '[inChannels,outputChannels]) t -- ^ filters
-            -> T (filterSpatialShape ++ '[outputChannels]) t
-convolution x filters = knownAppend @filterSpatialShape @'[outputChannels] $
-                        knownAppend @filterSpatialShape @'[inChannels] $
-  squeeze0 (Convolution (natSat @1) (natSat @inChannels) (natSat @outputChannels) (typeSShape @filterSpatialShape)
+            -> T (s ++ '[outputChannels]) t
+convolution x filters = knownAppend @s @'[outputChannels] $
+                        knownAppend @s @'[inChannels] $
+  squeeze0 (Convolution (natSat @1) (natSat @inChannels) (natSat @outputChannels) (typeSShape @filterSpatialShape) (typeSShape @s)
              (expandDim0 x)
              filters)
 

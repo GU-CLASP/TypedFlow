@@ -9,6 +9,7 @@
 module MNIST where
 
 import TypedFlow
+import TypedFlow.Python
 
 (#>) :: forall b c a. (a -> b) -> (b -> c) -> a -> c
 (#>) = flip (.)
@@ -16,35 +17,44 @@ import TypedFlow
 atShape :: forall s t. T s t -> T s t
 atShape x = x
 
-mnist :: forall batchSize. KnownNat batchSize => Model [784,batchSize] Float32  '[10,batchSize] Float32
-mnist input gold = do
+mnist :: Gen (Model '[784] Float32 '[10] '[10] '[] Float32)
+mnist = do
   filters1 <- parameterDefault "f1"
   filters2 <- parameterDefault "f2"
   w1 <- parameterDefault "w1"
   w2 <- parameterDefault "w2"
-  let nn = inflate3                           #>
-           atShape @'[1,28,28,batchSize]      #>
-           (relu . conv @32 @'[5,5] filters1) #>
-           atShape @'[32,28,28,batchSize]     #>
-           maxPool2D @2 @2                    #>
-           atShape @'[32,14,14,batchSize]     #>
-           (relu . conv @64 @'[5,5] filters2) #>
-           maxPool2D @2 @2                    #>
-           flatten3                           #>
-           (relu . dense @1024 w1)            #>
-           dense @10 w2
-      logits = nn input
-  categoricalDistribution logits gold
+  return $ \input gold -> 
+    let nn = reshape @'[28,28,1]      #>
+             (relu . conv @32 @'[5,5] filters1) #>
+             atShape @'[28,28,32]     #>
+             maxPool2D @2 @2                    #>
+             atShape @'[14,14,32]     #>
+             (relu . conv @64 @'[5,5] filters2) #>
+             maxPool2D @2 @2                    #>
+             flatten3                           #>
+             (relu . dense @1024 w1)            #>
+             dense @10 w2
+        logits = nn input
+    in categoricalDistribution logits gold
 
 main :: IO ()
 main = do
-  generateFile "mnist_model.py" (compile defaultOptions (mnist @None))
+  generateFile "mnist_model.py" (compile @None defaultOptions mnist)
   putStrLn "done!"
 
-{-> main
+-- >>> main
+-- Parameters (total 3274634):
+-- w2_bias: T [10] tf.float32
+-- w2_w: T [1024,10] tf.float32
+-- w1_bias: T [1024] tf.float32
+-- w1_w: T [3136,1024] tf.float32
+-- f2_biases: T [64] tf.float32
+-- f2_filters: T [5,5,32,64] tf.float32
+-- f1_biases: T [32] tf.float32
+-- f1_filters: T [5,5,1,32] tf.float32
+-- done!
 
 
--}
 
 -- Local Variables:
 -- dante-repl-command-line: ("nix-shell" ".styx/shell.nix" "--pure" "--run" "cabal repl")

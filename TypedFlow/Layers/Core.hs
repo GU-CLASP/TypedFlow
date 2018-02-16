@@ -154,13 +154,89 @@ instance (KnownNat outChannels,KnownNat inChannels, KnownShape filterSpatialShap
           ConvP <$> travTensor f (s<>"_filters") x <*> travTensor f (s <> "_biases") y
 
 -- | Size-preserving convolution layer
-conv :: forall outChannels filterSpatialShape inChannels t.
-               KnownNat inChannels => KnownNat outChannels => KnownShape filterSpatialShape => KnownBits t
+conv' :: forall outChannels filterSpatialShape inChannels s t.
+               KnownShape s => KnownNat inChannels => KnownNat outChannels => KnownShape filterSpatialShape => KnownBits t
             => Length filterSpatialShape <= 3
+            => Length filterSpatialShape ~ Length s
             => ConvP t outChannels inChannels filterSpatialShape
-            -> T (filterSpatialShape ++ '[inChannels]) ('Typ 'Float t)
-            -> T (filterSpatialShape ++ '[outChannels]) ('Typ 'Float t)
-conv (ConvP filters bias) input = mapTT @filterSpatialShape (+bias) (convolution @outChannels @filterSpatialShape @inChannels input filters)
+            -> T (s ++ '[inChannels]) ('Typ 'Float t)
+            -> T (s ++ '[outChannels]) ('Typ 'Float t)
+conv' (ConvP filters bias) input = mapTT @s (+bias) (convolution @outChannels @filterSpatialShape @inChannels @s input filters)
+
+
+
+conv :: forall outChannels filterSpatialShape inChannels s t.
+               KnownShape s => KnownNat inChannels => KnownNat outChannels => KnownShape filterSpatialShape => KnownBits t
+            => Length filterSpatialShape <= 3
+            => (Length filterSpatialShape+1) ~ Length s
+            => (Last s ~ outChannels)
+            => ConvP t outChannels inChannels filterSpatialShape
+            -> T (Init s ++ '[inChannels]) ('Typ 'Float t)
+            -> T s ('Typ 'Float t)
+conv = initLast @s $
+        incrPos @(Length filterSpatialShape) $
+        lengthInit @s $
+        incrCong @(Length filterSpatialShape) @(Length (Init s)) $
+        knownInit @s $ 
+        conv' @outChannels @filterSpatialShape @inChannels @(Init s)
+
+-- warning: [-Wdeferred-type-errors]
+--     • Could not deduce: Length filterSpatialShape ~ Length (Init s)
+--         arising from a use of ‘conv’
+--       from the context: (KnownShape s,
+--                          KnownNat inChannels,
+--                          KnownNat outChannels,
+--                          KnownShape filterSpatialShape,
+--                          KnownBits t,
+--                          Length filterSpatialShape <= 3,
+--                          (Length filterSpatialShape + 1) ~ Length s,
+--                          Last s ~ outChannels)
+--         bound by the type signature for:
+--                    conv' :: (KnownShape s, KnownNat inChannels, KnownNat outChannels,
+--                              KnownShape filterSpatialShape, KnownBits t,
+--                              Length filterSpatialShape <= 3,
+--                              (Length filterSpatialShape + 1) ~ Length s,
+--                              Last s ~ outChannels) =>
+--                             ConvP t outChannels inChannels filterSpatialShape
+--                             -> T (Init s ++ '[inChannels]) ('Typ 'Float t)
+--                             -> T s ('Typ 'Float t)
+--         at /tmp/dante9507pzG.hs:(168,1)-(175,34)
+--       or from: (Init s ++ '[Last s]) ~ s
+--         bound by a type expected by the context:
+--                    (Init s ++ '[Last s]) ~ s =>
+--                    ConvP t outChannels inChannels filterSpatialShape
+--                    -> T (Init s ++ '[inChannels]) ('Typ 'Float t)
+--                    -> T s ('Typ 'Float t)
+--         at /tmp/dante9507pzG.hs:(176,9)-(179,67)
+--       or from: 0 < (Length filterSpatialShape + 1)
+--         bound by a type expected by the context:
+--                    (0 < (Length filterSpatialShape + 1)) =>
+--                    ConvP t outChannels inChannels filterSpatialShape
+--                    -> T (Init s ++ '[inChannels]) ('Typ 'Float t)
+--                    -> T s ('Typ 'Float t)
+--         at /tmp/dante9507pzG.hs:(177,9)-(179,67)
+--       or from: (Length (Init s) + 1) ~ Length s
+--         bound by a type expected by the context:
+--                    (Length (Init s) + 1) ~ Length s =>
+--                    ConvP t outChannels inChannels filterSpatialShape
+--                    -> T (Init s ++ '[inChannels]) ('Typ 'Float t)
+--                    -> T s ('Typ 'Float t)
+--         at /tmp/dante9507pzG.hs:(178,9)-(179,67)
+--       NB: ‘Length’ is a type function, and may not be injective
+--     • In the second argument of ‘($)’, namely
+--         ‘conv @outChannels @filterSpatialShape @inChannels @(Init s)’
+--       In the second argument of ‘($)’, namely
+--         ‘lengthInit @s
+--          $ conv @outChannels @filterSpatialShape @inChannels @(Init s)’
+--       In the second argument of ‘($)’, namely
+--         ‘incrPos @(Length filterSpatialShape)
+--          $ lengthInit @s
+--            $ conv @outChannels @filterSpatialShape @inChannels @(Init s)’
+--     • Relevant bindings include
+--         conv' :: ConvP t outChannels inChannels filterSpatialShape
+--                  -> T (Init s ++ '[inChannels]) ('Typ 'Float t)
+--                  -> T s ('Typ 'Float t)
+--           (bound at /tmp/dante9507pzG.hs:176:1)
 
 -- -- | Convolution layers with no padding (applying the filter only on
 -- -- positions where the input is fully defined, aka "VALID" in

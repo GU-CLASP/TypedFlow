@@ -222,14 +222,14 @@ generatePure' sR = knownSShape sR $ \case
   Stack s0 _m s1 (V xs) -> funcall "tf.stack" [list (map (rec (s0 .+. s1)) xs), text "axis=" <> integer (sListLength s0)]
   Transpose s p x -> func "tf.transpose" [rec s x] [("perm",list (map (integer . permToFun p) [0.. sListLength s]))]
   Gather indexShape s0 m s1 x ix -> func "tf.gather" [rec (s0 .+. (LS m s1)) x, rec indexShape ix] []
-  Convolution bs inChans outChans filterShape x filters ->
+  Convolution bs inChans outChans filterShape s0 x filters ->
     func "tf.nn.convolution" [recx, recFilters] [("padding",text (show ("SAME"::String))),("data_format", text (show dataFormat))]
    where dataFormat = case sListLength filterShape of
            1 -> ("NWC" :: String)
            2 -> "NHWC"
            3 -> "NDHWC"
            _ -> error "convolution: more than 3 spatial dimensions are not supported!"
-         recx = rec (LS bs (sl filterShape inChans)) x
+         recx = rec (LS bs (sl s0 inChans)) x
          recFilters = rec (filterShape .+. (LS inChans (LS outChans LZ))) filters
   Pool bs window typ numChans outSpatial x ->
      func "tf.nn.pool" [rec (LS bs (zipWithMulSShapes window outSpatial .+. LS numChans LZ)) x, showSShape window, typ'] []

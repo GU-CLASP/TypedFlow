@@ -1,3 +1,4 @@
+{-# LANGUAGE InstanceSigs #-}
 {-|
 Module      : TypedFlow.TF
 Description : Binding to tensorflow functions
@@ -296,15 +297,16 @@ parameter :: forall p. KnownTensors p => String -> p -> Gen p
 parameter = travTensor parameter'
 
 class KnownTensors p where
-  -- | traverse all the tensors over tuples of tensors
-  travTensor :: (forall s t. (KnownTyp t, KnownShape s) => String -> T s t -> Gen (T s t)) -> String -> p -> Gen p 
+  -- | traverse all the tensors contained in p.
+  travTensor :: Monad m => (forall s t. (KnownTyp t, KnownShape s) => String -> T s t -> m (T s t)) -> String -> p -> m p 
 
 instance (KnownTyp t, KnownShape shape) => KnownTensors (T shape t) where
   travTensor f = f
 
 instance (KnownTyp t, All KnownShape ys) => KnownTensors (HTV t ys) where
+  travTensor :: forall m. Monad m => (forall s t'. (KnownTyp t', KnownShape s) => String -> T s t' -> m (T s t')) -> String -> (HTV t ys) -> m (HTV t ys) 
   travTensor f s = ttr 0
-    where ttr :: forall xs. All KnownShape xs => Int -> HTV t xs -> Gen (HTV t xs)
+    where ttr :: forall xs. All KnownShape xs => Int -> HTV t xs -> m (HTV t xs)
           ttr _ Unit = return Unit
           ttr n (F x :* xs) = do
             x' <- f (s <> "_" <> show n) x
