@@ -234,7 +234,7 @@ generatePure' sR = knownSShape sR $ \case
          recFilters = rec (filterShape .+. (LS inChans (LS outChans LZ))) filters
   Pool bs window typ numChans outSpatial x ->
      func "tf.nn.pool" [rec (LS bs (zipWithMulSShapes window outSpatial .+. LS numChans LZ)) x, showSShape window, typ'] []
-   where typ' = case typ of MaxPool -> "MAX"; AvgPool -> "AVG"
+   where typ' = text $ show $ case typ of MaxPool -> "MAX"; AvgPool -> "AVG"
  where rec :: forall s' t'. KnownTyp t' => SShape s' -> T s' t' -> DOC
        rec = generatePure' 
 
