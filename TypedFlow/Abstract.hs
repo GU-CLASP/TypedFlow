@@ -550,8 +550,6 @@ sparseSoftmaxCrossEntropyWithLogits  =
   BinOp (Simple2Op "tf.nn.sparse_softmax_cross_entropy_with_logits" (Just ("labels","logits")))
      LZ (typeSShape @ '[]) (typeSShape @ '[numClasses]) (typeSShape @ '[])
 
-
-
 -- | One hot vector along axis @n@
 oneHot :: forall n numClasses s w t. KnownNat numClasses => KnownBits t => KnownBits w =>
   (KnownShape s, KnownPeano n) => Tensor s ('Typ 'Int w) -> Tensor (Take n s ++ (numClasses ': Drop n s)) (Flt t)

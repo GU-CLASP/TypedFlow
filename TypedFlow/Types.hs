@@ -36,6 +36,7 @@ import Data.Char (toLower)
 import Data.Kind (Constraint)
 import Data.Type.Equality
 import TypedFlow.Memo
+import qualified Data.Map as M
 
 data Sat (a :: k -> Constraint) (b::k) where
   Sat :: forall b a. a b => Sat a b
@@ -588,6 +589,12 @@ data GState = GState {nextVar :: Integer, -- ^ next free variable
                       genRegularizers :: [Scalar Float32], -- ^ accumulated regularizers
                       genTrainingPlaceholder :: Scalar TFBool, -- ^ flag which is true when training
                       genPureTable :: SSNMap2 Shape Typ T DOC,
+                      -- ^ Table mapping pointers to their
+                      -- interpretations, so that sharing in the data
+                      -- structures can be exploited when generating
+                      genAssignTable :: M.Map String DOC,
+                      -- ^ Table mapping expressions to variables, so
+                      -- that lost sharing can be recovered
                       genPeeks :: [(String,UntypedExpression)]}
 newtype Gen x = Gen {fromGen :: State GState x} deriving (Monad, MonadState GState, Functor, Applicative)
 

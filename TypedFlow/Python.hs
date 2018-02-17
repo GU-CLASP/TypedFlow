@@ -44,6 +44,7 @@ import Control.Monad.State
 import TypedFlow.Types
 import TypedFlow.Memo
 import Text.PrettyPrint.Compact hiding (All,Last,Product,Sum)
+import qualified Data.Map as M
 
 generateFile :: String -> Gen () -> IO ()
 generateFile fname g = do
@@ -111,6 +112,18 @@ setGen d = modify $ \GState{..} -> GState {genText=d,..}
 (<--) :: DOC -> UntypedExpression -> Gen ()
 x <-- y = gen (x <> text "=" <>  y)
 
+cache :: DOC -> Gen DOC
+cache x = do
+  let x' = renderWith (Options 92 (const id)) x
+  mcache <- M.lookup x' <$> gets genAssignTable
+  case mcache of
+    Just y -> return y
+    Nothing -> do
+      v <- newVar
+      modify (\g -> g {genAssignTable = M.insert x' v (genAssignTable g)})
+      v <-- x
+      return v
+
 tuple :: [DOC] -> DOC
 tuple = parens . sep . punctuate comma
 
@@ -147,7 +160,7 @@ peekAtAny p v = modify $ \GState{..} -> GState{genPeeks = if p `elem` map fst ge
 assign :: ∀s t. (KnownShape s, KnownTyp t) => T s t -> Gen (T s t)
 assign x = do
   e <- generatePure x
-  T <$> assignAny e
+  return (T e)
 
 assignAny :: UntypedExpression -> Gen UntypedExpression
 assignAny x = do
@@ -169,6 +182,7 @@ generate s = (renderWith (Options 92 (const id)) genText,genParams)
                                                     ,genRegularizers=[]
                                                     ,genTrainingPlaceholder = T "NO TRAINING PLACEHOLDER!"
                                                     ,genPureTable = mempty
+                                                    ,genAssignTable = mempty
                                                     ,genPeeks=[]})
 
 -- FIXME: sharing
@@ -197,11 +211,9 @@ generatePure x = do
   case mv of
     Just v -> return v
     Nothing -> do
-      v <- newVar
       e <- generatePure' (\s x' -> knownSShape s $ generatePure x') typeSShape x
-      v <-- e
-      modify (\g -> g {genPureTable = (snMapInsert2 sn v) (genPureTable g)}) 
-      return v
+      modify (\g -> g {genPureTable = (snMapInsert2 sn e) (genPureTable g)})
+      cache e
 
 generatePure' :: forall s t. KnownTyp t => (forall s' t'. KnownTyp t' => SShape s' -> T s' t' -> Gen DOC) -> SShape s -> T s t -> Gen DOC
 generatePure' rec sR = knownSShape sR $ \case
