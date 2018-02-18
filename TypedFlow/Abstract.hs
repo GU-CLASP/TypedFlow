@@ -93,7 +93,7 @@ protoBroadcast n@(Sat) rec s tensor
     | otherwise -> error "broadcast on gather index not implemented"
   Transpose s0 t x -> Transpose (LS n s0) (PermSkip t) (rec s0 x)
   ReshapeFrom s0 x -> reshapeFrom (LS n s0) (rec s0 x)
-  -- Stack s0 m s1 xs -> Stack (LS n s0) m s1 (fmap (rec s0) xs)
+  Stack s0 m s1 xs -> Stack (LS n s0) m s1 (fmap (rec (s0 .+. s1)) xs)
   Convolution bs@(Sat) inChans outChans filterShape s0 x filters
     | finished filters ->
       prodAssocS n bs (productS (sl s0 inChans)) $
