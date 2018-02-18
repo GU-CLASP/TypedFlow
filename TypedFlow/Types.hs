@@ -368,26 +368,22 @@ infixr 5 :*
 
 data Peano = Zero | Succ Peano
 
-type Dim0 = 'Zero
-type Dim1 = 'Succ Dim0
-type Dim2 = 'Succ Dim1
-type Dim3 = 'Succ Dim2
 
-type Axis0 = 'Zero
-type Axis1 = 'Succ Dim0
-type Axis2 = 'Succ Dim1
-type Axis3 = 'Succ Dim2
+axis0 :: SPeano 'Zero
+axis0 = SZero
+axis1 :: SPeano ('Succ 'Zero)
+axis1 = SSucc axis0
+axis2 :: SPeano ('Succ ('Succ 'Zero))
+axis2 = SSucc axis1
+axis3 :: SPeano ('Succ ('Succ ('Succ 'Zero)))
+axis3 = SSucc axis2
 
-class KnownPeano n where typeSPeano :: SPeano n
-instance KnownPeano 'Zero where typeSPeano = SZero
-instance KnownPeano n => KnownPeano ('Succ n) where typeSPeano = SSucc (typeSPeano @n)
+type Axis = SPeano
 
 sPeanoInt :: SPeano n -> Integer
 sPeanoInt (SSucc n) = 1 + sPeanoInt n
 sPeanoInt SZero = 0
 
-peanoTypeInt :: forall n. KnownPeano n => Integer
-peanoTypeInt = sPeanoInt (typeSPeano @n)
 
 type family PeanoNat (n::Peano) :: Nat where
   PeanoNat 'Zero = 0
