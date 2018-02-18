@@ -132,6 +132,12 @@ appEmpty' = unsafeCoerce Refl
 appEmpty :: forall xs k. (((xs ++ '[]) ~ xs) => k) -> k
 appEmpty k = case appEmpty' @xs of Refl -> k
 
+takeDrop' :: forall s n. (PeanoNat n <= Length s) => SPeano n -> (Take n s ++ Drop n s) :~: s
+takeDrop' _ = unsafeCoerce Refl
+
+takeDrop :: forall s n k. (PeanoNat n <= Length s) => SPeano n -> ((Take n s ++ Drop n s) ~ s => k) -> k
+takeDrop n k = case takeDrop' @s n of Refl -> k
+
 lengthHomo' :: forall x y. Length (x ++ y) :~: Length x + Length y
 lengthHomo' = unsafeCoerce Refl
 
@@ -382,6 +388,10 @@ sPeanoInt SZero = 0
 
 peanoTypeInt :: forall n. KnownPeano n => Integer
 peanoTypeInt = sPeanoInt (typeSPeano @n)
+
+type family PeanoNat (n::Peano) :: Nat where
+  PeanoNat 'Zero = 0
+  PeanoNat ('Succ n) = PeanoNat n + 1
 
 data SPeano n where
   SZero :: SPeano 'Zero

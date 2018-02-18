@@ -309,18 +309,27 @@ concat1 :: ∀ n ys d1 d2 t. KnownShape ys => KnownNat n => KnownNat d2 => Known
 concat1 = concatT @Dim1
 
 -- | Add an extra dimension at axis (@n@) of size 1.
-expandDim :: forall n s t. KnownTyp t => KnownShape s => (KnownLen s, KnownPeano n) => Tensor s t -> Tensor (Take n s ++ (1 ': Drop n s)) t
-expandDim = UnOp (Axis1Op "tf.expand_dims" [] (peanoTypeInt @n)) LZ s
-                 (sShapeTake n s .+. LS (natSat @1) (sShapeDrop n s))
-  where s = typeSShape @s; n = typeSPeano @n
+expandDim :: forall n s t. KnownTyp t => KnownShape s => (KnownLen s, PeanoNat n <= Length s) => SPeano n -> Tensor s t -> Tensor (Take n s ++ (1 ': Drop n s)) t
+expandDim n x =
+  -- Product (Take n s ++ (1 ': Drop n s))
+  prodHomo @(Take n s) @(1' : Drop n s) $
+  -- Product (Take n s) * Product (Drop n s)
+  prodHomo @(Take n s) @(Drop n s) $
+  -- Product (Take n s ++ (1 ': Drop n s))
+  takeDrop @s n $
+  -- Product s
+  reshapeFrom (typeSShape @s) x
+
+-- +expandDim :: forall n s t. KnownTyp t => KnownShape s => Axis n s -> Tensor s t -> Tensor (Take n s ++ (1 ': Drop n s)) t
+-- +expandDim ax x = case expandDimProof ax s of Refl -> reshapeFrom s x
 
 -- | Add an extra dimension at axis (0) of size 1.
 expandDim0 :: ∀ s t. KnownShape s => KnownTyp t => KnownLen s => Tensor s t -> Tensor (1 ': s) t
-expandDim0 = expandDim @Dim0
+expandDim0 = expandDim SZero
 
 -- | Add an extra dimension at axis (1) of size 1.
 expandDim1 :: ∀ n s t. KnownNat n => KnownTyp t => KnownShape s => Tensor (n ': s) t -> Tensor (n ': 1 ': s) t
-expandDim1 = expandDim @Dim1
+expandDim1 = reshapeFrom (typeSShape @(n ': s))
 
 reshape :: ∀ s2 s1 t. KnownShape s1 => KnownTyp t => KnownShape s2 => Product s1 ~ Product s2 => Tensor s1 t -> Tensor s2 t
 reshape = reshapeAuto
