@@ -92,7 +92,7 @@ protoBroadcast n@(Sat) rec s tensor
     | finished ix -> Gather is (LS n s0) m s1 (rec (s0 .+. LS m s1) x) ix
     | otherwise -> error "broadcast on gather index not implemented"
   Transpose s0 t x -> Transpose (LS n s0) (PermSkip t) (rec s0 x)
-  ReshapeFrom s0 x -> ReshapeFrom (LS n s0) (rec s0 x)
+  ReshapeFrom s0 x -> reshapeFrom (LS n s0) (rec s0 x)
   -- Stack s0 m s1 xs -> Stack (LS n s0) m s1 (fmap (rec) xs)
   -- -- Concat s0 m o s1 x y -> Concat (LS n s0) m o s1 (rec x) (rec y) 
   -- -- Index ix s0 m s1 x  -> Index ix (LS n s0) m s1 (rec x)
@@ -151,9 +151,8 @@ reshapeTo :: forall s s0 t proxy. KnownShape s0=> Product s ~ Product s0 => prox
 reshapeTo _ = reshapeAuto
 
 reshapeFrom :: forall s s0 t. Product s ~ Product s0 => SShape s0 -> T s0 t -> T s t
-reshapeFrom s = knownSShape s unsafeReshape
-
-
+reshapeFrom _ (ReshapeFrom s1 x) = ReshapeFrom s1 x -- avoid reshaping over and over
+reshapeFrom s0 x = ReshapeFrom s0 x
 
 -- | Zeros
 zeros :: ∀ t (shape :: Shape). KnownShape shape => KnownTyp t => (T shape t)
@@ -324,12 +323,8 @@ expandDim1 :: ∀ n s t. KnownNat n => KnownTyp t => KnownShape s => Tensor (n '
 expandDim1 = expandDim @Dim1
 
 reshape :: ∀ s2 s1 t. KnownShape s1 => KnownTyp t => KnownShape s2 => Product s1 ~ Product s2 => Tensor s1 t -> Tensor s2 t
-reshape = unsafeReshape
+reshape = reshapeAuto
 
-
-unsafeReshape :: ∀ s2 s1 t. KnownShape s1 => Tensor s1 t -> Tensor s2 t
-unsafeReshape (ReshapeFrom s1 x) = ReshapeFrom s1 x -- avoid reshaping over and over
-unsafeReshape x = ReshapeFrom (typeSShape @s1) x
 
 -- | Flatten all the dimensions of the tensor
 flattenAll :: forall s t. KnownTyp t => KnownShape s => Tensor s t -> Tensor '[Product s] t

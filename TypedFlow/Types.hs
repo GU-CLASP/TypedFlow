@@ -608,7 +608,7 @@ data T (s :: Shape) (t :: Typ) where
   BinOp :: (KnownTyp t, KnownTyp u) => BinOp -> SShape s0 -> SShape s1 -> SShape s2 -> SShape s3 -> T (s0 ++ s1) t -> T (s0 ++ s2) u -> T (s0 ++ s3) v
   UnOp :: KnownTyp t => UnOp -> SShape s0 -> SShape s1 -> SShape s2 -> T (s0 ++ s1) t -> T (s0 ++ s2) u
   Unbroadcast :: Sat KnownNat n -> T (n ': s) t -> T s t
-  ReshapeFrom :: SShape s0 -> T s0 t -> T s t
+  ReshapeFrom :: Product s ~ Product s0 => SShape s0 -> T s0 t -> T s t
   Transpose :: SShape s0 -> Permutation s0 s -> T s0 t -> T s t
   Share :: T s t -> T s t
   Stack :: SShape s0 -> Sat KnownNat m -> SShape s1 -> V m (T (s0 ++ s1) t) -> T (s0 ++ (m ': s1)) t
