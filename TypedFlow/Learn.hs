@@ -30,10 +30,11 @@ Stability   : experimental
 module TypedFlow.Learn where
 
 import TypedFlow.Types
+import TypedFlow.Abstract (zipWithTGen)
 import TypedFlow.Python
 import TypedFlow.TF
 import qualified Prelude (Float)
-import Prelude (($),return,Maybe(..),(=<<),(.))
+import Prelude (($),return,Maybe(..),(=<<),(.),Bool(True))
 import Text.PrettyPrint.Compact (text)
 import Data.Monoid hiding (Last)
 import GHC.TypeLits
@@ -128,9 +129,9 @@ compile options fGen =
     x <- placeholder "x"
     y <- placeholder "y"
     f <- fGen
-    return ModelOutput {modelLoss = zipWithT @batchSize (\x' y' -> modelLoss (f x' y')) x y
-                       ,modelY = zipWithT @batchSize (\x' y' -> modelY (f x' y')) x y
-                       ,modelCorrect = zipWithT @batchSize (\x' y' -> modelCorrect (f x' y')) x y}
+    return ModelOutput {modelLoss = zipWithTGen @batchSize True (\x' y' -> modelLoss (f x' y')) x y
+                       ,modelY = zipWithTGen @batchSize True (\x' y' -> modelY (f x' y')) x y
+                       ,modelCorrect = zipWithTGen @batchSize True (\x' y' -> modelCorrect (f x' y')) x y}
 
 
 -- | Add a term to the loss. This function is intendend to add

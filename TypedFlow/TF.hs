@@ -295,34 +295,6 @@ parameterDefault name = parameter name defaultInitializer
 parameter :: forall p. KnownTensors p => String -> p -> Gen p
 parameter = travTensor parameter'
 
-class KnownTensors p where
-  -- | traverse all the tensors contained in p.
-  travTensor :: Monad m => (forall s t. (KnownTyp t, KnownShape s) => String -> T s t -> m (T s t)) -> String -> p -> m p 
-
-instance (KnownTyp t, KnownShape shape) => KnownTensors (T shape t) where
-  travTensor f = f
-
-instance (KnownTyp t, All KnownShape ys) => KnownTensors (HTV t ys) where
-  travTensor :: forall m. Monad m => (forall s t'. (KnownTyp t', KnownShape s) => String -> T s t' -> m (T s t')) -> String -> (HTV t ys) -> m (HTV t ys) 
-  travTensor f s = ttr 0
-    where ttr :: forall xs. All KnownShape xs => Int -> HTV t xs -> m (HTV t xs)
-          ttr _ Unit = return Unit
-          ttr n (F x :* xs) = do
-            x' <- f (s <> "_" <> show n) x
-            xs' <- ttr (n Prelude.+ 1) xs
-            return (F x' :* xs')
-
-instance (KnownTensors p, KnownTensors q) => KnownTensors (p,q) where
-  travTensor f s (x,y) = (,) <$> travTensor f (s<>"_fst") x <*> travTensor f (s<>"_snd") y
-
-instance (KnownTensors p1, KnownTensors p2, KnownTensors p3) => KnownTensors (p1,p2,p3) where
-  travTensor f s (x,y,z) = (,,) <$> travTensor f (s<>"_1") x <*> travTensor f (s<>"_2") y <*> travTensor f (s<>"_3") z
-
-instance (KnownTensors p1, KnownTensors p2, KnownTensors p3, KnownTensors p4) => KnownTensors (p1,p2,p3,p4) where
-  travTensor f s (x,y,z,w) = (,,,) <$> travTensor f (s<>"_1") x <*> travTensor f (s<>"_2") y <*> travTensor f (s<>"_3") z <*> travTensor f (s<>"_4") w
-
-class KnownTensors p => ParamWithDefault p where
-  defaultInitializer :: p
 
 
 -- flattenHTV :: KnownTyp t => All KnownShape xs => HTV t xs -> Tensor '[Sum (Ap (FMap CProduct) xs)] t

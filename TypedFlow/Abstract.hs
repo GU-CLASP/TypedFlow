@@ -58,19 +58,21 @@ broadcastPerm n (PermSkip p) = PermSkip (broadcastPerm n p)
 broadcastPerm _ PermSwap = PermSwap
 broadcastPerm n (PermTrans p q) = PermTrans (broadcastPerm n p) (broadcastPerm n q)
 
-broadcast :: forall n s t. KnownTyp t => KnownShape s => KnownNat n => Proxy n -> T s t -> T (n : s) t
-broadcast n = f
+broadcast :: forall n s t. KnownTyp t => KnownShape s => KnownNat n
+  => Bool -> Proxy n -> T s t -> T (n : s) t
+broadcast varyNoise n = f
   where f :: forall s' t'. KnownTyp t' => KnownShape s' => T s' t' -> T (n : s') t'
-        f = memo (protoBroadcast (proxySat n) (\s' -> knownSShape s' f) typeSShape)
+        f = memo (protoBroadcast varyNoise (proxySat n) (\s' -> knownSShape s' f) typeSShape)
 
 
 testSatEqual :: forall n m. Sat KnownNat n -> Sat KnownNat m -> Maybe (n :~: m)
 testSatEqual Sat Sat = testEqual (Proxy @n) (Proxy @m)
 
-protoBroadcast :: forall n s t. Sat KnownNat n -> (forall s' t'. KnownTyp t' => SShape s' -> T s' t' -> T (n ': s') t') -> (KnownTyp t => SShape s -> T s t -> T (n ': s) t)
-protoBroadcast n@(Sat) rec s tensor
-  | finished tensor = knownSShape s $ UnOp (SimpleBroadCast 0) LZ s (LS n s) tensor
+protoBroadcast :: forall n s t. Bool -> Sat KnownNat n -> (forall s' t'. KnownTyp t' => SShape s' -> T s' t' -> T (n ': s') t') -> (KnownTyp t => SShape s -> T s t -> T (n ': s) t)
+protoBroadcast varyNoise n@(Sat) rec s tensor
+  | finished tensor = simpleBC
   | otherwise = case tensor of
+  Noise x -> if varyNoise then Noise (rec s x) else simpleBC
   Pool bs@Sat window pt numChans outSpatial x ->
     knownSShape (zipWithMulSShapes window outSpatial .+. LS numChans LZ) $
     prodAssocS n bs (productS (zipWithMulSShapes window outSpatial .+. LS numChans LZ)) $
@@ -82,7 +84,6 @@ protoBroadcast n@(Sat) rec s tensor
     | otherwise ->  error "broadcast if condition not implemented"
   Where cond x y -> Where (rec s cond) (rec s x) (rec s y)
   T _ -> error "panic: broadcast constant should be finished!"
-  Share x -> Share (rec s x)
   Unbroadcast p x -> case testSatEqual p n of
      Nothing -> error "panic: Unbroadcast of wrong kind found!"
      Just Refl -> x
@@ -102,6 +103,7 @@ protoBroadcast n@(Sat) rec s tensor
       reshapeFrom (LS (satMul n bs) (s0 `sl` outChans)) $
       Convolution (satMul n bs) inChans outChans filterShape s0 (reshapeAuto (rec typeSShape x)) filters
     | otherwise -> error "broadcast on convolution filter not implemented"
+ where simpleBC = knownSShape s $ UnOp (SimpleBroadCast 0) LZ s (LS n s) tensor
 
 testEqual :: KnownNat m => KnownNat n => Proxy m -> Proxy n -> Maybe (m :~: n)
 testEqual m n = if natVal m == natVal n then Just (unsafeCoerce Refl) else Nothing
@@ -119,10 +121,10 @@ finished = f where
 
 protoFinished :: (forall s' t'. T s' t' -> Bool) -> T s t -> Bool
 protoFinished rec = \case
+  Noise _ -> False
   If cond x y ->  rec cond && rec x && rec y
   Where cond x y -> rec cond && rec x && rec y
   T _ -> True
-  Share x -> rec x
   Unbroadcast _p _x -> False
   UnOp _op _ _ _ x -> rec x
   BinOp _op _ _ _ _ x y -> rec x && rec y
@@ -450,7 +452,7 @@ sequenceMask lens = mapT (lens `lessThan`) (range @maxlen)
 
 -- | Map a function along the first dimension of a tensor
 mapT :: forall n s t r u. KnownShape r => KnownNat n => KnownTyp u => KnownLen r => KnownLen s => (T s t -> T r u) ->  T (n ': s) t -> T (n ': r) u
-mapT f x = broadcast (Proxy @n) (f (Unbroadcast (natSat @n) x))
+mapT f x = broadcast False (Proxy @n) (f (Unbroadcast (natSat @n) x))
 
 
 -- | Map a function along the few first dimensions of a tensor, given by the first type parameter
@@ -461,16 +463,25 @@ mapTT f x = prodHomo @a @r $
             knownProduct @a $
             knownAppend @a @r $
             knownAppend @a @s $
-            reshape (broadcast (Proxy @(Product a)) (f (Unbroadcast (natSat @(Product a)) (reshape x))))
+            reshape (broadcast False (Proxy @(Product a)) (f (Unbroadcast (natSat @(Product a)) (reshape x))))
+
+zipWithTGen :: forall (n :: Nat) (s :: [Nat]) (t :: Typ) (s1 :: [Nat]) (t1 :: Typ) (s2 :: Shape)  (t2 :: Typ).
+            KnownShape s2 => KnownNat n => KnownTyp t2
+            => Bool
+            -> (T s t -> T s1 t1 -> T s2 t2)
+            -> Tensor (n ': s) t
+            -> Tensor (n ': s1) t1
+            -> Tensor (n ': s2) t2
+zipWithTGen varyNoise f x y = broadcast varyNoise (Proxy @n) (f (Unbroadcast (natSat @n) x) (Unbroadcast (natSat @n) y))
 
 -- | zip  a function along the first dimension of two tensors tensors
 zipWithT :: forall (n :: Nat) (s :: [Nat]) (t :: Typ) (s1 :: [Nat]) (t1 :: Typ) (s2 :: Shape)  (t2 :: Typ).
-            KnownShape s2 => KnownNat n => (KnownLen s, KnownLen s2, KnownLen s1) => KnownTyp t2 =>
-                  (T s t -> T s1 t1 -> T s2 t2)
-                  -> Tensor (n ': s) t
-                  -> Tensor (n ': s1) t1
-                  -> Tensor (n ': s2) t2
-zipWithT f x y = broadcast (Proxy @n) (f (Unbroadcast (natSat @n) x) (Unbroadcast (natSat @n) y))
+            KnownShape s2 => KnownNat n => KnownTyp t2
+            => (T s t -> T s1 t1 -> T s2 t2)
+            -> Tensor (n ': s) t
+            -> Tensor (n ': s1) t1
+            -> Tensor (n ': s2) t2
+zipWithT = zipWithTGen False
 
 -- | Size-preserving convolution operation.
 convolution :: forall outputChannels filterSpatialShape inChannels s t.
@@ -547,7 +558,7 @@ sparseSoftmaxCrossEntropyWithLogits :: forall numClasses t.
    KnownNat numClasses => KnownBits t =>
   Tensor '[] Int32                   -- ^ desired label
   -> Tensor '[numClasses] (Flt t) -- ^ predictions for each label
-  -> Tensor '[] (Flt t) -- ^ 
+  -> Tensor '[] (Flt t) 
 sparseSoftmaxCrossEntropyWithLogits  =
   BinOp (Simple2Op "tf.nn.sparse_softmax_cross_entropy_with_logits" (Just ("labels","logits")))
      LZ (typeSShape @ '[]) (typeSShape @ '[numClasses]) (typeSShape @ '[])

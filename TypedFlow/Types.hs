@@ -1,3 +1,4 @@
+{-# LANGUAGE InstanceSigs #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE PatternSynonyms #-}
@@ -611,12 +612,12 @@ type UntypedExpression = DOC
 
 data T (s :: Shape) (t :: Typ) where
   T :: UntypedExpression -> T s t
+  Noise :: T s t -> T s t
   BinOp :: (KnownTyp t, KnownTyp u) => BinOp -> SShape s0 -> SShape s1 -> SShape s2 -> SShape s3 -> T (s0 ++ s1) t -> T (s0 ++ s2) u -> T (s0 ++ s3) v
   UnOp :: KnownTyp t => UnOp -> SShape s0 -> SShape s1 -> SShape s2 -> T (s0 ++ s1) t -> T (s0 ++ s2) u
   Unbroadcast :: Sat KnownNat n -> T (n ': s) t -> T s t
   ReshapeFrom :: Product s ~ Product s0 => SShape s0 -> T s0 t -> T s t
   Transpose :: SShape s0 -> Permutation s0 s -> T s0 t -> T s t
-  Share :: T s t -> T s t
   Stack :: SShape s0 -> Sat KnownNat m -> SShape s1 -> V m (T (s0 ++ s1) t) -> T (s0 ++ (m ': s1)) t
   Gather :: KnownBits w => SShape indexShape -> SShape s0 -> Sat KnownNat m -> SShape s1 -> T (s0 ++ (m ': s1)) t -> T indexShape ('Typ 'Int w) -> T (s0 ++ indexShape ++ s1) t
   -- MatMul :: KnownLen s => SShape m -> SShape n ->  SShape o -> SShape s -> T (s ++ '[n,o]) t -> T (s ++ [o,m]) t -> T (s ++ [n,m]) t
@@ -658,3 +659,31 @@ data Permutation (s :: [k]) (t :: [k]) where
   PermSwap :: Permutation (n ': m ': s) (m ': n ': s)
   PermTrans :: Permutation s t -> Permutation t u -> Permutation s u
 
+class KnownTensors p where
+  -- | traverse all the tensors contained in p.
+  travTensor :: Monad m => (forall s t. (KnownTyp t, KnownShape s) => String -> T s t -> m (T s t)) -> String -> p -> m p 
+
+instance (KnownTyp t, KnownShape shape) => KnownTensors (T shape t) where
+  travTensor f = f
+
+instance (KnownTyp t, All KnownShape ys) => KnownTensors (HTV t ys) where
+  travTensor :: forall m. Monad m => (forall s t'. (KnownTyp t', KnownShape s) => String -> T s t' -> m (T s t')) -> String -> (HTV t ys) -> m (HTV t ys) 
+  travTensor f s = ttr 0
+    where ttr :: forall xs. All KnownShape xs => Int -> HTV t xs -> m (HTV t xs)
+          ttr _ Unit = return Unit
+          ttr n (F x :* xs) = do
+            x' <- f (s <> "_" <> show n) x
+            xs' <- ttr (n Prelude.+ 1) xs
+            return (F x' :* xs')
+
+instance (KnownTensors p, KnownTensors q) => KnownTensors (p,q) where
+  travTensor f s (x,y) = (,) <$> travTensor f (s<>"_fst") x <*> travTensor f (s<>"_snd") y
+
+instance (KnownTensors p1, KnownTensors p2, KnownTensors p3) => KnownTensors (p1,p2,p3) where
+  travTensor f s (x,y,z) = (,,) <$> travTensor f (s<>"_1") x <*> travTensor f (s<>"_2") y <*> travTensor f (s<>"_3") z
+
+instance (KnownTensors p1, KnownTensors p2, KnownTensors p3, KnownTensors p4) => KnownTensors (p1,p2,p3,p4) where
+  travTensor f s (x,y,z,w) = (,,,) <$> travTensor f (s<>"_1") x <*> travTensor f (s<>"_2") y <*> travTensor f (s<>"_3") z <*> travTensor f (s<>"_4") w
+
+class KnownTensors p => ParamWithDefault p where
+  defaultInitializer :: p

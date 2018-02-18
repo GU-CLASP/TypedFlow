@@ -217,6 +217,7 @@ generatePure x = do
 
 generatePure' :: forall s t. KnownTyp t => (forall s' t'. KnownTyp t' => SShape s' -> T s' t' -> Gen DOC) -> SShape s -> T s t -> Gen DOC
 generatePure' rec sR = knownSShape sR $ \case
+  Noise x -> rec sR x
   T x -> return x
   If c x y -> do
     rc <- rec typeSShape c
