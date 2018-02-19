@@ -275,7 +275,7 @@ generatePure' rec sR = knownSShape sR $ \case
            _ -> error "convolution: more than 3 spatial dimensions are not supported!"
   Pool bs window typ numChans outSpatial x -> do
      rx <- rec (LS bs (zipWithMulSShapes window outSpatial .+. LS numChans LZ)) x
-     return (func "tf.nn.pool" [rx, showSShape window, typ'] [])
+     return (func "tf.nn.pool" [rx, showSShape window, typ', text (show ("SAME" :: String))] [])
    where typ' = text $ (show $ case typ of MaxPool -> "MAX"; AvgPool -> "AVG" :: String)
  -- where rec :: forall s' t'. KnownTyp t' => SShape s' -> T s' t' -> DOC
  --       rec = generatePure' 
