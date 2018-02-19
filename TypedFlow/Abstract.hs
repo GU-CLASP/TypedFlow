@@ -201,7 +201,7 @@ sShapeDrop (SSucc n) (LS _ xs) = sShapeDrop n xs
 
 -- | Internal. Use 'reduceSum', etc. instead.
 reduce :: ∀ n s t. KnownTyp t => (KnownShape s) => String -> Axis n -> T s t -> T (Take n s ++ Drop ('Succ n) s) t
-reduce op n x = UnOp (Axis1Op ("tf.reduce_" ++ op) [] (listTypeLen @s)) LZ (typeSShape @s)  (sShapeTake n s .+. sShapeDrop (SSucc n) s)  x
+reduce op n x = UnOp (Axis1Op ("tf.reduce_" ++ op) [] (sPeanoInt n)) LZ (typeSShape @s)  (sShapeTake n s .+. sShapeDrop (SSucc n) s)  x
   where s = typeSShape @s
 
 -- | Reduce along a given dimension
