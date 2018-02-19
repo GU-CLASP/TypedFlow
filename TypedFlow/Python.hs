@@ -242,7 +242,8 @@ generatePure' rec sR = knownSShape sR $ \case
     -- TODO: do not do the "add zero" part if the context is a broadcastable operation
       funcall "tf.add" [func "tf.expand_dims" [recx] [("axis", integer (n + sListLength s0))],
                          func "tf.zeros" [showSShape sR] [("dtype", showTyp @t)]]
-    Axis1Op op args n -> func op [recx] (("axis",integer (sListLength s0 + n)):args)
+    Axis1Op op args n -> func op [recx] ((axisName,integer (sListLength s0 + n)):args)
+      where axisName = if op == "tf.softmax" then "dim" else "axis" -- use dim before TF 1.5
     Simple1Op op args -> funcall op (recx:args)
     SliceOp lo hi -> recx <> list (replicate (fromIntegral (sListLength s0)) (text ":") ++ [integer lo <> text ".." <> integer hi])
     IndexOp axis ix -> recx <> list (replicate (fromIntegral (axis + sListLength s0)) (text ":") ++ [integer ix])
