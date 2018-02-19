@@ -101,7 +101,7 @@ timedCategorical targetWeights logits y =
   in ModelOutput{..}
 
 -- | Model with several binary outputs.
-binary :: forall n. KnownNat n => Model '[n] Float32 '[] '[] '[n] Int32
+binary :: Model '[] Float32 '[] '[] '[] Int32
 binary logits y =
   let y_ = cast @Int32 (round sigy_)
       sigy_ = sigmoid logits
