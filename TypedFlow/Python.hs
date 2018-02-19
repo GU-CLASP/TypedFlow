@@ -241,7 +241,7 @@ generatePure' rec sR = knownSShape sR $ \case
     -- https://github.com/tensorflow/tensorflow/issues/14509
     -- TODO: do not do the "add zero" part if the context is a broadcastable operation
       funcall "tf.add" [func "tf.expand_dims" [recx] [("axis", integer (n + sListLength s0))],
-                         func "tf.zeros" [showSShape s0] [("dtype", showTyp @t)]]
+                         func "tf.zeros" [showSShape sR] [("dtype", showTyp @t)]]
     Axis1Op op args n -> func op [recx] (("axis",integer (sListLength s0 + n)):args)
     Simple1Op op args -> funcall op (recx:args)
     SliceOp lo hi -> recx <> list (replicate (fromIntegral (sListLength s0)) (text ":") ++ [integer lo <> text ".." <> integer hi])
