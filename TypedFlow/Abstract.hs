@@ -536,7 +536,7 @@ softmaxCrossEntropyWithLogits :: forall numClasses.
   -> Tensor '[numClasses] Float32 -- ^ logits
   -> Tensor '[] Float32
 softmaxCrossEntropyWithLogits  =
-  BinOp (Simple2Op "tf.nn.softmax_cross_entropy_with_logits_v2" (Just ("labels","logits")))
+  BinOp (Simple2Op "tf.nn.softmax_cross_entropy_with_logits" (Just ("labels","logits"))) -- FIXME: use _v2 for TF 1.5
   LZ (typeSShape @ '[numClasses]) (typeSShape @ '[numClasses]) LZ
 
 
