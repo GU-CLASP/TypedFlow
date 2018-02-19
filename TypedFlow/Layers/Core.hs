@@ -49,7 +49,6 @@ import qualified Prelude
 import GHC.TypeLits
 import TypedFlow.TF
 import TypedFlow.Types
-import TypedFlow.Python (assign)
 import TypedFlow.Abstract
 import Control.Monad.State (gets)
 import Data.Monoid ((<>))
@@ -104,9 +103,9 @@ mkDropout :: forall s t. KnownShape s => KnownBits t => DropProb -> Gen (Tensor 
 mkDropout (DropProb dropProb) = do
   let keepProb = 1.0 Prelude.- dropProb
   isTraining <- gets genTrainingPlaceholder
-  mask <- assign (if_ isTraining
-                   (floor (randomUniform keepProb (1 Prelude.+ keepProb)) ⊘ constant keepProb)
-                   ones)
+  let mask = if_ isTraining
+               (floor (randomUniform keepProb (1 Prelude.+ keepProb)) ⊘ constant keepProb)
+               ones
   return (mask ⊙)
 
 newtype EndoTensor t s = EndoTensor (Tensor s t -> Tensor s t)

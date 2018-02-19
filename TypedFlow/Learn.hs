@@ -153,19 +153,16 @@ compileGen Options{..} model =
     trainingPhasePlaceholder <- placeholder "training_phase"
     modify $ \GState{..} -> GState{genTrainingPlaceholder = trainingPhasePlaceholder,..}
     ModelOutput{..} <- model
-    y_ <- assign modelY
-    peekAt "y_" y_
+    peekAt "y_"  modelY
     regularizers <- gets genRegularizers
-    loss <- assign (reduceMeanAll modelLoss ⊕ addN regularizers)
-    peekAt "loss" loss
-    accuracy <- assign (reduceMeanAll (cast @Float32 modelCorrect))
-    peekAt "accuracy" accuracy
+    loss <- generatePure (reduceMeanAll modelLoss ⊕ addN regularizers)
+    peekAtAny "loss" loss
+    peekAt "accuracy" (reduceMeanAll (cast @Float32 modelCorrect))
     params <- getParameters
     peekAtAny "params" params
-    l <- generatePure loss
     trainStep <- assignAny $ case maxGradientNorm of
-      Nothing -> funcall "optimizer.minimize" [l]
-      Just clip -> funcall "optimizer.apply_gradients" [funcall "zip" [clipByGlobalNorm clip (grad l params),params]]
+      Nothing -> funcall "optimizer.minimize" [loss]
+      Just clip -> funcall "optimizer.apply_gradients" [funcall "zip" [clipByGlobalNorm clip (grad loss params),params]]
     peekAtAny "train" trainStep
     peeks <- gets genPeeks
     gen (text "return " <> dict peeks)

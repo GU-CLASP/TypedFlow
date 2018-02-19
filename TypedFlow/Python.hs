@@ -120,8 +120,8 @@ cache x = do
     Just y -> return y
     Nothing -> do
       v <- newVar
-      modify (\g -> g {genAssignTable = M.insert x' v (genAssignTable g)})
       v <-- x
+      modify (\g -> g {genAssignTable = M.insert x' v (genAssignTable g)})
       return v
 
 tuple :: [DOC] -> DOC
@@ -157,10 +157,10 @@ peekAtAny :: String -> UntypedExpression -> Gen ()
 peekAtAny p v = modify $ \GState{..} -> GState{genPeeks = if p `elem` map fst genPeeks then error ("duplicate name: " ++ p) else (p,v):genPeeks,..}
 
 
-assign :: ∀s t. (KnownShape s, KnownTyp t) => T s t -> Gen (T s t)
-assign x = do
-  e <- generatePure x
-  return (T e)
+-- assign :: ∀s t. (KnownShape s, KnownTyp t) => T s t -> Gen (T s t)
+-- assign x = do
+--   e <- generatePure x
+--   return (T e)
 
 assignAny :: UntypedExpression -> Gen UntypedExpression
 assignAny x = do
@@ -168,11 +168,11 @@ assignAny x = do
   v <-- x
   return v
 
-lambda :: (T s t -> T s' t') -> Gen UntypedExpression
-lambda f = do
-  v <- newVar
-  let T body = f (T v)
-  return (text "lambda " <> v <> ": " <> body)
+-- lambda :: (T s t -> T s' t') -> Gen UntypedExpression
+-- lambda f = do
+--   v <- newVar
+--   let T body = f (T v)
+--   return (text "lambda " <> v <> ": " <> body)
 
 generate :: Gen () -> (String,[ParamInfo])
 generate s = (renderWith (Options 92 (const id)) genText,genParams)
@@ -212,11 +212,13 @@ generatePure x = do
     Just v -> return v
     Nothing -> do
       e <- generatePure' (\s x' -> knownSShape s $ generatePure x') typeSShape x
-      modify (\g -> g {genPureTable = (snMapInsert2 sn e) (genPureTable g)})
-      cache e
+      v <- cache e
+      modify (\g -> g {genPureTable = (snMapInsert2 sn v) (genPureTable g)})
+      return v
 
 generatePure' :: forall s t. KnownTyp t => (forall s' t'. KnownTyp t' => SShape s' -> T s' t' -> Gen DOC) -> SShape s -> T s t -> Gen DOC
 generatePure' rec sR = knownSShape sR $ \case
+  Unbroadcast{} -> error "broadcasting operation did not complete!"
   Noise x -> rec sR x
   T x -> return x
   If c x y -> do
