@@ -262,7 +262,8 @@ gathers (LS _ n) ixs (F x :* xs) = F (gatherFinalStates ixs x) :* gathers @n n i
 -- state after step @dynLen@ only.
 iterateWithCull :: forall n x y ls b.
   KnownLen ls => KnownNat n => All KnownShape ls =>
-  T '[] Int32 -> RnnCell b ls x y -> RnnLayer n b ls x y
+  T '[] Int32 -- ^ dynamic length
+  -> RnnCell b ls x y -> RnnLayer n b ls x y
 iterateWithCull dynLen cell xs = C $ \s0 -> 
   let (us,ss) = chainForwardWithState (uncurry (flip (runC . cell))) (s0,xs)
       sss = transposeV @n (typeSList @ls) ss
