@@ -31,6 +31,7 @@ mnist = do
              atShape @'[14,14,32]               #>
              (relu . conv @64 @'[5,5] filters2) #>
              maxPool2D @2 @2                    #>
+             atShape @'[7,7,64]                 #>
              flatten3                           #>
              (relu . dense @1024 w1)            #>
              dense @10 w2
@@ -39,7 +40,7 @@ mnist = do
 
 main :: IO ()
 main = do
-  generateFile "mnist_model.py" (compile @None defaultOptions mnist)
+  generateFile "mnist_model.py" (compile @100 defaultOptions mnist)
   putStrLn "done!"
 
 -- >>> main
@@ -53,7 +54,6 @@ main = do
 -- f1_biases: T [32] tf.float32
 -- f1_filters: T [5,5,1,32] tf.float32
 -- done!
-
 
 
 -- Local Variables:

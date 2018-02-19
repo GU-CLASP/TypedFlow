@@ -240,13 +240,17 @@ generatePure' rec sR = knownSShape sR $ \case
     -- https://github.com/tensorflow/tensorflow/pull/15243
     -- https://github.com/tensorflow/tensorflow/issues/14509
     -- TODO: do not do the "add zero" part if the context is a broadcastable operation
-      funcall "tf.add" [func "tf.expand_dims" [recx] [("axis", integer (n + sListLength s0))],
-                         func "tf.zeros" [showSShape sR] [("dtype", showTyp @t)]]
+      let expanded = func "tf.expand_dims" [recx] [("axis", integer (n + sListLength s0))]
+      in funcall "tf.add" [expanded, func "tf.zeros" [showSShape sR] [("dtype", showTyp @t)]]
     Axis1Op op args n -> func op [recx] ((axisName,integer (sListLength s0 + n)):args)
-      where axisName = if op == "tf.softmax" then "dim" else "axis" -- use dim before TF 1.5
+      where axisName = if op == "tf.nn.softmax" then "dim" else "axis" -- use dim before TF 1.5
     Simple1Op op args -> funcall op (recx:args)
     SliceOp lo hi -> recx <> list (replicate (fromIntegral (sListLength s0)) (text ":") ++ [integer lo <> text ".." <> integer hi])
     IndexOp axis ix -> recx <> list (replicate (fromIntegral (axis + sListLength s0)) (text ":") ++ [integer ix])
+  MatMul s0 a b c x y  -> do
+    recx <- rec (s0 .+. LS a (LS b LZ)) x
+    recy <- rec (s0 .+. LS b (LS c LZ)) y
+    return (funcall "tf.matmul" [recx, recy])
   BinOp operation s0 s1 s2 _s3 x y -> do
    recx <- rec (s0 .+. s1) x
    recy <- rec (s0 .+. s2) y

@@ -87,6 +87,11 @@ protoBroadcast varyNoise n@(Sat) rec s tensor
   Unbroadcast p x -> case testSatEqual p n of
      Nothing -> error "panic: Unbroadcast of wrong kind found!"
      Just Refl -> x
+  MatMul LZ a@Sat b@Sat c@Sat x y
+     -- this optimisation is absolutely critical to implement dense
+     -- layers efficiently (at least with TF 1.3)
+     | finished y -> inflate2 (MatMul LZ (satMul n a) b c (flatten2 (rec (LS a (LS b LZ)) x)) y)
+  MatMul s0 a b c x y -> MatMul (LS n s0) a b c (rec (s0 .+. (LS a (LS b LZ))) x) (rec (s0 .+. LS b (LS c LZ)) y)
   BinOp op s0 s1 s2 s3 x y -> BinOp op (LS n s0) s1 s2 s3 (rec (s0 .+. s1) x) (rec (s0 .+. s2) y)
   UnOp op s0 s1 s2 x -> UnOp op (LS n s0) s1 s2 (rec (s0 .+. s1) x)
   Gather is s0 m s1 x ix
@@ -127,6 +132,7 @@ protoFinished rec = \case
   T _ -> True
   Unbroadcast _p _x -> False
   UnOp _op _ _ _ x -> rec x
+  MatMul _ _ _ _ x y -> rec x && rec y
   BinOp _op _ _ _ _ x y -> rec x && rec y
   Gather _is _s0 _m _s1 x ix -> rec x && rec ix
   Transpose _ _t x -> rec x
@@ -252,7 +258,7 @@ infixl 6 ⊕,⊝
 
 -- | Matrix multiplication (note that shape @s@ is preserved)
 matmul :: forall m n o t. KnownNat m => KnownNat o => KnownNat n => KnownTyp t => T '[n,o] t -> T '[o,m] t -> T '[n,m] t
-matmul = BinOp (Simple2Op "tf.matmul" Nothing) LZ (typeSShape @'[n,o]) (typeSShape @[o,m]) (typeSShape @[n,m])
+matmul = MatMul LZ Sat Sat Sat
 
 unOp :: forall s t. KnownShape s => KnownTyp t => String -> T s t -> T s t
 unOp op = UnOp (Simple1Op op []) LZ (typeSShape @s) (typeSShape @s)
