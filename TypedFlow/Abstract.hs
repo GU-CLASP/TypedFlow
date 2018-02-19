@@ -180,7 +180,8 @@ constant c = T (funcall "tf.constant" [pretty c, named "shape" (showShapeType @s
 
 -- | Internal. Use 'reduceMeanAll', etc. instead.
 reduceAll :: forall s t. KnownTyp t => KnownShape s => String -> Tensor s t -> Tensor '[] t
-reduceAll op x = UnOp (Simple1Op ("tf.reduce_" ++ op) []) LZ (typeSShape @s) LZ x
+reduceAll op x = knownProduct @s $
+   reduce op axis0 (reshapeTo (LS (productS (typeSShape @s)) LZ) x)
 
 -- | Mean value of the input tensor.
 reduceMeanAll, reduceSumAll, reduceMaxAll :: ∀ (s :: Shape) t. KnownTyp t => KnownShape s => Tensor s t -> Tensor '[] t
