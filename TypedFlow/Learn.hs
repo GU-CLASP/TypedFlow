@@ -131,16 +131,14 @@ defaultOptions = Options {maxGradientNorm = Nothing}
 
 data HolderName a = HolderName String
 
-class KnownPair r where
-  knownPair :: proxy r -> ((KnownShape (Fst r), KnownTyp (Snd r)) => k) -> k
+class (KnownShape (Fst r), KnownTyp (Snd r)) => KnownPair r where
 
 instance (KnownShape x, KnownTyp y) => KnownPair (x ':& y) where
-  knownPair _ k = k
 
 genBatchedPlaceholders :: All KnownPair shapesAndTypes => Sat KnownNat n -> SList' HolderName shapesAndTypes -> Gen (HHTV shapesAndTypes)
 genBatchedPlaceholders _ LZ = return Unit
-genBatchedPlaceholders n@Sat (LS p@(HolderName name) names) = do
-  x <- knownPair p (placeholder name)
+genBatchedPlaceholders n@Sat (LS (HolderName name) names) = do
+  x <- (placeholder name)
   xs <- genBatchedPlaceholders n names
   return (Uncurry (Unbroadcast n x) :* xs) 
 
