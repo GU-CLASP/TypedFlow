@@ -437,11 +437,6 @@ instance Show Typ where
 
 type Shape = [Nat]
 
-
-
-data SNat (n :: Nat) where
-  SNat :: KnownNat n => Proxy n -> SNat n
-
 class (KnownLen s, All KnownNat s) => KnownShape s where
 
 instance KnownShape '[]
@@ -573,9 +568,6 @@ proxySShape _ = typeSShape
 sListSShape :: forall s. All KnownNat s => SList s -> SShape s
 sListSShape LZ = LZ
 sListSShape (LS n s) = LS (proxySat n) (sListSShape s)
-
-rememberNat :: SNat n -> (KnownNat n => r) -> r
-rememberNat (SNat _) k = k
 
 type None = 514229 --  fibonnaci prime.
 -- type None = 0 - 1 -- GHC does not like negative Nats.
