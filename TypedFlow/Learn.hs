@@ -164,10 +164,11 @@ compile :: forall batchSize sx tx sy ty sy_ ty_ p.
            -- Model input tIn output tOut
         -> Gen ()
 compile options fGen = do
-  f <- fGen
-  let f' :: HHTV '[sx ':& tx, sy ':& ty] -> ModelOutput ty_ p sy_
-      f' (Uncurry x :* Uncurry y :* Unit) = f x y
-  compile' @batchSize options (LS (HolderName "x") (LS (HolderName "y") LZ)) (return f')
+  compile' @batchSize options (LS (HolderName "x") (LS (HolderName "y") LZ)) $ do
+    f <- fGen
+    let f' :: HHTV '[sx ':& tx, sy ':& ty] -> ModelOutput ty_ p sy_
+        f' (Uncurry x :* Uncurry y :* Unit) = f x y
+    return f'
 
 
 
