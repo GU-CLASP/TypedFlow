@@ -51,11 +51,9 @@ import TypedFlow.Memo
 
 broadcast :: forall n s t proxy. KnownTyp t => KnownShape s => KnownNat n
   => Bool -> proxy n -> T s t -> T (n : s) t
-broadcast varyNoise n = f typVal typeSShape
+broadcast varyNoise n = f typeSTyp typeSShape
   where f :: forall s' t'. STyp t' -> SShape s' -> T s' t' -> T (n : s') t'
-        f t s = memo (memoOrd (memoOrd (protoBroadcast varyNoise (proxySat n) (f typVal) finished) t) s)
-        -- f' :: forall s' t'. KnownTyp t' => SShape s' -> T s' t' -> T (n : s') t'
-        -- f' = f (Sat @Typ @KnownTyp)
+        f = memo3 memoOrd memoOrd memo (protoBroadcast varyNoise (proxySat n) (f typeSTyp) finished)
         finished :: forall s' t'. T s' t' -> Bool
         finished = memo (protoFinished finished)
 

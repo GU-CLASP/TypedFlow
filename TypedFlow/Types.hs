@@ -451,11 +451,11 @@ nbitsVal SB32 = B32
 instance Eq (SNBits t) where x == y = nbitsVal x == nbitsVal y
 instance Ord (SNBits t) where compare x y = compare (nbitsVal x) (nbitsVal y)
 
-projTypVal :: STyp t1 -> Typ
-projTypVal (STyp k b) = Typ (kVal k) (nbitsVal b)
+sTypTyp :: STyp t1 -> Typ
+sTypTyp (STyp k b) = Typ (kVal k) (nbitsVal b)
 
-instance Eq (STyp t) where x == y = projTypVal x == projTypVal y
-instance Ord (STyp t) where compare x y = compare (projTypVal x) (projTypVal y)
+instance Eq (STyp t) where x == y = sTypTyp x == sTypTyp y
+instance Ord (STyp t) where compare x y = compare (sTypTyp x) (sTypTyp y)
 
 data STyp t where
   STyp :: SKind k -> SNBits b -> STyp ('Typ k b)
@@ -480,7 +480,7 @@ instance KnownShape '[]
 instance (KnownNat x, KnownShape xs) => KnownShape (x ': xs)
 
 class KnownTyp t where
-  typVal :: STyp t
+  typeSTyp :: STyp t
 
 class KnownBits t where
   bitsVal :: SNBits t
@@ -490,7 +490,10 @@ instance KnownBits 'B32 where bitsVal = SB32
 instance KnownBits 'B64 where bitsVal = SB64
 
 instance (KnownBits l, KnownKind k) => KnownTyp ('Typ k l) where
-  typVal = STyp (kindVal @k) (bitsVal @l)
+  typeSTyp = STyp (kindVal @k) (bitsVal @l)
+
+typVal :: forall t. KnownTyp t => Typ
+typVal = sTypTyp (typeSTyp @t)
 
 knownBits :: SNBits t -> (KnownBits t => k) -> k
 knownBits SB1 k = k
@@ -536,10 +539,7 @@ instance Eq (Sat KnownNat t) where
 type SShape = SList' (Sat KnownNat)
 
 instance Ord (SShape s) where
-  compare LZ LZ = EQ
-  compare (LS x xs) (LS y ys) = case compare x y of
-    EQ -> compare xs ys
-    d -> d
+  compare x y = compare (shapeToList' x) (shapeToList' y)
 
 instance Eq (SShape s) where
   LZ == LZ = True

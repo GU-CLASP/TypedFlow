@@ -36,19 +36,31 @@ main = do
   putStrLn "done!"
 
 -- >>> main
--- Parameters (total *** Exception: broadcast on gather index not implemented
--- CallStack (from HasCallStack):
---   error, called at ./TypedFlow/Abstract.hs:102:20 in typedflow-0.9-H6KPYKhyHGIKxqNXew8K1n:TypedFlow.Abstract
+-- Parameters (total 5301351):
+-- dense_bias: T [1] tf.float32
+-- dense_w: T [150,1] tf.float32
+-- w2_o_bias: T [150] tf.float32
+-- w2_o_w: T [300,150] tf.float32
+-- w2_c_bias: T [150] tf.float32
+-- w2_c_w: T [300,150] tf.float32
+-- w2_i_bias: T [150] tf.float32
+-- w2_i_w: T [300,150] tf.float32
+-- w2_f_bias: T [150] tf.float32
+-- w2_f_w: T [300,150] tf.float32
+-- w1_o_bias: T [150] tf.float32
+-- w1_o_w: T [200,150] tf.float32
+-- w1_c_bias: T [150] tf.float32
+-- w1_c_w: T [200,150] tf.float32
+-- w1_i_bias: T [150] tf.float32
+-- w1_i_w: T [200,150] tf.float32
+-- w1_f_bias: T [150] tf.float32
+-- w1_f_w: T [200,150] tf.float32
+-- embs: T [100000,50] tf.float32
+-- done!
 
 (|>) :: ∀ a b. a -> b -> (a, b)
 (|>) = (,)
 infixr |>
-
-
-{-> main
-
-done!
--}
 
 
 

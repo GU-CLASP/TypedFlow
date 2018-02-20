@@ -78,3 +78,15 @@ snMapInsert2 :: Some2 k1 k2 f -> v -> SSNMap2 k1 k2 f v -> SSNMap2 k1 k2 f v
 snMapInsert2 (Some2 sn) res = I.insertWith (++) (hashStableName sn) [(Some2 sn,res)]
 
 
+
+-- | The type of a memo table for functions of a.
+type Memo a = forall r. (a -> r) -> (a -> r)
+
+-- | Memoize a two argument function (just apply the table directly for
+-- single argument functions).
+memo2 :: Memo a -> Memo b -> (a -> b -> r) -> (a -> b -> r)
+memo2 a b = a . (b .)
+
+-- | Memoize a three argument function.
+memo3 :: Memo a -> Memo b -> Memo c -> (a -> b -> c -> r) -> (a -> b -> c -> r)
+memo3 a b c = a . (memo2 b c .)
