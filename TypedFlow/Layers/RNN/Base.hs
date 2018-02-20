@@ -33,13 +33,12 @@ Stability   : experimental
 {-# LANGUAGE PatternSynonyms #-}
 
 module TypedFlow.Layers.RNN.Base (
-  -- * Monad-like interface
-  Component(..), bindC, returnC, liftC,
   -- * Cell Combinators
   RnnCell,
+  simpleRnn,
+  runCell, mkCell,
   stackRnnCells, (.-.),
   bothRnnCells, (.|.),
-  runCell, mkCell,
   withBypass, withFeedback,
   onStates,
   -- * Rnn Combinators
@@ -52,6 +51,8 @@ module TypedFlow.Layers.RNN.Base (
   iterateCell,
   iterateCellBackward,
   iterateWithCull,
+  -- * Monad-like interface for cell construction
+  Component(..), bindC, returnC, liftC,
   -- rnnBackwardsWithCull,
   )
 
@@ -110,6 +111,12 @@ runRnn l (s,x) =
   let x' = unstack0 x
       (s',y) = runCell l (s,x')
   in (s',stack0 y)
+
+simpleRnn :: KnownTyp t1 => KnownShape s1 => KnownShape s => KnownNat n
+          => RnnCell t2 states (T s1 t1) (T s t)
+          -> (HTV (Flt t2) states, Tensor (n : s1) t1)
+          -> (HTV (Flt t2) states, Tensor (n : s) t)
+simpleRnn = runRnn . iterateCell
 
 -- | Construct a cell from an arbitrary stateful function
 mkCell :: ((HTV (Flt t) states,input) -> (HTV (Flt t) states, output)) -> RnnCell t states input output
