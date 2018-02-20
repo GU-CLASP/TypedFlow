@@ -138,7 +138,7 @@ instance (KnownShape x, KnownTyp y) => KnownPair (x ':& y) where
 genBatchedPlaceholders :: All KnownPair shapesAndTypes => Sat KnownNat n -> SList' HolderName shapesAndTypes -> Gen (HHTV shapesAndTypes)
 genBatchedPlaceholders _ LZ = return Unit
 genBatchedPlaceholders n@Sat (LS (HolderName name) names) = do
-  x <- (placeholder name)
+  x <- placeholder name
   xs <- genBatchedPlaceholders n names
   return (Uncurry (Unbroadcast n x) :* xs)
 

@@ -38,6 +38,7 @@ import Data.Kind (Constraint)
 import Data.Type.Equality
 import TypedFlow.Memo
 import qualified Data.Map as M
+import Data.Unique
 
 data Sat (a :: k -> Constraint) (b::k) where
   Sat :: forall b a. a b => Sat a b
@@ -683,7 +684,7 @@ data T (s :: Shape) (t :: Typ) where
   Noise :: T s t -> T s t
   BinOp :: (KnownTyp t, KnownTyp u) => BinOp -> SShape s0 -> SShape s1 -> SShape s2 -> SShape s3 -> T (s0 ++ s1) t -> T (s0 ++ s2) u -> T (s0 ++ s3) v
   UnOp :: KnownTyp t => UnOp -> SShape s0 -> SShape s1 -> SShape s2 -> T (s0 ++ s1) t -> T (s0 ++ s2) u
-  Unbroadcast :: Sat KnownNat n -> T (n ': s) t -> T s t
+  Unbroadcast :: Sat KnownNat n -> Unique -> T (n ': s) t -> T s t
   ReshapeFrom :: Product s ~ Product s0 => SShape s0 -> T s0 t -> T s t
   Transpose :: SShape s0 -> Permutation s0 s -> T s0 t -> T s t
   Stack :: SShape s0 -> Sat KnownNat m -> SShape s1 -> V m (T (s0 ++ s1) t) -> T (s0 ++ (m ': s1)) t
@@ -700,6 +701,9 @@ data T (s :: Shape) (t :: Typ) where
           Sat KnownNat bs -> SShape window -> PoolingType -> Sat KnownNat numChannels -> SShape outSpatial
             -> T (bs ': ZipWithMulShapes window outSpatial ++ '[numChannels]) t
             -> T (bs ': outSpatial ++ '[numChannels]) t
+
+instance Show Unique where
+  show _ = "<Unique>"
 
 deriving instance (Show (T s t))
 

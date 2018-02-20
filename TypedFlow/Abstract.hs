@@ -36,6 +36,7 @@ tensor operations. It is not normally imported directly by users.
 
 module TypedFlow.Abstract where
 
+import Data.Unique
 import TypedFlow.Python
 import Prelude hiding (tanh,Num(..),Floating(..),round,floor,(/),sqrt)
 import Prelude ((-))
@@ -49,27 +50,49 @@ import TypedFlow.Types (T(..))
 import Text.PrettyPrint.Compact hiding (All,Last,Product,Sum)
 import TypedFlow.Memo
 
-broadcast :: forall n s t proxy. KnownTyp t => KnownShape s => KnownNat n
-  => Bool -> proxy n -> T s t -> T (n : s) t
-broadcast varyNoise n = f typeSTyp typeSShape
-  where f :: forall s' t'. STyp t' -> SShape s' -> T s' t' -> T (n : s') t'
-        f = memo3 memoOrd memoOrd memo (protoBroadcast varyNoise (proxySat n) (f typeSTyp) finished)
-        finished :: forall s' t'. T s' t' -> Bool
-        finished = memo (protoFinished finished)
 
-        -- note: the memo table must be shared across all the calls to 'finished' in 'protoBroadcast'
+broadcast :: forall n s t proxy. KnownTyp t => KnownShape s => KnownNat n
+  => Unique -> Bool -> proxy n -> T s t -> T (n : s) t
+broadcast u varyNoise n x = result
+  -- | finished result = result
+  -- | otherwise = error "broadcast: panic"
+  where f :: forall s' t'. STyp t' -> SShape s' -> T s' t' -> T (n : s') t'
+        f = memo3 memoOrd memoOrd memo (protoBroadcast u varyNoise (proxySat n) (f typeSTyp) finished)
+        finished :: forall s' t'. T s' t' -> Bool
+        finished = memo (protoFinished u finished)
+        -- note: the memo table must be shared across all the calls to
+        -- 'finished' in 'protoBroadcast' for proper efficiency.
+        result = f typeSTyp typeSShape x
+
+
+protoFinished :: Unique -> (forall s' t'. T s' t' -> Bool) -> T s t -> Bool
+protoFinished u rec = \case
+  Noise _ -> False
+  If cond x y ->  rec cond && rec x && rec y
+  Where cond x y -> rec cond && rec x && rec y
+  T _ -> True
+  Unbroadcast _p u' _x -> u /= u'
+  UnOp _op _ _ _ x -> rec x
+  MatMul _ _ _ _ x y -> rec x && rec y
+  BinOp _op _ _ _ _ x y -> rec x && rec y
+  Gather _is _s0 _m _s1 x ix -> rec x && rec ix
+  Transpose _ _t x -> rec x
+  ReshapeFrom _s x -> rec x
+  Stack _s0 _m _s1 xs -> all rec xs
+  Convolution _bs _inChans _outChans _filterShape _s x filters -> rec x && rec filters
+  Pool _ _ _ _ _ x  -> rec x
 
 class Batched (f :: Shape -> Type) where
   batchify :: forall n r. KnownNat n => KnownShape r => (forall s t. KnownTyp t => KnownShape s => T s t -> T (n:s) t) -> f r -> f (n:r)
 
 broadcastGen :: KnownNat n => Batched f => KnownShape r => Bool -> proxy n -> f r -> f (n : r)
-broadcastGen varyNoise n = batchify (broadcast varyNoise n)
+broadcastGen varyNoise n = batchify (broadcast _ varyNoise n)
 
 testSatEqual :: forall n m. Sat KnownNat n -> Sat KnownNat m -> Maybe (n :~: m)
 testSatEqual Sat Sat = testEqual (Proxy @n) (Proxy @m)
 
 protoBroadcast :: forall n s t. 
-  Bool
+  Unique -> Bool
   -> Sat KnownNat n
   -> (forall s' t'. KnownTyp t' => SShape s' -> T s' t' -> T (n ': s') t')
   -> (forall s' t'. T s' t' -> Bool)
@@ -77,7 +100,7 @@ protoBroadcast :: forall n s t.
   -> SShape s
   -> T s t
   -> T (n ': s) t
-protoBroadcast varyNoise n@(Sat) rec finished ty s tensor
+protoBroadcast u varyNoise n@(Sat) rec finished ty s tensor
   | finished tensor = simpleBC
   | otherwise = knownTyp ty $ case tensor of
   Noise x -> if varyNoise then Noise (rec s x) else simpleBC
@@ -92,9 +115,13 @@ protoBroadcast varyNoise n@(Sat) rec finished ty s tensor
     | otherwise ->  error "broadcast if condition not implemented"
   Where cond x y -> Where (rec s cond) (rec s x) (rec s y)
   T _ -> error "panic: broadcast constant should be finished!"
-  Unbroadcast p x -> case testSatEqual p n of
-     Nothing -> error "panic: Unbroadcast of wrong kind found!"
-     Just Refl -> x
+  Unbroadcast p@Sat u' x
+    | u == u' -> case testSatEqual p n of
+        Nothing -> UnOp (Simple1Op "panic.unbroadcast" [integer (natVal n)
+                                                  , integer (natVal p)])
+                         LZ (LS p s) (LS n s) x
+        Just Refl -> x
+    | otherwise -> knownSShape s $ Unbroadcast p u' (transpose01 (rec (LS p s) x))
   MatMul LZ a@Sat b@Sat c@Sat x y
      -- this optimisation is absolutely critical to implement dense
      -- layers efficiently (at least with TF 1.3). (about 10x performance increase)
@@ -107,7 +134,7 @@ protoBroadcast varyNoise n@(Sat) rec finished ty s tensor
     | finished x -> Gather (LS n is) LZ m s1 x (rec is ix)
   Gather is s0 m s1 x ix
     | finished ix -> Gather is (LS n s0) m s1 (rec (s0 .+. LS m s1) x) ix
-    | otherwise -> error "broadcast on gather not fully implemented"
+    | otherwise -> error ("broadcast on gather not fully implemented:" ++ show tensor)
   Transpose s0 t x -> Transpose (LS n s0) (PermSkip t) (rec s0 x)
   ReshapeFrom s0 x -> reshapeFrom (LS n s0) (rec s0 x)
   Stack s0 m s1 xs -> Stack (LS n s0) m s1 (fmap (rec (s0 .+. s1)) xs)
@@ -130,23 +157,6 @@ prodAssocS _ _ _ = prodAssoc @x @y @z
 productS :: forall s. SShape s -> Sat KnownNat (Product s)
 productS s = knownSShape s $ knownProduct @s $ Sat
 
-
-protoFinished :: (forall s' t'. T s' t' -> Bool) -> T s t -> Bool
-protoFinished rec = \case
-  Noise _ -> False
-  If cond x y ->  rec cond && rec x && rec y
-  Where cond x y -> rec cond && rec x && rec y
-  T _ -> True
-  Unbroadcast _p _x -> False
-  UnOp _op _ _ _ x -> rec x
-  MatMul _ _ _ _ x y -> rec x && rec y
-  BinOp _op _ _ _ _ x y -> rec x && rec y
-  Gather _is _s0 _m _s1 x ix -> rec x && rec ix
-  Transpose _ _t x -> rec x
-  ReshapeFrom _s x -> rec x
-  Stack _s0 _m _s1 xs -> all rec xs
-  Convolution _bs _inChans _outChans _filterShape _s x filters -> rec x && rec filters
-  Pool _ _ _ _ _ x  -> rec x
 
 inversePerm :: Permutation a b -> Permutation b a
 inversePerm PermId = PermId
@@ -465,8 +475,8 @@ sequenceMask lens = mapT (lens `lessThan`) (range @maxlen)
 
 -- | Map a function along the first dimension of a tensor
 mapT :: forall n s t r u. KnownShape r => KnownNat n => KnownTyp u => KnownLen r => KnownLen s => (T s t -> T r u) ->  T (n ': s) t -> T (n ': r) u
-mapT f x = broadcast False (Proxy @n) (f (Unbroadcast (natSat @n) x))
-
+mapT f x = broadcast u False (Proxy @n) (f (Unbroadcast (natSat @n) u x))
+  where u = _
 
 -- | Map a function along the few first dimensions of a tensor, given by the first type parameter
 mapTT :: forall a s t r u. KnownShape r => KnownShape a => KnownTyp u => KnownLen r => KnownShape s => KnownTyp t
@@ -476,7 +486,7 @@ mapTT f x = prodHomo @a @r $
             knownProduct @a $
             knownAppend @a @r $
             knownAppend @a @s $
-            reshape (broadcast False (Proxy @(Product a)) (f (Unbroadcast (natSat @(Product a)) (reshape x))))
+            reshape (mapT @(Product a) f (reshape x))
 
 -- | zip  a function along the first dimension of two tensors tensors
 zipWithT :: forall (n :: Nat) (s :: [Nat]) (t :: Typ) (s1 :: [Nat]) (t1 :: Typ) (s2 :: Shape)  (t2 :: Typ).
@@ -485,7 +495,8 @@ zipWithT :: forall (n :: Nat) (s :: [Nat]) (t :: Typ) (s1 :: [Nat]) (t1 :: Typ) 
             -> Tensor (n ': s) t
             -> Tensor (n ': s1) t1
             -> Tensor (n ': s2) t2
-zipWithT f x y = broadcast False (Proxy @n) (f (Unbroadcast (natSat @n) x) (Unbroadcast (natSat @n) y))
+zipWithT f x y = broadcast u False (Proxy @n) (f (Unbroadcast (natSat @n) u x) (Unbroadcast (natSat @n) u y))
+  where u = _
 
 -- | Size-preserving convolution operation.
 convolution :: forall outputChannels filterSpatialShape inChannels s t.
