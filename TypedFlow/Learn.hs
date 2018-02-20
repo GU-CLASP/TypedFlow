@@ -1,3 +1,5 @@
+{-# LANGUAGE UndecidableSuperClasses #-}
+{-# LANGUAGE InstanceSigs #-}
 {-|
 Module      : TypedFlow.Learn
 Description : Loss functions and optimization strategies
@@ -30,28 +32,35 @@ Stability   : experimental
 module TypedFlow.Learn where
 
 import TypedFlow.Types
-import TypedFlow.Abstract (zipWithTGen)
+import TypedFlow.Abstract (Batched(..),broadcastGen)
 import TypedFlow.Python
 import TypedFlow.TF
 import qualified Prelude (Float)
-import Prelude (($),return,Maybe(..),(=<<),(.),Bool(True))
+import Prelude (($),return,Maybe(..),(=<<),(.),Bool(True),String)
 import Text.PrettyPrint.Compact (text)
-import Data.Monoid hiding (Last)
+import Data.Monoid hiding (Last,All)
 import GHC.TypeLits
 import Control.Monad.State (modify, gets)
-
 -- | Triple of values that are always output in a model: prediction, loss and accuracy.
-data ModelOutput p s t = ModelOutput {modelY :: T (s++p) t -- ^ prediction (which can contain p-shaped info)
-                                     ,modelLoss :: T s Float32 -- ^ loss associated with the prediction
-                                     ,modelCorrect :: T s Float32 -- ^ is the above prediction correct?
-                                     }
+data ModelOutput t predictionShape s = ModelOutput {modelY :: T (s++predictionShape) t -- ^ prediction (which can contain p-shaped info)
+                                                   ,modelLoss :: T s Float32 -- ^ loss associated with the prediction
+                                                   ,modelCorrect :: T s Float32 -- ^ is the above prediction correct?
+                                                   }
+
+instance (KnownShape p, KnownTyp t) => Batched (ModelOutput t p) where
+  batchify :: forall n r. KnownNat n => KnownShape r
+    => (forall s u. KnownTyp u => KnownShape s => T s u -> T (n:s) u) -> ModelOutput t p  r -> ModelOutput t p (n:r)
+  batchify f (ModelOutput{..}) = ModelOutput {modelLoss = f modelLoss
+                                             ,modelY = knownAppend @r @p (f modelY)
+                                             ,modelCorrect = f modelCorrect}
 
 -- | A standard modelling function: (input value, gold value) ↦ (prediction, accuracy, loss)
-type Model input tIn g p output tOut = T input tIn -> T (g++output) tOut -> ModelOutput p output tOut
+type Model input tIn g p output tOut = T input tIn -> T (g++output) tOut
+                                       -> ModelOutput tOut p output 
 
--- modelBoth :: forall n m s t. KnownTyp t => KnownShape s => KnownNat m => KnownNat n =>
---     ModelOutput (n ': s) t -> ModelOutput (m ': s) t -> ModelOutput (n + m ': s) t
--- modelBoth (ModelOutput y1 l1 c1) (ModelOutput y2 l2 c2) = ModelOutput (concat0 y1 y2) (l1 + l2) (concat0 c1 c2)
+-- modelBoth :: -- forall n m s t. KnownTyp t => KnownShape s => KnownNat m => KnownNat n =>
+--     ModelOutput t '[p] s -> ModelOutput t '[q] s -> ModelOutput t '[p + q] s
+-- modelBoth (ModelOutput y1 l1 c1) (ModelOutput y2 l2 c2) = ModelOutput (concatT (lengthAsAxis @s) y1 y2) (l1 + l2) (c1 + c2)
 
 -- | First type argument is the number of classes.  @categorical
 -- logits gold@ return (prediction, accuraccy, loss)
@@ -85,7 +94,7 @@ categoricalDistribution logits y =
 -- individual time steps with the targetWeights.
 
 timedCategorical :: forall len nCat bits. KnownNat nCat => KnownNat len => KnownBits bits =>
-  Tensor '[len] (Flt bits) -> Tensor '[len,nCat] (Flt bits) -> Tensor '[len] Int32 -> ModelOutput '[nCat] '[len] (Flt bits)
+  Tensor '[len] (Flt bits) -> Tensor '[len,nCat] (Flt bits) -> Tensor '[len] Int32 -> ModelOutput  (Flt bits) '[nCat] '[len]
 timedCategorical targetWeights logits y =
   let y_ :: Tensor '[len] Int32
       y_ = argmax1 logits
@@ -117,21 +126,49 @@ data Options = Options {maxGradientNorm :: Maybe Prelude.Float -- ^ apply gradie
 defaultOptions :: Options
 defaultOptions = Options {maxGradientNorm = Nothing}
 
+
+
+
+data HolderName a = HolderName String
+
+class KnownPair r where
+  knownPair :: proxy r -> ((KnownShape (Fst r), KnownTyp (Snd r)) => k) -> k
+
+instance (KnownShape x, KnownTyp y) => KnownPair (x ':& y) where
+  knownPair _ k = k
+
+genBatchedPlaceholders :: All KnownPair shapesAndTypes => Sat KnownNat n -> SList' HolderName shapesAndTypes -> Gen (HHTV shapesAndTypes)
+genBatchedPlaceholders _ LZ = return Unit
+genBatchedPlaceholders n@Sat (LS p@(HolderName name) names) = do
+  x <- knownPair p (placeholder name)
+  xs <- genBatchedPlaceholders n names
+  return (Uncurry (Unbroadcast n x) :* xs) 
+
+compile' :: forall batchSize shapesAndTypes sy_ ty_ p.
+           (KnownNat batchSize, All KnownPair shapesAndTypes, KnownShape sy_, KnownTyp ty_, KnownShape p) =>
+           Options -> SList' HolderName shapesAndTypes -> Gen (HHTV shapesAndTypes -> ModelOutput  ty_ p sy_)
+         -> Gen ()
+compile' options names fGen = 
+  compileAlreadyBatched @batchSize @p @sy_ @ty_ options $
+  knownAppend @sy_ @p $ do
+  xs <- genBatchedPlaceholders batchSize names
+  f <- fGen
+  return $ broadcastGen True batchSize (f xs)
+ where batchSize = natSat @batchSize
+
+
 -- | batchify and compile a simple model
 compile :: forall batchSize sx tx sy ty sy_ ty_ p.
            (KnownNat batchSize, KnownShape sx, KnownTyp tx, KnownShape sy, KnownTyp ty, KnownShape sy_, KnownTyp ty_, KnownShape p) =>
-           Options -> Gen (Tensor sx tx -> Tensor sy ty -> ModelOutput p sy_ ty_)
+           Options -> Gen (Tensor sx tx -> Tensor sy ty -> ModelOutput  ty_ p sy_)
            -- Model input tIn output tOut
         -> Gen ()
-compile options fGen =
-  compileGen @batchSize @p @sy_ @ty_ options $
-  knownAppend @sy_ @p $ do
-    x <- placeholder "x"
-    y <- placeholder "y"
-    f <- fGen
-    return ModelOutput {modelLoss = zipWithTGen @batchSize True (\x' y' -> modelLoss (f x' y')) x y
-                       ,modelY = zipWithTGen @batchSize True (\x' y' -> modelY (f x' y')) x y
-                       ,modelCorrect = zipWithTGen @batchSize True (\x' y' -> modelCorrect (f x' y')) x y}
+compile options fGen = do
+  f <- fGen
+  let f' :: HHTV '[sx ':& tx, sy ':& ty] -> ModelOutput ty_ p sy_
+      f' (Uncurry x :* Uncurry y :* Unit) = f x y
+  compile' @batchSize options (LS (HolderName "x") (LS (HolderName "y") LZ)) (return f')
+
 
 
 -- | Add a term to the loss. This function is intendend to add
@@ -142,9 +179,9 @@ addRegularizer r = modify $ \GState{..} -> GState{genRegularizers=r:genRegulariz
 
 -- | Generic a model with non-standard parameters ("x" and "y" must be
 -- provided as placeholders manually).
-compileGen :: forall bs p sy ty. KnownNat bs => (KnownShape sy, KnownShape p, KnownTyp ty) =>
-           Options -> Gen (ModelOutput p (bs ': sy) ty) -> Gen ()
-compileGen Options{..} model =
+compileAlreadyBatched :: forall bs p sy ty. KnownNat bs => (KnownShape sy, KnownShape p, KnownTyp ty) =>
+           Options -> Gen (ModelOutput ty p (bs ': sy)) -> Gen ()
+compileAlreadyBatched Options{..} model =
   knownAppend @sy @p $ do
   gen (text "import tensorflow as tf")
   genFun "mkModel" [text "optimizer=tf.train.AdamOptimizer()"] $ do

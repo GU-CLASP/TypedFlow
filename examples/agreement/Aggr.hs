@@ -35,6 +35,11 @@ main = do
   generateFile "aggr_model.py" (compile @1024 (defaultOptions {maxGradientNorm = Just 1}) agreement)
   putStrLn "done!"
 
+-- >>> main
+-- Parameters (total *** Exception: broadcast on gather index not implemented
+-- CallStack (from HasCallStack):
+--   error, called at ./TypedFlow/Abstract.hs:102:20 in typedflow-0.9-H6KPYKhyHGIKxqNXew8K1n:TypedFlow.Abstract
+
 (|>) :: ∀ a b. a -> b -> (a, b)
 (|>) = (,)
 infixr |>

@@ -49,26 +49,29 @@ import TypedFlow.Types (T(..))
 import Text.PrettyPrint.Compact hiding (All,Last,Product,Sum)
 import TypedFlow.Memo
 
-appAssocS :: SList' f a -> SList' f b -> SList' f c -> ((a ++ b) ++ c) :~: (a ++ (b ++ c))
-appAssocS = unsafeCoerce Refl
-
-broadcastPerm :: Proxy n -> Permutation s t -> Permutation (s ++ '[n]) (t ++ '[n])
-broadcastPerm _ PermId = PermId
-broadcastPerm n (PermSkip p) = PermSkip (broadcastPerm n p)
-broadcastPerm _ PermSwap = PermSwap
-broadcastPerm n (PermTrans p q) = PermTrans (broadcastPerm n p) (broadcastPerm n q)
-
-broadcast :: forall n s t. KnownTyp t => KnownShape s => KnownNat n
-  => Bool -> Proxy n -> T s t -> T (n : s) t
+broadcast :: forall n s t proxy. KnownTyp t => KnownShape s => KnownNat n
+  => Bool -> proxy n -> T s t -> T (n : s) t
 broadcast varyNoise n = f
   where f :: forall s' t'. KnownTyp t' => KnownShape s' => T s' t' -> T (n : s') t'
         f = memo (protoBroadcast varyNoise (proxySat n) (\s' -> knownSShape s' f) typeSShape)
 
+class Batched (f :: Shape -> Type) where
+  batchify :: forall n r. KnownNat n => KnownShape r => (forall s t. KnownTyp t => KnownShape s => T s t -> T (n:s) t) -> f r -> f (n:r)
+
+broadcastGen :: KnownNat n => Batched f => KnownShape r => Bool -> proxy n -> f r -> f (n : r)
+broadcastGen varyNoise n = batchify (broadcast varyNoise n)
 
 testSatEqual :: forall n m. Sat KnownNat n -> Sat KnownNat m -> Maybe (n :~: m)
 testSatEqual Sat Sat = testEqual (Proxy @n) (Proxy @m)
 
-protoBroadcast :: forall n s t. Bool -> Sat KnownNat n -> (forall s' t'. KnownTyp t' => SShape s' -> T s' t' -> T (n ': s') t') -> (KnownTyp t => SShape s -> T s t -> T (n ': s) t)
+protoBroadcast :: forall n s t. 
+  KnownTyp t
+  => Bool
+  -> Sat KnownNat n
+  -> (forall s' t'. KnownTyp t' => SShape s' -> T s' t' -> T (n ': s') t')
+  -> SShape s
+  -> T s t
+  -> T (n ': s) t
 protoBroadcast varyNoise n@(Sat) rec s tensor
   | finished tensor = simpleBC
   | otherwise = case tensor of
@@ -89,14 +92,17 @@ protoBroadcast varyNoise n@(Sat) rec s tensor
      Just Refl -> x
   MatMul LZ a@Sat b@Sat c@Sat x y
      -- this optimisation is absolutely critical to implement dense
-     -- layers efficiently (at least with TF 1.3)
+     -- layers efficiently (at least with TF 1.3). (about 10x performance increase)
      | finished y -> inflate2 (MatMul LZ (satMul n a) b c (flatten2 (rec (LS a (LS b LZ)) x)) y)
   MatMul s0 a b c x y -> MatMul (LS n s0) a b c (rec (s0 .+. (LS a (LS b LZ))) x) (rec (s0 .+. LS b (LS c LZ)) y)
   BinOp op s0 s1 s2 s3 x y -> BinOp op (LS n s0) s1 s2 s3 (rec (s0 .+. s1) x) (rec (s0 .+. s2) y)
   UnOp op s0 s1 s2 x -> UnOp op (LS n s0) s1 s2 (rec (s0 .+. s1) x)
+  Gather is LZ m s1 x ix
+    -- this optimisation is important to get efficient embeddings
+    | finished x -> Gather (LS n is) LZ m s1 x (rec is ix)
   Gather is s0 m s1 x ix
     | finished ix -> Gather is (LS n s0) m s1 (rec (s0 .+. LS m s1) x) ix
-    | otherwise -> error "broadcast on gather index not implemented"
+    | otherwise -> error "broadcast on gather not fully implemented"
   Transpose s0 t x -> Transpose (LS n s0) (PermSkip t) (rec s0 x)
   ReshapeFrom s0 x -> reshapeFrom (LS n s0) (rec s0 x)
   Stack s0 m s1 xs -> Stack (LS n s0) m s1 (fmap (rec (s0 .+. s1)) xs)
@@ -456,7 +462,6 @@ transposeN01 = Transpose (typeSShape @s .+. typeSShape @'[m,n]) (permN01 (typeSL
 sequenceMask :: forall maxlen. KnownNat maxlen => Tensor '[] Int32 -> Tensor '[maxlen] TFBool
 sequenceMask lens = mapT (lens `lessThan`) (range @maxlen)
 
-
 -- | Map a function along the first dimension of a tensor
 mapT :: forall n s t r u. KnownShape r => KnownNat n => KnownTyp u => KnownLen r => KnownLen s => (T s t -> T r u) ->  T (n ': s) t -> T (n ': r) u
 mapT f x = broadcast False (Proxy @n) (f (Unbroadcast (natSat @n) x))
@@ -472,15 +477,6 @@ mapTT f x = prodHomo @a @r $
             knownAppend @a @s $
             reshape (broadcast False (Proxy @(Product a)) (f (Unbroadcast (natSat @(Product a)) (reshape x))))
 
-zipWithTGen :: forall (n :: Nat) (s :: [Nat]) (t :: Typ) (s1 :: [Nat]) (t1 :: Typ) (s2 :: Shape)  (t2 :: Typ).
-            KnownShape s2 => KnownNat n => KnownTyp t2
-            => Bool
-            -> (T s t -> T s1 t1 -> T s2 t2)
-            -> Tensor (n ': s) t
-            -> Tensor (n ': s1) t1
-            -> Tensor (n ': s2) t2
-zipWithTGen varyNoise f x y = broadcast varyNoise (Proxy @n) (f (Unbroadcast (natSat @n) x) (Unbroadcast (natSat @n) y))
-
 -- | zip  a function along the first dimension of two tensors tensors
 zipWithT :: forall (n :: Nat) (s :: [Nat]) (t :: Typ) (s1 :: [Nat]) (t1 :: Typ) (s2 :: Shape)  (t2 :: Typ).
             KnownShape s2 => KnownNat n => KnownTyp t2
@@ -488,7 +484,7 @@ zipWithT :: forall (n :: Nat) (s :: [Nat]) (t :: Typ) (s1 :: [Nat]) (t1 :: Typ) 
             -> Tensor (n ': s) t
             -> Tensor (n ': s1) t1
             -> Tensor (n ': s2) t2
-zipWithT = zipWithTGen False
+zipWithT f x y = broadcast False (Proxy @n) (f (Unbroadcast (natSat @n) x) (Unbroadcast (natSat @n) y))
 
 -- | Size-preserving convolution operation.
 convolution :: forall outputChannels filterSpatialShape inChannels s t.

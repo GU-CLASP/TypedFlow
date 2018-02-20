@@ -42,7 +42,7 @@ import qualified Data.Map as M
 data Sat (a :: k -> Constraint) (b::k) where
   Sat :: forall b a. a b => Sat a b
 
-proxySat :: forall (b::k) (a :: k -> Constraint). a b => Proxy b -> Sat a b
+proxySat :: forall (b::k) (a :: k -> Constraint) proxy. a b => proxy b -> Sat a b
 proxySat _ = Sat
 
 natSat :: forall n. KnownNat n => Sat KnownNat n
@@ -619,7 +619,8 @@ data T (s :: Shape) (t :: Typ) where
   ReshapeFrom :: Product s ~ Product s0 => SShape s0 -> T s0 t -> T s t
   Transpose :: SShape s0 -> Permutation s0 s -> T s0 t -> T s t
   Stack :: SShape s0 -> Sat KnownNat m -> SShape s1 -> V m (T (s0 ++ s1) t) -> T (s0 ++ (m ': s1)) t
-  Gather :: KnownBits w => SShape indexShape -> SShape s0 -> Sat KnownNat m -> SShape s1 -> T (s0 ++ (m ': s1)) t -> T indexShape ('Typ 'Int w) -> T (s0 ++ indexShape ++ s1) t
+  Gather :: KnownBits w => SShape indexShape -> SShape s0 -> Sat KnownNat m -> SShape s1
+    -> T (s0 ++ (m ': s1)) t -> T indexShape ('Typ 'Int w) -> T (s0 ++ indexShape ++ s1) t
   MatMul :: forall s m n o t. SShape s -> Sat KnownNat n -> Sat KnownNat  o -> Sat KnownNat m -> T (s ++ '[n,o]) t -> T (s ++ [o,m]) t -> T (s ++ [n,m]) t
   Where :: T s TFBool  -> T s t -> T s t -> T s t
   If :: Scalar TFBool -> T s t -> T s t -> T s t
