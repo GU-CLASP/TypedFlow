@@ -140,13 +140,15 @@ genBatchedPlaceholders _ LZ = return Unit
 genBatchedPlaceholders n@Sat (LS (HolderName name) names) = do
   x <- (placeholder name)
   xs <- genBatchedPlaceholders n names
-  return (Uncurry (Unbroadcast n x) :* xs) 
+  return (Uncurry (Unbroadcast n x) :* xs)
 
-compile' :: forall batchSize shapesAndTypes sy_ ty_ p.
+compileGen :: forall batchSize shapesAndTypes sy_ ty_ p.
            (KnownNat batchSize, All KnownPair shapesAndTypes, KnownShape sy_, KnownTyp ty_, KnownShape p) =>
-           Options -> SList' HolderName shapesAndTypes -> Gen (HHTV shapesAndTypes -> ModelOutput  ty_ p sy_)
+           Options
+           -> SList' HolderName shapesAndTypes
+           -> Gen (HHTV shapesAndTypes -> ModelOutput ty_ p sy_)
          -> Gen ()
-compile' options names fGen = 
+compileGen options names fGen = 
   compileAlreadyBatched @batchSize @p @sy_ @ty_ options $
   knownAppend @sy_ @p $ do
   xs <- genBatchedPlaceholders batchSize names
@@ -162,7 +164,7 @@ compile :: forall batchSize sx tx sy ty sy_ ty_ p.
            -- Model input tIn output tOut
         -> Gen ()
 compile options fGen = do
-  compile' @batchSize options (LS (HolderName "x") (LS (HolderName "y") LZ)) $ do
+  compileGen @batchSize options (LS (HolderName "x") (LS (HolderName "y") LZ)) $ do
     f <- fGen
     let f' :: HHTV '[sx ':& tx, sy ':& ty] -> ModelOutput ty_ p sy_
         f' (Uncurry x :* Uncurry y :* Unit) = f x y

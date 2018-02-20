@@ -11,6 +11,7 @@
 module Main  where
 
 import TypedFlow
+import TypedFlow.Python
 
 mkLSTM :: ∀ n x w.
        KnownNat x => KnownNat n => KnownBits w
@@ -36,7 +37,7 @@ encoder prefix = do
   embs <- parameterDefault (prefix++"embs")
   lstm1 <- mkLSTM (prefix++"lstm1")
   return $ \len input ->
-    runLayer
+    runRnn
        (iterateWithCull len (timeDistribute (embedding @vocSize @vocSize embs) .-. lstm1))
        (repeatT zeros, input)
 
@@ -57,7 +58,7 @@ decoder prefix = do
   w1 <- parameter (prefix++"att1") glorotUniform
   return $ \ lens hs thoughtVectors targetInput ->
     let attn = uniformAttn (multiplicativeScoring w1) lens hs -- NOTE: attention on the left-part of the input.
-        (_sFinal,outFinal) = runLayer 
+        (_sFinal,outFinal) = runRnn
           (iterateCell ((timeDistribute (embedding @outVocabSize @outVocabSize embs)
                          .-.
                          (attentiveWithFeedback attn lstm1)
@@ -67,39 +68,33 @@ decoder prefix = do
     in outFinal
 
 
-seq2seq :: forall (vocSize :: Nat) (n :: Nat)  w.
-                 KnownNat vocSize => (KnownNat n) => KnownBits w
-        => Tensor '[n] Int32
-        -> Tensor '[] Int32
-        -> Tensor '[n] Int32
-        -> Gen (Tensor '[n, vocSize] (Flt w))
-seq2seq input inputLen output = do
-  (VecPair t1 t2,h) <- encoder @256 @vocSize "enc" inputLen input
-  decoder "dec" inputLen h (VecPair t1 t2) output
+seq2seq :: forall (vocSize :: Nat) (n :: Nat).
+                 KnownNat vocSize => (KnownNat n)
+        => Gen (HHTV '[ '[n] ':& Float32, '[n] ':& Int32, '[] ':& Int32, '[n] ':& Int32, '[n] ':& Int32] ->
+                ModelOutput Float32 '[vocSize] '[n])
+seq2seq  = do
+  enc <- encoder @256 @vocSize "enc"
+  dec <- decoder "dec"
+  return $ \(Uncurry masks :* Uncurry input :* Uncurry inputLen :* Uncurry srcOut :* Uncurry tgtOut :* Unit) ->
+    let (VecPair t1 t2,h) = enc inputLen input
+        y_ = dec inputLen h (VecPair t1 t2) srcOut
+    in timedCategorical masks y_ tgtOut
 
-model :: forall w vocSize len batchSize.
-  KnownNat batchSize
-  => KnownNat vocSize => KnownNat len => KnownBits w
-  => Gen (ModelOutput '[len, vocSize, batchSize] (Flt w))
-model = do
-  sourceInput <- placeholder "src_in"
-  sourceLen <- placeholder "src_len"
-  targetInput <- placeholder "tgt_in"
-  targetOutput <- placeholder "tgt_out"
-  masks <- placeholder "tgt_weights"
-  y_ <- seq2seq @vocSize @len sourceInput sourceLen targetInput
-  timedCategorical masks y_ targetOutput
-{-
 
 
 
 main :: IO ()
-main = generateFile "s2s.py" (compileGen
+main = generateFile "s2s.py" (compileGen @256
                                defaultOptions {maxGradientNorm = Just 5}
-                               (model @'B32 @15 @22 @256))
+                               (LS (HolderName "tgt_weights") $
+                                LS (HolderName "src_in") $
+                                LS (HolderName "src_len") $
+                                LS (HolderName "src_out") $
+                                LS (HolderName "tgt_out") $
+                                LZ)
+                               (seq2seq @15 @22))
 
 -- Local Variables:
 -- dante-repl-command-line: ("nix-shell" ".styx/shell.nix" "--pure" "--run" "cabal repl")
 -- End:
 
--}

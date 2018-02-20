@@ -1,3 +1,5 @@
+{-# LANGUAGE ViewPatterns #-}
+{-# LANGUAGE AllowAmbiguousTypes #-}
 {-# OPTIONS_GHC -fplugin GHC.TypeLits.KnownNat.Solver #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE RankNTypes #-}
@@ -6,62 +8,48 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UnicodeSyntax #-}
-module Aggr where
 
 import TypedFlow
 import TypedFlow.Python
 
-agreement :: Gen (Model '[20] Int32 '[] '[] '[] Int32)
-agreement = do
+onFST :: (Tensor s1 t -> Tensor s t) -> HTV t '[s1, s'] -> HTV t '[s, s']
+onFST f (VecPair h c) = (VecPair (f h) c)
+
+mkLSTM :: ∀ n x. KnownNat x => KnownNat n => 
+        String -> DropProb -> Gen (RnnCell 'B32 '[ '[n], '[n]] (Tensor '[x] Float32) (Tensor '[n] Float32))
+mkLSTM pName dropProb = do
+  params <- parameterDefault pName
+  drp1 <- mkDropout dropProb
+  rdrp1 <- mkDropout dropProb
+  return (timeDistribute drp1 .-. onStates (onFST rdrp1) (lstm params))
+
+model :: forall (vocSize::Nat) (len::Nat). KnownNat len => KnownNat vocSize =>
+   Gen (T '[len] Int32 -> T '[len] Int32 -> ModelOutput Float32 '[vocSize] '[len])
+model = do
   embs <- parameterDefault "embs"
-  lstm1 <- parameterDefault "w1"
-  lstm2 <- parameterDefault "w2"
+  let dropProb = DropProb 0.10
+  lstm1 <- mkLSTM @160 "w1" dropProb
+  drp <- mkDropout dropProb
   w <- parameterDefault "dense"
-  return $ \input gold -> 
-    let (_sFi,predictions) = runLayer 
-            (iterateCell ((timeDistribute (embedding @50 @100000 embs)
-                           .-.
-                           (lstm @150 lstm1)
-                           .-.
-                           (lstm @150 lstm2)
-                           .-.
-                           timeDistribute (sigmoid . squeeze0 . dense  w))))
-                (repeatT zeros, input)
-    in binary (last0 predictions) gold
+  return $ \input gold -> do
+    let masks = constant 1 ⊝ cast @Float32 (equal (constant (10 :: Int)) input)
+        (_sFi,predictions) =
+          simpleRnn (timeDistribute (embedding @12 @vocSize embs) .-.
+            lstm1 .-.
+            timeDistribute drp .-.
+            timeDistribute (dense w))
+          (repeatT zeros, input)
+      in timedCategorical masks predictions gold
 
 
 main :: IO ()
 main = do
-  generateFile "aggr_model.py" (compile @1024 (defaultOptions {maxGradientNorm = Just 1}) agreement)
+  generateFile "lm.py" (compile @512 defaultOptions (model @12 @21))
   putStrLn "done!"
-
--- >>> main
--- Parameters (total 5301351):
--- dense_bias: T [1] tf.float32
--- dense_w: T [150,1] tf.float32
--- w2_o_bias: T [150] tf.float32
--- w2_o_w: T [300,150] tf.float32
--- w2_c_bias: T [150] tf.float32
--- w2_c_w: T [300,150] tf.float32
--- w2_i_bias: T [150] tf.float32
--- w2_i_w: T [300,150] tf.float32
--- w2_f_bias: T [150] tf.float32
--- w2_f_w: T [300,150] tf.float32
--- w1_o_bias: T [150] tf.float32
--- w1_o_w: T [200,150] tf.float32
--- w1_c_bias: T [150] tf.float32
--- w1_c_w: T [200,150] tf.float32
--- w1_i_bias: T [150] tf.float32
--- w1_i_w: T [200,150] tf.float32
--- w1_f_bias: T [150] tf.float32
--- w1_f_w: T [200,150] tf.float32
--- embs: T [100000,50] tf.float32
--- done!
 
 (|>) :: ∀ a b. a -> b -> (a, b)
 (|>) = (,)
 infixr |>
-
 
 
 -- Local Variables:
