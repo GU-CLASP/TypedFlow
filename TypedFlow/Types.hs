@@ -42,6 +42,9 @@ import qualified Data.Map as M
 data Sat (a :: k -> Constraint) (b::k) where
   Sat :: forall b a. a b => Sat a b
 
+instance (Show (Sat a b)) where
+  show _ = "Sat"
+
 proxySat :: forall (b::k) (a :: k -> Constraint) proxy. a b => proxy b -> Sat a b
 proxySat _ = Sat
 
@@ -238,7 +241,7 @@ type family Reverse xs where
   Reverse xs = Reverse' xs '[]
 
 newtype V (n::Nat) a = V [a]
-  deriving (Functor, Foldable, Traversable)
+  deriving (Functor, Foldable, Traversable, Show)
 
 lastV :: V (1+n) a -> a
 lastV (V xs) = last xs
@@ -394,13 +397,13 @@ data SPeano n where
   SZero :: SPeano 'Zero
   SSucc :: SPeano n -> SPeano ('Succ n)
 
-data Vec (n::Peano) a where
-  VNil  :: Vec 'Zero a
-  VCons :: a -> Vec n a -> Vec ('Succ n) a
+-- data Vec (n::Peano) a where
+--   VNil  :: Vec 'Zero a
+--   VCons :: a -> Vec n a -> Vec ('Succ n) a
 
-vecToList :: Vec n a -> [a]
-vecToList VNil = []
-vecToList (VCons x xs) = x : vecToList xs
+-- vecToList :: Vec n a -> [a]
+-- vecToList VNil = []
+-- vecToList (VCons x xs) = x : vecToList xs
 
 -- type family App n (xs :: Vec n a) ys where
 --    App 'Zero 'VNil  xs            =  xs
@@ -549,6 +552,10 @@ data SList' f s where
   LZ :: SList' f '[]
   LS :: forall x xs f. f x -> SList' f xs -> SList' f (x ': xs)
 
+
+instance Show (SList' f s) where
+  show x = show (sListLength x)
+
 appSList, (.+.) :: SList' f xs -> SList' f ys -> SList' f (xs ++ ys)
 appSList LZ x = x
 appSList (LS x xs) ys = LS x (appSList xs ys)
@@ -668,6 +675,9 @@ newtype Gen x = Gen {fromGen :: State GState x} deriving (Monad, MonadState GSta
 
 type UntypedExpression = DOC
 
+instance Show DOC where
+  show = renderWith (Options 92 (const id))
+
 data T (s :: Shape) (t :: Typ) where
   T :: UntypedExpression -> T s t
   Noise :: T s t -> T s t
@@ -691,6 +701,8 @@ data T (s :: Shape) (t :: Typ) where
             -> T (bs ': ZipWithMulShapes window outSpatial ++ '[numChannels]) t
             -> T (bs ': outSpatial ++ '[numChannels]) t
 
+deriving instance (Show (T s t))
+
 type family ZipWithMulShapes (xs::Shape) (xy::Shape) :: Shape
 type instance ZipWithMulShapes (x ': xs) (y ': ys) = x*y ': ZipWithMulShapes xs ys
 type instance ZipWithMulShapes '[] _ = '[]
@@ -704,19 +716,21 @@ zipWithMulSShapes LZ _ = LZ
 zipWithMulSShapes _ LZ = LZ
 zipWithMulSShapes (LS x xs) (LS y ys) = LS (satMul x y) (zipWithMulSShapes xs ys)
 
-data PoolingType = MaxPool | AvgPool
+data PoolingType = MaxPool | AvgPool deriving Show
 
 type Tensor shape = T shape
 
 data UnOp  = Simple1Op String [DOC] | SliceOp Integer Integer | Axis1Op String [(String,DOC)] Integer | IndexOp {indexOpAxis :: Integer, indexOpIndex :: Integer}
-             | SimpleBroadCast Integer
-data BinOp = Simple2Op String (Maybe (String,String)) | Axis2Op String Integer
+             | SimpleBroadCast Integer deriving Show
+data BinOp = Simple2Op String (Maybe (String,String)) | Axis2Op String Integer deriving Show
 
 data Permutation (s :: [k]) (t :: [k]) where
   PermId :: Permutation s t
   PermSkip :: Permutation s t -> Permutation (n ': s) (n ': t)
   PermSwap :: Permutation (n ': m ': s) (m ': n ': s)
   PermTrans :: Permutation s t -> Permutation t u -> Permutation s u
+
+deriving instance Show (Permutation s t)
 
 class KnownTensors p where
   -- | traverse all the tensors contained in p.
