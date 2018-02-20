@@ -51,9 +51,15 @@ import TypedFlow.Memo
 
 broadcast :: forall n s t proxy. KnownTyp t => KnownShape s => KnownNat n
   => Bool -> proxy n -> T s t -> T (n : s) t
-broadcast varyNoise n = f
-  where f :: forall s' t'. KnownTyp t' => KnownShape s' => T s' t' -> T (n : s') t'
-        f = memo (protoBroadcast varyNoise (proxySat n) (\s' -> knownSShape s' f) typeSShape)
+broadcast varyNoise n = f typVal typeSShape
+  where f :: forall s' t'. STyp t' -> SShape s' -> T s' t' -> T (n : s') t'
+        f t s = memo (memoOrd (memoOrd (protoBroadcast varyNoise (proxySat n) (f typVal) finished) t) s)
+        -- f' :: forall s' t'. KnownTyp t' => SShape s' -> T s' t' -> T (n : s') t'
+        -- f' = f (Sat @Typ @KnownTyp)
+        finished :: forall s' t'. T s' t' -> Bool
+        finished = memo (protoFinished finished)
+
+        -- note: the memo table must be shared across all the calls to 'finished' in 'protoBroadcast'
 
 class Batched (f :: Shape -> Type) where
   batchify :: forall n r. KnownNat n => KnownShape r => (forall s t. KnownTyp t => KnownShape s => T s t -> T (n:s) t) -> f r -> f (n:r)
@@ -65,16 +71,17 @@ testSatEqual :: forall n m. Sat KnownNat n -> Sat KnownNat m -> Maybe (n :~: m)
 testSatEqual Sat Sat = testEqual (Proxy @n) (Proxy @m)
 
 protoBroadcast :: forall n s t. 
-  KnownTyp t
-  => Bool
+  Bool
   -> Sat KnownNat n
   -> (forall s' t'. KnownTyp t' => SShape s' -> T s' t' -> T (n ': s') t')
+  -> (forall s' t'. T s' t' -> Bool)
+  -> STyp t
   -> SShape s
   -> T s t
   -> T (n ': s) t
-protoBroadcast varyNoise n@(Sat) rec s tensor
+protoBroadcast varyNoise n@(Sat) rec finished ty s tensor
   | finished tensor = simpleBC
-  | otherwise = case tensor of
+  | otherwise = knownTyp ty $ case tensor of
   Noise x -> if varyNoise then Noise (rec s x) else simpleBC
   Pool bs@Sat window pt numChans outSpatial x ->
     knownSShape (zipWithMulSShapes window outSpatial .+. LS numChans LZ) $
@@ -114,7 +121,7 @@ protoBroadcast varyNoise n@(Sat) rec s tensor
       reshapeFrom (LS (satMul n bs) (s0 `sl` outChans)) $
       Convolution (satMul n bs) inChans outChans filterShape s0 (reshapeAuto (rec typeSShape x)) filters
     | otherwise -> error "broadcast on convolution filter not implemented"
- where simpleBC = knownSShape s $ UnOp (SimpleBroadCast 0) LZ s (LS n s) tensor
+ where simpleBC = knownSShape s $ knownTyp ty $ UnOp (SimpleBroadCast 0) LZ s (LS n s) tensor
 
 testEqual :: KnownNat m => KnownNat n => Proxy m -> Proxy n -> Maybe (m :~: n)
 testEqual m n = if natVal m == natVal n then Just (unsafeCoerce Refl) else Nothing
@@ -125,10 +132,6 @@ prodAssocS _ _ _ = prodAssoc @x @y @z
 productS :: forall s. SShape s -> Sat KnownNat (Product s)
 productS s = knownSShape s $ knownProduct @s $ Sat
 
-finished :: T s t -> Bool
-finished = f where
-  f :: forall s' t'. T s' t' -> Bool
-  f = memo (protoFinished f)
 
 protoFinished :: (forall s' t'. T s' t' -> Bool) -> T s t -> Bool
 protoFinished rec = \case

@@ -7,6 +7,7 @@
 module TypedFlow.Memo where
 
 import qualified Data.IntMap as I
+import qualified Data.Map.Strict as M
 import System.Mem.StableName
 import Data.IORef
 import System.IO.Unsafe
@@ -39,6 +40,24 @@ applyStable f tbl arg = unsafePerformIO (
               ; return res
               }})
 
+memoOrd :: Ord a => (a -> b) -> a -> b
+memoOrd f = unsafePerformIO (
+  do { tref <- newIORef (M.empty)
+     ; return (applyStableOrd f tref)
+     })
+
+applyStableOrd :: Ord a => (a -> b) -> IORef (M.Map a b) -> a -> b
+applyStableOrd f tbl arg = unsafePerformIO (
+  do { lkp <- M.lookup arg <$> readIORef tbl
+     ; case lkp of
+         Just result -> return result
+         Nothing ->
+           do { let res = f arg
+              ; modifyIORef tbl (M.insert arg res)
+              ; return res
+              }})
+
+
 data Some2 k1 k2 (f :: k1 -> k2 -> Type) where
   Some2 :: forall k1 k2 f a b. StableName (f a b) -> Some2 k1 k2 f
 
@@ -57,3 +76,5 @@ snMapLookup2 (Some2 sn) m = do
 
 snMapInsert2 :: Some2 k1 k2 f -> v -> SSNMap2 k1 k2 f v -> SSNMap2 k1 k2 f v
 snMapInsert2 (Some2 sn) res = I.insertWith (++) (hashStableName sn) [(Some2 sn,res)]
+
+

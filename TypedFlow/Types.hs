@@ -420,9 +420,46 @@ type family At n xs where
   At 'Zero (x ': xs) = x
   At ('Succ n) (x ': xs) = At n xs
 
-data Kind = Float | Int | Bool deriving Show
-data NBits = B32 | B64 | B1 deriving Show
-data Typ = Typ Kind NBits
+data Kind = Float | Int | Bool deriving (Show,Eq,Ord)
+data SKind (s::Kind) where
+  SFloat :: SKind 'Float
+  SInt :: SKind 'Int
+  SBool :: SKind 'Bool
+
+data NBits = B32 | B64 | B1 deriving (Show,Eq,Ord)
+
+data SNBits s where
+  SB32 :: SNBits 'B32
+  SB64 :: SNBits 'B64
+  SB1 :: SNBits 'B1
+
+data Typ = Typ Kind NBits deriving (Eq,Ord)
+
+kVal :: SKind t1 -> Kind
+kVal SFloat = Float
+kVal SInt = Int
+kVal SBool = Bool
+
+instance Eq (SKind t) where x == y = kVal x == kVal y
+instance Ord (SKind t) where compare x y = compare (kVal x) (kVal y)
+
+nbitsVal :: SNBits w -> NBits
+nbitsVal SB1 = B1
+nbitsVal SB64 = B64
+nbitsVal SB32 = B32
+
+instance Eq (SNBits t) where x == y = nbitsVal x == nbitsVal y
+instance Ord (SNBits t) where compare x y = compare (nbitsVal x) (nbitsVal y)
+
+projTypVal :: STyp t1 -> Typ
+projTypVal (STyp k b) = Typ (kVal k) (nbitsVal b)
+
+instance Eq (STyp t) where x == y = projTypVal x == projTypVal y
+instance Ord (STyp t) where compare x y = compare (projTypVal x) (projTypVal y)
+
+data STyp t where
+  STyp :: SKind k -> SNBits b -> STyp ('Typ k b)
+
 
 type Flt t = 'Typ 'Float t
 type Float32 = 'Typ 'Float 'B32
@@ -443,17 +480,30 @@ instance KnownShape '[]
 instance (KnownNat x, KnownShape xs) => KnownShape (x ': xs)
 
 class KnownTyp t where
-  typVal :: Typ
+  typVal :: STyp t
 
 class KnownBits t where
-  bitsVal :: NBits
+  bitsVal :: SNBits t
 
-instance KnownBits 'B1 where bitsVal = B1
-instance KnownBits 'B32 where bitsVal = B32
-instance KnownBits 'B64 where bitsVal = B64
+instance KnownBits 'B1 where bitsVal = SB1
+instance KnownBits 'B32 where bitsVal = SB32
+instance KnownBits 'B64 where bitsVal = SB64
 
 instance (KnownBits l, KnownKind k) => KnownTyp ('Typ k l) where
-  typVal = Typ (kindVal @k) (bitsVal @l)
+  typVal = STyp (kindVal @k) (bitsVal @l)
+
+knownBits :: SNBits t -> (KnownBits t => k) -> k
+knownBits SB1 k = k
+knownBits SB32 k = k
+knownBits SB64 k = k
+
+knownKind :: SKind t -> (KnownKind t => k) -> k
+knownKind SFloat k = k
+knownKind SInt k = k
+knownKind SBool k = k
+
+knownTyp :: STyp t -> (KnownTyp t => k) -> k
+knownTyp (STyp k b) r = knownBits b $ knownKind k $ r
 
 class Pretty t where
   pretty :: t -> DOC
@@ -462,22 +512,38 @@ instance Pretty Bool where pretty = bool
 instance Pretty Float where pretty = float
 instance Pretty Int where pretty = int
 class (Pretty (HostType t)) => KnownKind t where
-  kindVal :: Kind
+  kindVal :: SKind t
   type HostType t
 
 instance KnownKind 'Bool where
-  kindVal = Bool
+  kindVal = SBool
   type HostType 'Bool = Bool
 instance KnownKind 'Float where
-  kindVal = Float
+  kindVal = SFloat
   type HostType 'Float = Float
 instance KnownKind 'Int where
-  kindVal = Int
+  kindVal = SInt
   type HostType 'Int = Int
 
 type SList = SList' Proxy
 
+instance Ord (Sat KnownNat t) where
+  compare x@Sat y@Sat = compare (natVal x) (natVal y)
+
+instance Eq (Sat KnownNat t) where
+   x@Sat == y@Sat = (natVal x) == (natVal y)
+
 type SShape = SList' (Sat KnownNat)
+
+instance Ord (SShape s) where
+  compare LZ LZ = EQ
+  compare (LS x xs) (LS y ys) = case compare x y of
+    EQ -> compare xs ys
+    d -> d
+
+instance Eq (SShape s) where
+  LZ == LZ = True
+  (LS x xs) == (LS y ys) = x == y && xs == ys
 
 data SList' f s where
   LZ :: SList' f '[]
