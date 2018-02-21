@@ -31,6 +31,8 @@ Stability   : experimental
 
 module TypedFlow.Learn where
 
+import System.IO.Unsafe
+import Data.Unique
 import TypedFlow.Types
 import TypedFlow.Abstract (Batched(..),broadcastGen)
 import TypedFlow.Python
@@ -135,12 +137,12 @@ class (KnownShape (Fst r), KnownTyp (Snd r)) => KnownPair r where
 
 instance (KnownShape x, KnownTyp y) => KnownPair (x ':& y) where
 
-genBatchedPlaceholders :: All KnownPair shapesAndTypes => Sat KnownNat n -> SList' HolderName shapesAndTypes -> Gen (HHTV shapesAndTypes)
-genBatchedPlaceholders _ LZ = return Unit
-genBatchedPlaceholders n@Sat (LS (HolderName name) names) = do
+genBatchedPlaceholders :: All KnownPair shapesAndTypes => Unique -> Sat KnownNat n -> SList' HolderName shapesAndTypes -> Gen (HHTV shapesAndTypes)
+genBatchedPlaceholders _ _ LZ = return Unit
+genBatchedPlaceholders u n@Sat (LS (HolderName name) names) = do
   x <- placeholder name
-  xs <- genBatchedPlaceholders n names
-  return (Uncurry (Unbroadcast n x) :* xs)
+  xs <- genBatchedPlaceholders u n names
+  return (Uncurry (Unbroadcast n u x) :* xs)
 
 compileGen :: forall batchSize shapesAndTypes sy_ ty_ p.
            (KnownNat batchSize, All KnownPair shapesAndTypes, KnownShape sy_, KnownTyp ty_, KnownShape p) =>
@@ -151,9 +153,10 @@ compileGen :: forall batchSize shapesAndTypes sy_ ty_ p.
 compileGen options names fGen = 
   compileAlreadyBatched @batchSize @p @sy_ @ty_ options $
   knownAppend @sy_ @p $ do
-  xs <- genBatchedPlaceholders batchSize names
+  let u = unsafePerformIO newUnique
+  xs <- genBatchedPlaceholders u batchSize names
   f <- fGen
-  return $ broadcastGen True batchSize (f xs)
+  return $ broadcastGen u True batchSize (f xs)
  where batchSize = natSat @batchSize
 
 

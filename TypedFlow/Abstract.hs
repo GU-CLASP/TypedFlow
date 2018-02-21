@@ -36,6 +36,7 @@ tensor operations. It is not normally imported directly by users.
 
 module TypedFlow.Abstract where
 
+import System.IO.Unsafe
 import Data.Unique
 import TypedFlow.Python
 import Prelude hiding (tanh,Num(..),Floating(..),round,floor,(/),sqrt)
@@ -85,8 +86,8 @@ protoFinished u rec = \case
 class Batched (f :: Shape -> Type) where
   batchify :: forall n r. KnownNat n => KnownShape r => (forall s t. KnownTyp t => KnownShape s => T s t -> T (n:s) t) -> f r -> f (n:r)
 
-broadcastGen :: KnownNat n => Batched f => KnownShape r => Bool -> proxy n -> f r -> f (n : r)
-broadcastGen varyNoise n = batchify (broadcast _ varyNoise n)
+broadcastGen :: KnownNat n => Batched f => KnownShape r => Unique -> Bool -> proxy n -> f r -> f (n : r)
+broadcastGen u varyNoise n = batchify (broadcast u varyNoise n)
 
 testSatEqual :: forall n m. Sat KnownNat n -> Sat KnownNat m -> Maybe (n :~: m)
 testSatEqual Sat Sat = testEqual (Proxy @n) (Proxy @m)
@@ -118,7 +119,7 @@ protoBroadcast u varyNoise n@(Sat) rec finished ty s tensor
   Unbroadcast p@Sat u' x
     | u == u' -> case testSatEqual p n of
         Nothing -> UnOp (Simple1Op "panic.unbroadcast" [integer (natVal n)
-                                                  , integer (natVal p)])
+                                                       ,integer (natVal p)])
                          LZ (LS p s) (LS n s) x
         Just Refl -> x
     | otherwise -> knownSShape s $ Unbroadcast p u' (transpose01 (rec (LS p s) x))
@@ -134,7 +135,7 @@ protoBroadcast u varyNoise n@(Sat) rec finished ty s tensor
     | finished x -> Gather (LS n is) LZ m s1 x (rec is ix)
   Gather is s0 m s1 x ix
     | finished ix -> Gather is (LS n s0) m s1 (rec (s0 .+. LS m s1) x) ix
-    | otherwise -> error ("broadcast on gather not fully implemented:" ++ show tensor)
+    | otherwise -> error ("broadcast on gather not fully implemented")
   Transpose s0 t x -> Transpose (LS n s0) (PermSkip t) (rec s0 x)
   ReshapeFrom s0 x -> reshapeFrom (LS n s0) (rec s0 x)
   Stack s0 m s1 xs -> Stack (LS n s0) m s1 (fmap (rec (s0 .+. s1)) xs)
@@ -476,7 +477,7 @@ sequenceMask lens = mapT (lens `lessThan`) (range @maxlen)
 -- | Map a function along the first dimension of a tensor
 mapT :: forall n s t r u. KnownShape r => KnownNat n => KnownTyp u => KnownLen r => KnownLen s => (T s t -> T r u) ->  T (n ': s) t -> T (n ': r) u
 mapT f x = broadcast u False (Proxy @n) (f (Unbroadcast (natSat @n) u x))
-  where u = _
+  where u = unsafePerformIO newUnique
 
 -- | Map a function along the few first dimensions of a tensor, given by the first type parameter
 mapTT :: forall a s t r u. KnownShape r => KnownShape a => KnownTyp u => KnownLen r => KnownShape s => KnownTyp t
@@ -496,7 +497,7 @@ zipWithT :: forall (n :: Nat) (s :: [Nat]) (t :: Typ) (s1 :: [Nat]) (t1 :: Typ) 
             -> Tensor (n ': s1) t1
             -> Tensor (n ': s2) t2
 zipWithT f x y = broadcast u False (Proxy @n) (f (Unbroadcast (natSat @n) u x) (Unbroadcast (natSat @n) u y))
-  where u = _
+  where u = unsafePerformIO newUnique
 
 -- | Size-preserving convolution operation.
 convolution :: forall outputChannels filterSpatialShape inChannels s t.
