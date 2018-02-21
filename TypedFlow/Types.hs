@@ -554,8 +554,8 @@ data SList' f s where
   LS :: forall x xs f. f x -> SList' f xs -> SList' f (x ': xs)
 
 
-instance Show (SList' f s) where
-  show x = show (sListLength x)
+instance Show (SShape s) where
+  show x = show (shapeToList x)
 
 appSList, (.+.) :: SList' f xs -> SList' f ys -> SList' f (xs ++ ys)
 appSList LZ x = x

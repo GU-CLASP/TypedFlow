@@ -135,7 +135,7 @@ protoBroadcast u varyNoise n@(Sat) rec finished ty s tensor
     | finished x -> Gather (LS n is) LZ m s1 x (rec is ix)
   Gather is s0 m s1 x ix
     | finished ix -> Gather is (LS n s0) m s1 (rec (s0 .+. LS m s1) x) ix
-    | otherwise -> error ("broadcast on gather not fully implemented")
+    | otherwise -> error ("broadcast on gather not fully implemented " ++ show (finished x) ++ show (finished ix) ++ show is ++ show s0 ++ show s1)
   Transpose s0 t x -> Transpose (LS n s0) (PermSkip t) (rec s0 x)
   ReshapeFrom s0 x -> reshapeFrom (LS n s0) (rec s0 x)
   Stack s0 m s1 xs -> Stack (LS n s0) m s1 (fmap (rec (s0 .+. s1)) xs)
@@ -634,6 +634,7 @@ if_ = If
 gather :: forall n indexShape s t. KnownShape s => KnownNat n => KnownShape indexShape => T (n ': s) t -> T indexShape Int32 -> T (indexShape ++ s) t
 gather = Gather typeSShape LZ (natSat @n) typeSShape
 
+-- gather_nd :: T (containerShape ++ elementShape) t -> (indexShape ++ '[Length containerShape] ) Int32 -> T (indexShape ++ elementShape) t
 
 -- | x by y maxpool layer.
 maxPool2D :: forall windowx windowy height width channels t.

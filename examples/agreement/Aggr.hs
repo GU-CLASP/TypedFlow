@@ -32,7 +32,7 @@ model = do
   drp <- mkDropout dropProb
   w <- parameterDefault "dense"
   return $ \input gold -> do
-    let masks = constant 1 ⊝ cast @Float32 (equal (constant (10 :: Int)) input)
+    let masks = constant 1 ⊝ cast @Float32 (equal (constant padding) input)
         (_sFi,predictions) =
           simpleRnn (timeDistribute (embedding @12 @vocSize embs) .-.
             lstm1 .-.
@@ -41,11 +41,23 @@ model = do
           (repeatT zeros, input)
       in timedCategorical masks predictions gold
 
+padding :: Int
+padding = 10
 
 main :: IO ()
 main = do
-  generateFile "lm.py" (compile @512 defaultOptions (model @12 @21))
+  generateFile "aggr.py" (compile @512 defaultOptions (model @12 @21))
   putStrLn "done!"
+
+-- >>> main
+-- <interactive>:6859:2: warning: [-Wdeferred-out-of-scope-variables]
+--     • Variable not in scope: main :: IO a0
+--     • Perhaps you meant ‘min’ (imported from Prelude)
+-- *** Exception: <interactive>:6859:2: error:
+--     • Variable not in scope: main :: IO a0
+--     • Perhaps you meant ‘min’ (imported from Prelude)
+-- (deferred type error)
+
 
 (|>) :: ∀ a b. a -> b -> (a, b)
 (|>) = (,)

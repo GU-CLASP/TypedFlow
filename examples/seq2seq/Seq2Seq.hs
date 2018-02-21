@@ -58,12 +58,12 @@ decoder prefix = do
   w1 <- parameter (prefix++"att1") glorotUniform
   return $ \ lens hs thoughtVectors targetInput ->
     let attn = uniformAttn (multiplicativeScoring w1) lens hs -- NOTE: attention on the left-part of the input.
-        (_sFinal,outFinal) = runRnn
-          (iterateCell ((timeDistribute (embedding @outVocabSize @outVocabSize embs)
+        (_sFinal,outFinal) = simpleRnn
+          ((timeDistribute (embedding @outVocabSize @outVocabSize embs)
                          .-.
-                         (attentiveWithFeedback attn lstm1)
+                         attentiveWithFeedback attn lstm1
                          .-.
-                         timeDistribute (dense projs))))
+                         timeDistribute (dense projs)))
           ((F zeros :* thoughtVectors), targetInput)
     in outFinal
 

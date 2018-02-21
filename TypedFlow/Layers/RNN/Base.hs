@@ -277,7 +277,7 @@ iterateWithCull :: forall n x y ls b.
   KnownLen ls => KnownNat n => All KnownShape ls =>
   T '[] Int32 -- ^ dynamic length
   -> RnnCell b ls x y -> Rnn n b ls x y
-iterateWithCull dynLen cell xs = C $ \s0 -> 
+iterateWithCull dynLen cell xs = C $ \s0 ->
   let (us,ss) = chainForwardWithState (uncurry (flip (runC . cell))) (s0,xs)
       sss = transposeV @n (typeSList @ls) ss
   in (gathers @n (typeSList @ls) dynLen sss,us)
