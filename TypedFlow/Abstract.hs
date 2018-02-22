@@ -150,7 +150,9 @@ protoBroadcast u varyNoise n@(Sat) rec finished ty s tensor
     | finished x -> Gather (LS n is) LZ m s1 x (rec is ix)
   Gather is s0 m s1 x ix
     | finished ix -> Gather is (LS n s0) m s1 (rec (s0 .+. LS m s1) x) ix
-    | otherwise -> error ("broadcast on gather not fully implemented " ++ show (finished x) ++ show (finished ix) ++ show is ++ show s0 ++ show s1)
+    | otherwise -> rec s (GatherND (sl s0 m) s1 (s0 .+. is) x _)
+    -- T indexShape Int32
+    -- T ((s0 ++ indexShape) ++ '[Length (s0 ++ '[m])]) Int32
   Transpose s0 t x -> Transpose (LS n s0) (PermSkip t) (rec s0 x)
   ReshapeFrom s0 x -> reshapeFrom (LS n s0) (rec s0 x)
   Stack s0 m s1 xs -> Stack (LS n s0) m s1 (fmap (rec (s0 .+. s1)) xs)
