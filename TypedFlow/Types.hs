@@ -555,7 +555,7 @@ data SList' f s where
 
 
 instance Show (SShape s) where
-  show x = show (shapeToList x)
+  show x = show (shapeToList' x)
 
 appSList, (.+.) :: SList' f xs -> SList' f ys -> SList' f (xs ++ ys)
 appSList LZ x = x
@@ -570,6 +570,11 @@ sListLength :: SList' f s -> Integer
 sListLength LZ = 0
 sListLength (LS _ s) = 1+sListLength s
 
+
+sListLenAsNat :: SList' f s -> Sat KnownNat (Length s)
+sListLenAsNat LZ = Sat
+sListLenAsNat (LS _ s) = case sListLenAsNat s of
+  Sat -> Sat
 
 type family PeanoLength xs :: Peano where
   PeanoLength '[] = 'Zero
@@ -685,11 +690,15 @@ data T (s :: Shape) (t :: Typ) where
   BinOp :: (KnownTyp t, KnownTyp u) => BinOp -> SShape s0 -> SShape s1 -> SShape s2 -> SShape s3 -> T (s0 ++ s1) t -> T (s0 ++ s2) u -> T (s0 ++ s3) v
   UnOp :: KnownTyp t => UnOp -> SShape s0 -> SShape s1 -> SShape s2 -> T (s0 ++ s1) t -> T (s0 ++ s2) u
   Unbroadcast :: Sat KnownNat n -> Unique -> T (n ': s) t -> T s t
+  DirectBroadcast :: SShape s0 -> SList' proxy' s1 -> SShape s2 -> SList' proxy' s3 -> T (s0 ++ s2) t -> T (s0 ++ (s1 ++ (s2 ++ s3))) t
   ReshapeFrom :: Product s ~ Product s0 => SShape s0 -> T s0 t -> T s t
   Transpose :: SShape s0 -> Permutation s0 s -> T s0 t -> T s t
   Stack :: SShape s0 -> Sat KnownNat m -> SShape s1 -> V m (T (s0 ++ s1) t) -> T (s0 ++ (m ': s1)) t
   Gather :: KnownBits w => SShape indexShape -> SShape s0 -> Sat KnownNat m -> SShape s1
     -> T (s0 ++ (m ': s1)) t -> T indexShape ('Typ 'Int w) -> T (s0 ++ indexShape ++ s1) t
+  GatherND :: SShape containerShape -> SShape elementShape -> SShape indexShape
+    -> T (containerShape ++ elementShape) t -> T (indexShape ++ '[Length containerShape]) Int32 -> T (indexShape ++ elementShape) t
+
   MatMul :: forall s m n o t. SShape s -> Sat KnownNat n -> Sat KnownNat  o -> Sat KnownNat m -> T (s ++ '[n,o]) t -> T (s ++ [o,m]) t -> T (s ++ [n,m]) t
   Where :: T s TFBool  -> T s t -> T s t -> T s t
   If :: Scalar TFBool -> T s t -> T s t -> T s t
@@ -705,7 +714,7 @@ data T (s :: Shape) (t :: Typ) where
 instance Show Unique where
   show _ = "<Unique>"
 
-deriving instance (Show (T s t))
+-- deriving instance (Show (T s t))
 
 type family ZipWithMulShapes (xs::Shape) (xy::Shape) :: Shape
 type instance ZipWithMulShapes (x ': xs) (y ': ys) = x*y ': ZipWithMulShapes xs ys
@@ -725,7 +734,7 @@ data PoolingType = MaxPool | AvgPool deriving Show
 type Tensor shape = T shape
 
 data UnOp  = Simple1Op String [DOC] | SliceOp Integer Integer | Axis1Op String [(String,DOC)] Integer | IndexOp {indexOpAxis :: Integer, indexOpIndex :: Integer}
-             | SimpleBroadCast Integer deriving Show
+             deriving Show
 data BinOp = Simple2Op String (Maybe (String,String)) | Axis2Op String Integer deriving Show
 
 data Permutation (s :: [k]) (t :: [k]) where

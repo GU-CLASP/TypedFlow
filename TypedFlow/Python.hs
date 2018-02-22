@@ -39,6 +39,7 @@ Stability   : experimental
 module TypedFlow.Python where
 
 import Data.Proxy
+import Data.List (genericReplicate)
 import GHC.TypeLits
 import Control.Monad.State
 import TypedFlow.Types
@@ -219,6 +220,16 @@ generatePure x = do
 generatePure' :: forall s t. KnownTyp t => (forall s' t'. KnownTyp t' => SShape s' -> T s' t' -> Gen DOC) -> SShape s -> T s t -> Gen DOC
 generatePure' rec sR = knownSShape sR $ \case
   Unbroadcast{} -> error "broadcasting operation did not complete!"
+  DirectBroadcast s0 s1 s2 s3 x -> do
+   recx <- rec (s0 .+. s2) x
+    -- Nicer implementation upcoming?
+    -- https://github.com/tensorflow/tensorflow/pull/15243
+    -- https://github.com/tensorflow/tensorflow/issues/14509
+    -- TODO: do not do the "add zero" part if the context is a broadcastable operation
+   let expanded = func "tf.reshape" [recx,list (map (showDim' "-1")
+          (concat [shapeToList' s0, genericReplicate (sListLength s1) 1
+                  ,shapeToList' s2, genericReplicate (sListLength s3) 1 ]))] []
+   return (funcall "tf.add" [expanded, func "tf.zeros" [showSShape sR] [("dtype", showTyp @t)]])
   Noise x -> rec sR x
   T x -> return x
   If c x y -> do
@@ -235,13 +246,6 @@ generatePure' rec sR = knownSShape sR $ \case
   UnOp operation s0 s1 _s2 x -> do
    recx <- rec (s0 .+. s1) x
    return $ case operation of
-    SimpleBroadCast n ->
-    -- Nicer implementation upcoming?
-    -- https://github.com/tensorflow/tensorflow/pull/15243
-    -- https://github.com/tensorflow/tensorflow/issues/14509
-    -- TODO: do not do the "add zero" part if the context is a broadcastable operation
-      let expanded = func "tf.expand_dims" [recx] [("axis", integer (n + sListLength s0))]
-      in funcall "tf.add" [expanded, func "tf.zeros" [showSShape sR] [("dtype", showTyp @t)]]
     Axis1Op op args n -> func op [recx] ((axisName,integer (sListLength s0 + n)):args)
       where axisName = if op == "tf.nn.softmax" then "dim" else "axis" -- use dim before TF 1.5
     Simple1Op op args -> funcall op (recx:args)
@@ -260,7 +264,7 @@ generatePure' rec sR = knownSShape sR $ \case
      Simple2Op op (Just (nx,ny)) -> func op [] [(nx,recx), (ny,recy)]
   ReshapeFrom s t -> do
     rt <- rec s t
-    return (funcall "tf.reshape" [rt, knownSShape sR (showShapeMinus sR)])
+    return (funcall "tf.reshape" [rt, showShapeMinus sR])
   Stack s0 _m s1 (V xs) -> do
     rxs <- mapM (rec (s0 .+. s1)) xs
     return (funcall "tf.stack" [list rxs, text "axis=" <> integer (sListLength s0)])
@@ -270,6 +274,10 @@ generatePure' rec sR = knownSShape sR $ \case
   Gather indexShape s0 m s1 x ix -> do
     rx <- rec (s0 .+. (LS m s1)) x
     rix <- rec indexShape ix
+    return (func "tf.gather" [rx, rix] [])
+  GatherND containerShape elementShape indexShape x ix -> do
+    rx <- rec (containerShape .+. elementShape) x
+    rix <- rec (sl indexShape (sListLenAsNat containerShape)) ix
     return (func "tf.gather" [rx, rix] [])
   Convolution bs inChans outChans filterShape s0 x filters -> do
     recx <- rec (LS bs (sl s0 inChans)) x

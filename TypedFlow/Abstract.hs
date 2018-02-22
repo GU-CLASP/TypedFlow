@@ -68,6 +68,8 @@ broadcast u varyNoise n x = result
 
 protoFinished :: Unique -> (forall s' t'. T s' t' -> Bool) -> T s t -> Bool
 protoFinished u rec = \case
+  DirectBroadcast _ _ _ _ x -> rec x
+  GatherND _ _ _ x y -> rec x && rec y
   Noise _ -> False
   If cond x y ->  rec cond && rec x && rec y
   Where cond x y -> rec cond && rec x && rec y
@@ -92,7 +94,16 @@ broadcastGen u varyNoise n = batchify (broadcast u varyNoise n)
 testSatEqual :: forall n m. Sat KnownNat n -> Sat KnownNat m -> Maybe (n :~: m)
 testSatEqual Sat Sat = testEqual (Proxy @n) (Proxy @m)
 
-protoBroadcast :: forall n s t. 
+broadcastIndex :: forall n containerShape indexShape.
+  Sat KnownNat n ->
+  SShape containerShape ->
+  SShape indexShape ->
+  T (n ': indexShape ++ '[Length containerShape]) Int32 -> T (n ': indexShape ++ '[1 + Length containerShape]) Int32
+broadcastIndex n@Sat cs is ix = concatT' (LS n is) (natSat @1) (sListLenAsNat cs) LZ nIndex ix
+  where nIndex :: T (n ': indexShape ++ '[1]) Int32
+        nIndex = DirectBroadcast LZ LZ (LS n LZ) (is .+. LS (natSat @1) LZ) range
+
+protoBroadcast :: forall n s t.
   Unique -> Bool
   -> Sat KnownNat n
   -> (forall s' t'. KnownTyp t' => SShape s' -> T s' t' -> T (n ': s') t')
@@ -104,6 +115,10 @@ protoBroadcast :: forall n s t.
 protoBroadcast u varyNoise n@(Sat) rec finished ty s tensor
   | finished tensor = simpleBC
   | otherwise = knownTyp ty $ case tensor of
+  DirectBroadcast s0 s1 s2 s3 x -> DirectBroadcast (LS n s0) s1 s2 s3 (rec (s0 .+. s2) x)
+  GatherND cs es is x ix
+    | finished x -> GatherND cs es (LS n is) x (rec (is .+. LS (sListLenAsNat cs) LZ) ix)
+    | otherwise -> GatherND (LS n cs) es (LS n is) (rec (cs .+. es) x) (broadcastIndex n cs is (rec (is .+. LS (sListLenAsNat cs) LZ) ix))
   Noise x -> if varyNoise then Noise (rec s x) else simpleBC
   Pool bs@Sat window pt numChans outSpatial x ->
     knownSShape (zipWithMulSShapes window outSpatial .+. LS numChans LZ) $
@@ -147,7 +162,8 @@ protoBroadcast u varyNoise n@(Sat) rec finished ty s tensor
       reshapeFrom (LS (satMul n bs) (s0 `sl` outChans)) $
       Convolution (satMul n bs) inChans outChans filterShape s0 (reshapeAuto (rec typeSShape x)) filters
     | otherwise -> error "broadcast on convolution filter not implemented"
- where simpleBC = knownSShape s $ knownTyp ty $ UnOp (SimpleBroadCast 0) LZ s (LS n s) tensor
+ where simpleBC :: Tensor (n ': s) t
+       simpleBC = appRUnit @Nat @s $ DirectBroadcast LZ (LS n LZ) s LZ tensor
 
 testEqual :: KnownNat m => KnownNat n => Proxy m -> Proxy n -> Maybe (m :~: n)
 testEqual m n = if natVal m == natVal n then Just (unsafeCoerce Refl) else Nothing
@@ -316,6 +332,12 @@ slice0 :: forall i j m s t. KnownShape s => KnownNat m => KnownTyp t => KnownNat
          Tensor (m ': s) t -> Tensor ((j-i) ': s) t
 slice0 = slice @i @j axis0
 
+
+-- | Concatenate tensors with explicit shapes
+concatT' :: ∀ s0 d1 d2 s1 t. KnownTyp t =>
+    SShape s0 -> Sat KnownNat d1 -> Sat KnownNat d2 -> SShape s1 -> T (s0 ++ (d1 ': s1)) t -> T (s0 ++ (d2 ': s1)) t -> T (s0 ++ ((d1+d2) ': s1)) t
+concatT' s0 d1@Sat d2@Sat s1 = BinOp (Axis2Op "tf.concat" 0) s0 (LS d1 s1) (LS d2 s1) (LS (natSat @(d1+d2)) s1)
+
 -- | Concatenate tensors on dimension @n@
 concatT :: ∀ n d1 d2 s t. KnownNat d2 => KnownNat d1 => KnownShape s => (KnownTyp t, (d1+d2) ~ At n s) =>
     Axis n -> T (Take n s ++ (d1 ': Drop ('Succ n) s)) t -> T (Take n s ++ (d2 ': Drop ('Succ n) s)) t -> T s t
@@ -323,6 +345,7 @@ concatT n = BinOp (Axis2Op "tf.concat" (sPeanoInt n)) LZ
   (sShapeTake n s .+. LS d1 (sShapeDrop (SSucc n) s))
   (sShapeTake n s .+. LS d2 (sShapeDrop (SSucc n) s))
   s
+  -- FIXME: Prove Take n s ++ At n s ++ Drop (n+1) s ~ s
   where s = typeSShape @s; d1 = natSat @d1; d2 = natSat @d2
 
 -- | Concatenate tensors on the first dimension
@@ -634,7 +657,7 @@ if_ = If
 gather :: forall n indexShape s t. KnownShape s => KnownNat n => KnownShape indexShape => T (n ': s) t -> T indexShape Int32 -> T (indexShape ++ s) t
 gather = Gather typeSShape LZ (natSat @n) typeSShape
 
--- gather_nd :: T (containerShape ++ elementShape) t -> (indexShape ++ '[Length containerShape] ) Int32 -> T (indexShape ++ elementShape) t
+
 
 -- | x by y maxpool layer.
 maxPool2D :: forall windowx windowy height width channels t.
