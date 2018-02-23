@@ -121,21 +121,21 @@ directBroadcast0 = appEmpty @s $ DirectBroadcast LZ (LS (natSat @n) LZ) (typeSSh
 
 broadcastIndexMany :: forall n containerShape indexShape w.
   KnownBits w =>
-  Sat KnownNat n -> 
+  Sat KnownNat n ->
   SShape containerShape ->
   SShape indexShape ->
   IndexTensor indexShape '[n] w ->
   IndexTensor (containerShape ++ indexShape) (containerShape ++ '[n]) w
-broadcastIndexMany _ LZ _ x = x 
+broadcastIndexMany _ LZ _ x = x
 broadcastIndexMany n (LS m@Sat cs) is x =
   knownSShape (cs .+. sl is (sListLenAsNat (sl cs n))) $
-  -- (m : cs ++ is ++  '[(Length (m : cs ++ [n]))]) 
+  -- (m : cs ++ is ++  '[(Length (m : cs ++ [n]))])
   broadcastIndex m (sl cs n) (cs .+. is) $
-  -- (m : (cs ++ is ++  '[Length (cs ++ [n])])) 
+  -- (m : (cs ++ is ++  '[Length (cs ++ [n])]))
   appAssocS cs is (LS (sListLenAsNat (sl cs n)) LZ) $
   -- (m : cs ++ is ++ '[Length (cs ++ [n])])
   directBroadcast0 $
-  -- (cs ++ is ++  '[Length (cs ++ [n])]) 
+  -- (cs ++ is ++  '[Length (cs ++ [n])])
   broadcastIndexMany n cs is x
   -- is
 
@@ -251,7 +251,9 @@ eye = T (funcall "tf.eye" [showDim @n,
 
 -- | range[i] = i
 range :: forall n w. KnownNat n => KnownBits w => T '[n] ('Typ 'Int w)
-range = T (func "tf.range" [] [("limit",integer (natVal (Proxy @n))),("dtype",showTyp @('Typ 'Int w))])
+range = T (func "tf.range" [] [("start",integer 0),
+                               ("limit",integer (natVal (Proxy @n))),
+                               ("dtype",showTyp @('Typ 'Int w))])
 
 -- | Constant
 constant :: forall s t w. KnownShape s => KnownBits w => KnownKind t => HostType t -> T s ('Typ t w)
@@ -385,7 +387,7 @@ concatT n = BinOp (Axis2Op "tf.concat" (sPeanoInt n)) LZ
   (sShapeTake n s .+. LS d1 (sShapeDrop (SSucc n) s))
   (sShapeTake n s .+. LS d2 (sShapeDrop (SSucc n) s))
   s
-  -- FIXME: Prove Take n s ++ At n s ++ Drop (n+1) s ~ s
+  -- FIXME: Prove Take n s ++ At n s ++ Drop (n+1) s ~ s and use concatT'
   where s = typeSShape @s; d1 = natSat @d1; d2 = natSat @d2
 
 -- | Concatenate tensors on the first dimension
