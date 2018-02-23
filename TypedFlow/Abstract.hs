@@ -94,14 +94,50 @@ broadcastGen u varyNoise n = batchify (broadcast u varyNoise n)
 testSatEqual :: forall n m. Sat KnownNat n -> Sat KnownNat m -> Maybe (n :~: m)
 testSatEqual Sat Sat = testEqual (Proxy @n) (Proxy @m)
 
-broadcastIndex :: forall n containerShape indexShape.
-  Sat KnownNat n ->
+
+-- | Turns a tensor of indices in a container into a tensor of indices
+-- in a container of higher rank. The added indexed dimension
+-- corresponds to the first dimension of the index.
+broadcastIndex :: forall n containerShape indexShape w.
+  KnownBits w => Sat KnownNat n ->
   SShape containerShape ->
   SShape indexShape ->
-  T (n ': indexShape ++ '[Length containerShape]) Int32 -> T (n ': indexShape ++ '[1 + Length containerShape]) Int32
-broadcastIndex n@Sat cs is ix = concatT' (LS n is) (natSat @1) (sListLenAsNat cs) LZ nIndex ix
-  where nIndex :: T (n ': indexShape ++ '[1]) Int32
+  IndexTensor (n ': indexShape) containerShape w ->
+  IndexTensor (n ': indexShape) (n ': containerShape) w
+broadcastIndex n cs = broadcastIndex' n (sListLenAsNat cs)
+
+broadcastIndex' :: forall n containerRank indexShape w.
+  KnownBits w => Sat KnownNat n ->
+  Sat KnownNat containerRank ->
+  SShape indexShape ->
+  T (n ': indexShape ++ '[containerRank])  ('Typ 'Int w) ->
+  T (n ': indexShape ++ '[1 + containerRank]) ('Typ 'Int w)
+broadcastIndex' n@Sat cr is ix = concatT' (LS n is) (natSat @1) cr LZ nIndex ix
+  where nIndex :: T (n ': indexShape ++ '[1]) ('Typ 'Int w)
         nIndex = DirectBroadcast LZ LZ (LS n LZ) (is .+. LS (natSat @1) LZ) range
+
+directBroadcast0 :: forall n s t. KnownShape s => KnownNat n => T s t -> T (n:s) t
+directBroadcast0 = appEmpty @s $ DirectBroadcast LZ (LS (natSat @n) LZ) (typeSShape @s) LZ
+
+broadcastIndexMany :: forall n containerShape indexShape w.
+  KnownBits w =>
+  Sat KnownNat n -> 
+  SShape containerShape ->
+  SShape indexShape ->
+  IndexTensor indexShape '[n] w ->
+  IndexTensor (containerShape ++ indexShape) (containerShape ++ '[n]) w
+broadcastIndexMany _ LZ _ x = x 
+broadcastIndexMany n (LS m@Sat cs) is x =
+  knownSShape (cs .+. sl is (sListLenAsNat (sl cs n))) $
+  -- (m : cs ++ is ++  '[(Length (m : cs ++ [n]))]) 
+  broadcastIndex m (sl cs n) (cs .+. is) $
+  -- (m : (cs ++ is ++  '[Length (cs ++ [n])])) 
+  appAssocS cs is (LS (sListLenAsNat (sl cs n)) LZ) $
+  -- (m : cs ++ is ++ '[Length (cs ++ [n])])
+  directBroadcast0 $
+  -- (cs ++ is ++  '[Length (cs ++ [n])]) 
+  broadcastIndexMany n cs is x
+  -- is
 
 protoBroadcast :: forall n s t.
   Unique -> Bool
@@ -118,7 +154,7 @@ protoBroadcast u varyNoise n@(Sat) rec finished ty s tensor
   DirectBroadcast s0 s1 s2 s3 x -> DirectBroadcast (LS n s0) s1 s2 s3 (rec (s0 .+. s2) x)
   GatherND cs es is x ix
     | finished x -> GatherND cs es (LS n is) x (rec (is .+. LS (sListLenAsNat cs) LZ) ix)
-    | otherwise -> GatherND (LS n cs) es (LS n is) (rec (cs .+. es) x) (broadcastIndex n cs is (rec (is .+. LS (sListLenAsNat cs) LZ) ix))
+    | otherwise -> GatherND (LS n cs) es (LS n is) (rec (cs .+. es) x) (broadcastIndex' n (sListLenAsNat cs) is (rec (is .+. LS (sListLenAsNat cs) LZ) ix))
   Noise x -> if varyNoise then Noise (rec s x) else simpleBC
   Pool bs@Sat window pt numChans outSpatial x ->
     knownSShape (zipWithMulSShapes window outSpatial .+. LS numChans LZ) $
@@ -150,9 +186,11 @@ protoBroadcast u varyNoise n@(Sat) rec finished ty s tensor
     | finished x -> Gather (LS n is) LZ m s1 x (rec is ix)
   Gather is s0 m s1 x ix
     | finished ix -> Gather is (LS n s0) m s1 (rec (s0 .+. LS m s1) x) ix
-    | otherwise -> rec s (GatherND (sl s0 m) s1 (s0 .+. is) x _)
-    -- T indexShape Int32
-    -- T ((s0 ++ indexShape) ++ '[Length (s0 ++ '[m])]) Int32
+    | otherwise -> appAssocS s0 (LS m LZ) s1 $
+                   lengthHomoS s0 (LS m LZ) $
+                   prodHomoS is (LS (natSat @1) LZ) $
+                   knownSShape is $
+                   rec s (GatherND (sl s0 m) s1 (s0 .+. is) x (broadcastIndexMany m s0 is (reshapeAuto ix)))
   Transpose s0 t x -> Transpose (LS n s0) (PermSkip t) (rec s0 x)
   ReshapeFrom s0 x -> reshapeFrom (LS n s0) (rec s0 x)
   Stack s0 m s1 xs -> Stack (LS n s0) m s1 (fmap (rec (s0 .+. s1)) xs)
@@ -500,7 +538,7 @@ sequenceMask :: forall maxlen. KnownNat maxlen => Tensor '[] Int32 -> Tensor '[m
 sequenceMask lens = mapT (lens `lessThan`) (range @maxlen)
 
 -- | Map a function along the first dimension of a tensor
-mapT :: forall n s t r u. KnownShape r => KnownNat n => KnownTyp u => KnownLen r => KnownLen s => (T s t -> T r u) ->  T (n ': s) t -> T (n ': r) u
+mapT :: forall n s r t u. KnownShape r => KnownNat n => KnownTyp u => KnownLen r => KnownLen s => (T s t -> T r u) ->  T (n ': s) t -> T (n ': r) u
 mapT f x = broadcast u False (Proxy @n) (f (Unbroadcast (natSat @n) u x))
   where u = unsafePerformIO newUnique
 
@@ -658,6 +696,9 @@ if_ = If
 -- | @(gather x ix)[k] = x[ix[k]]@. See https://www.tensorflow.org/api_docs/python/tf/gather
 gather :: forall n indexShape s t. KnownShape s => KnownNat n => KnownShape indexShape => T (n ': s) t -> T indexShape Int32 -> T (indexShape ++ s) t
 gather = Gather typeSShape LZ (natSat @n) typeSShape
+-- gather params ix = GatherND (typeSShape @'[n]) (typeSShape @s) (typeSShape @indexShape) params $
+--   prodHomo @indexShape @'[1] $
+--   (reshapeAuto ix)
 
 
 

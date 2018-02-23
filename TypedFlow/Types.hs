@@ -1,21 +1,20 @@
-{-# LANGUAGE InstanceSigs #-}
-{-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE PatternSynonyms #-}
-{-# LANGUAGE UndecidableSuperClasses #-}
-{-# LANGUAGE ConstraintKinds #-}
-{-# LANGUAGE RecordWildCards #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# OPTIONS_GHC -fplugin GHC.TypeLits.KnownNat.Solver #-}
 {-# LANGUAGE AllowAmbiguousTypes #-}
+{-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DeriveFoldable #-}
 {-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE DeriveTraversable #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE InstanceSigs #-}
 {-# LANGUAGE MagicHash #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TypeApplications #-}
@@ -23,8 +22,9 @@
 {-# LANGUAGE TypeInType #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE UndecidableSuperClasses #-}
 {-# LANGUAGE UnicodeSyntax #-}
-{-# LANGUAGE OverloadedStrings #-}
+{-# OPTIONS_GHC -fplugin GHC.TypeLits.KnownNat.Solver #-}
 
 module TypedFlow.Types where
 
@@ -111,6 +111,10 @@ plusAssoc :: forall x y z k. (((x + y) + z) ~ (x + (y + z)) => k) -> k
 plusAssoc k = case plusAssoc' @x @y @z of
   Refl -> k
 
+plusAssocS :: forall x y z k px py pz. px x -> py y -> pz z -> (((x + y) + z) ~ (x + (y + z)) => k) -> k
+plusAssocS _ _ _ k = case plusAssoc' @x @y @z of
+  Refl -> k
+
 prodAssoc' :: forall x y z. (x * y) * z :~: x * (y * z)
 prodAssoc' = unsafeCoerce Refl
 
@@ -124,6 +128,9 @@ prodHomo' = unsafeCoerce Refl
 prodHomo ::  forall x y k. ((Product (x ++ y) ~ (Product x * Product y)) => k) -> k
 prodHomo k = case prodHomo' @x @y of Refl -> k
 
+prodHomoS ::  forall x y k px py. px x -> py y -> ((Product (x ++ y) ~ (Product x * Product y)) => k) -> k
+prodHomoS _ _ k = case prodHomo' @x @y of Refl -> k
+
 knownProduct' :: forall s k. All KnownNat s => SList s -> (KnownNat (Product s) => k) -> k
 knownProduct' LZ k = k
 knownProduct' (LS _ n) k = knownProduct' n k
@@ -131,11 +138,6 @@ knownProduct' (LS _ n) k = knownProduct' n k
 knownProduct :: forall s k. KnownShape s => (KnownNat (Product s) => k) -> k
 knownProduct = knownProduct' @s typeSList
 
-appEmpty' :: (xs ++ '[]) :~: xs
-appEmpty' = unsafeCoerce Refl
-
-appEmpty :: forall xs k. (((xs ++ '[]) ~ xs) => k) -> k
-appEmpty k = case appEmpty' @xs of Refl -> k
 
 takeDrop' :: forall s n. (PeanoNat n <= Length s) => SPeano n -> (Take n s ++ Drop n s) :~: s
 takeDrop' _ = unsafeCoerce Refl
@@ -145,6 +147,9 @@ takeDrop n k = case takeDrop' @s n of Refl -> k
 
 lengthHomo' :: forall x y. Length (x ++ y) :~: Length x + Length y
 lengthHomo' = unsafeCoerce Refl
+
+lengthHomoS :: forall x y k proxyx proxyy. proxyx x -> proxyy y -> ((Length (x ++ y) ~ (Length x + Length y)) => k) -> k
+lengthHomoS _ _ k = case lengthHomo' @x @y of Refl -> k
 
 lengthInit' :: forall s k. (0 < Length s) => SList s -> ((Length (Init s) + 1) ~ Length s => k) -> k
 lengthInit' x k = case lengthHomo' @(Init s) @'[Last s] of
@@ -180,6 +185,23 @@ appRUnit' = unsafeCoerce Refl
 appRUnit :: forall (s::[t]) k. (((s ++ '[]) ~ s) => k) -> k
 appRUnit k = case appRUnit' @t @s of
   Refl -> k
+
+appEmpty' :: (xs ++ '[]) :~: xs
+appEmpty' = unsafeCoerce Refl
+
+appEmpty :: forall xs k. (((xs ++ '[]) ~ xs) => k) -> k
+appEmpty k = case appEmpty' @xs of Refl -> k
+
+appAssoc' ::  ((xs ++ ys) ++ zs) :~: (xs ++ (ys ++ zs))
+appAssoc' = unsafeCoerce Refl
+
+appAssoc :: forall xs ys zs k. (((xs ++ ys) ++ zs) ~ (xs ++ (ys ++ zs)) => k) -> k
+appAssoc k = case appAssoc' @xs @ys @zs of Refl -> k
+
+appAssocS :: forall xs ys zs k proxy1 proxy2 proxy3.
+             proxy1 xs -> proxy2 ys -> proxy3 zs -> (((xs ++ ys) ++ zs) ~ (xs ++ (ys ++ zs)) => k) -> k
+appAssocS _ _ _  k = case appAssoc' @xs @ys @zs of Refl -> k
+
 
 knownLast' :: All KnownNat s => SList s -> (KnownNat (Last s) => k) -> k
 knownLast' LZ _ = error "knownLast: does not hold on empty lists"
@@ -684,6 +706,9 @@ type UntypedExpression = DOC
 instance Show DOC where
   show = renderWith (Options 92 (const id))
 
+-- | An indexing tensor in the format expected by GatherND
+type IndexTensor indexShape containerShape w = T (indexShape ++ '[Length containerShape]) ('Typ 'Int w)
+
 data T (s :: Shape) (t :: Typ) where
   T :: UntypedExpression -> T s t
   Noise :: T s t -> T s t
@@ -696,8 +721,8 @@ data T (s :: Shape) (t :: Typ) where
   Stack :: SShape s0 -> Sat KnownNat m -> SShape s1 -> V m (T (s0 ++ s1) t) -> T (s0 ++ (m ': s1)) t
   Gather :: KnownBits w => SShape indexShape -> SShape s0 -> Sat KnownNat m -> SShape s1
     -> T (s0 ++ (m ': s1)) t -> T indexShape ('Typ 'Int w) -> T (s0 ++ indexShape ++ s1) t
-  GatherND :: SShape containerShape -> SShape elementShape -> SShape indexShape
-    -> T (containerShape ++ elementShape) t -> T (indexShape ++ '[Length containerShape]) Int32 -> T (indexShape ++ elementShape) t
+  GatherND :: KnownBits w => SShape containerShape -> SShape elementShape -> SShape indexShape
+    -> T (containerShape ++ elementShape) t -> IndexTensor indexShape containerShape w -> T (indexShape ++ elementShape) t
 
   MatMul :: forall s m n o t. SShape s -> Sat KnownNat n -> Sat KnownNat  o -> Sat KnownNat m -> T (s ++ '[n,o]) t -> T (s ++ [o,m]) t -> T (s ++ [n,m]) t
   Where :: T s TFBool  -> T s t -> T s t -> T s t
@@ -723,6 +748,9 @@ type instance ZipWithMulShapes _ '[] = '[]
 
 satMul :: forall n m. Sat KnownNat n -> Sat KnownNat m -> Sat KnownNat (n*m)
 satMul Sat Sat = Sat
+
+satAdd :: forall n m. Sat KnownNat n -> Sat KnownNat m -> Sat KnownNat (n+m)
+satAdd Sat Sat = Sat
 
 zipWithMulSShapes :: SShape xs -> SShape ys -> SShape (ZipWithMulShapes xs ys)
 zipWithMulSShapes LZ _ = LZ
@@ -753,7 +781,7 @@ instance (KnownTyp t, KnownShape shape) => KnownTensors (T shape t) where
   travTensor f = f
 
 instance (KnownTyp t, All KnownShape ys) => KnownTensors (HTV t ys) where
-  travTensor :: forall m. Monad m => (forall s t'. (KnownTyp t', KnownShape s) => String -> T s t' -> m (T s t')) -> String -> (HTV t ys) -> m (HTV t ys) 
+  travTensor :: forall m. Monad m => (forall s t'. (KnownTyp t', KnownShape s) => String -> T s t' -> m (T s t')) -> String -> (HTV t ys) -> m (HTV t ys)
   travTensor f s = ttr 0
     where ttr :: forall xs. All KnownShape xs => Int -> HTV t xs -> m (HTV t xs)
           ttr _ Unit = return Unit
