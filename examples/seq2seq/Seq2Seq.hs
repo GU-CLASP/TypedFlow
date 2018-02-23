@@ -75,9 +75,9 @@ seq2seq :: forall (vocSize :: Nat) (n :: Nat).
 seq2seq  = do
   enc <- encoder @256 @vocSize "enc"
   dec <- decoder "dec"
-  return $ \(Uncurry masks :* Uncurry input :* Uncurry inputLen :* Uncurry srcOut :* Uncurry tgtOut :* Unit) ->
+  return $ \(Uncurry masks :* Uncurry input :* Uncurry inputLen :* Uncurry tgtIn :* Uncurry tgtOut :* Unit) ->
     let (VecPair t1 t2,h) = enc inputLen input
-        y_ = dec inputLen h (VecPair t1 t2) srcOut
+        y_ = dec inputLen h (VecPair t1 t2) tgtIn
     in timedCategorical masks y_ tgtOut
 
 
@@ -89,10 +89,34 @@ main = generateFile "s2s.py" (compileGen @256
                                (LS (HolderName "tgt_weights") $
                                 LS (HolderName "src_in") $
                                 LS (HolderName "src_len") $
-                                LS (HolderName "src_out") $
+                                LS (HolderName "tgt_in") $
                                 LS (HolderName "tgt_out") $
                                 LZ)
                                (seq2seq @15 @22))
+
+-- >>> main
+-- Parameters (total 889041):
+-- decatt1: T [256,256] tf.float32
+-- embs: T [15,15] tf.float32
+-- declstm1_o_bias: T [256] tf.float32
+-- declstm1_o_w: T [527,256] tf.float32
+-- declstm1_c_bias: T [256] tf.float32
+-- declstm1_c_w: T [527,256] tf.float32
+-- declstm1_i_bias: T [256] tf.float32
+-- declstm1_i_w: T [527,256] tf.float32
+-- declstm1_f_bias: T [256] tf.float32
+-- declstm1_f_w: T [527,256] tf.float32
+-- decproj_bias: T [15] tf.float32
+-- decproj_w: T [256,15] tf.float32
+-- enclstm1_o_bias: T [256] tf.float32
+-- enclstm1_o_w: T [271,256] tf.float32
+-- enclstm1_c_bias: T [256] tf.float32
+-- enclstm1_c_w: T [271,256] tf.float32
+-- enclstm1_i_bias: T [256] tf.float32
+-- enclstm1_i_w: T [271,256] tf.float32
+-- enclstm1_f_bias: T [256] tf.float32
+-- enclstm1_f_w: T [271,256] tf.float32
+-- encembs: T [15,15] tf.float32
 
 -- Local Variables:
 -- dante-repl-command-line: ("nix-shell" ".styx/shell.nix" "--pure" "--run" "cabal repl")
