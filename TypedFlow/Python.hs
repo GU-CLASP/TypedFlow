@@ -278,7 +278,7 @@ generatePure' rec sR = knownSShape sR $ \case
   GatherND containerShape elementShape indexShape x ix -> do
     rx <- rec (containerShape .+. elementShape) x
     rix <- rec (sl indexShape (sListLenAsNat containerShape)) ix
-    return (func "tf.gather" [rx, rix] [])
+    return (func "tf.gather_nd" [rx, rix] [])
   Convolution bs inChans outChans filterShape s0 x filters -> do
     recx <- rec (LS bs (sl s0 inChans)) x
     recFilters <- rec (filterShape .+. (LS inChans (LS outChans LZ))) filters
