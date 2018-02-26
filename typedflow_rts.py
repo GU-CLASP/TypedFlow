@@ -247,7 +247,7 @@ def predict (session, model, xs, result="y_"):
 
 def beam_translate(session, model, k, x, xlen, start_symbol, stop_symbol, debug=None):
     '''Beam translation of ONE input sentence.'''
-    (_,voc_size,out_len) = model["y_"].shape
+    (_,out_len,voc_size) = model["y_"].shape
     xs = np.array ([x] * k) # The input is always the same
     xs_len = np.array ([xlen]*k) # it is VERY important to get the length right
     ys = [[start_symbol]]  # start with a single thing; otherwise the minimum will be repeated k times
@@ -260,7 +260,7 @@ def beam_translate(session, model, k, x, xlen, start_symbol, stop_symbol, debug=
         print ("beam search at:", i)
         inputs = {"src_len":xs_len[:len(ys)], "src_in":xs[:len(ys)], "tgt_in":np.array([pad(y) for y in ys])}
         y_s = predict(session,model,inputs)
-        all_words = sorted([(y_s[j][w][i] * probs[j], ys[j] + [w], hist[j] + [y_s[j][w][i]])
+        all_words = sorted([(y_s[j][i][w] * probs[j], ys[j] + [w], hist[j] + [y_s[j][i][w]])
                             for j in range(len(y_s))
                             for w in range(voc_size)])
         best = all_words[-k:]
