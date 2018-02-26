@@ -99,7 +99,7 @@ def translate_cb(values):
     if values["epoch"] % 10 == 0:
         save_path = saver.save(sess, "model.ckpt")
         translate("(1(3cb)b)")
-        print ("Desired:", "((3cb)b1)")
+        print ("Desired:", "(1b(3cb))")
         return False
 
 tyf.initialize_params(sess,model)
@@ -108,7 +108,7 @@ train_stats = tyf.train(sess,
                         s2s_generator(**train_set),
                         valid_generator = s2s_generator(**val_set),
                         epochs=5000,
-                        callbacks=[tyf.StopWhenAccurate(.01), tyf.StopWhenValidationGetsWorse(2), translate_cb])
+                        callbacks=[tyf.StopWhenAccurate(.01), translate_cb])
 
 translate("(1(3cb)b)")
 translate("(1(2c(3e(4(1cb)b)))c)")
