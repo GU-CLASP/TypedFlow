@@ -186,6 +186,8 @@ protoBroadcast u varyNoise n@(Sat) rec finished ty s tensor
     | finished x -> Gather (LS n is) LZ m s1 x (rec is ix)
   Gather is s0 m s1 x ix
     | finished ix -> Gather is (LS n s0) m s1 (rec (s0 .+. LS m s1) x) ix
+    -- otherwise, Gather is not strong enough, and we need to convert
+    -- it to GatherND before broadcasting.
     | otherwise -> appAssocS s0 (LS m LZ) s1 $
                    lengthHomoS s0 (LS m LZ) $
                    prodHomoS is (LS (natSat @1) LZ) $
@@ -580,7 +582,7 @@ convolution x filters = knownAppend @s @'[outputChannels] $
              filters)
 
 softmaxInternal :: KnownBits w => SShape s0 -> SShape s1 -> T (s0 ++ s1) ('Typ 'Float w) -> T (s0 ++ s1) ('Typ 'Float w)
-softmaxInternal s0 s1 = UnOp (Axis1Op "tf.nn.softmax" [] (sListLength s0)) LZ (s0 .+. s1) (s0 .+. s1)
+softmaxInternal s0 s1 = UnOp (Axis1Op "tf.nn.softmax" [] (sListLength s0 - 1)) LZ (s0 .+. s1) (s0 .+. s1)
 
 -- | Softmax along the first dimension
 softmax0 :: forall n s w. KnownBits w => KnownNat n => KnownShape s => T (n ': s) ('Typ 'Float w) -> T (n ': s) ('Typ 'Float w)
