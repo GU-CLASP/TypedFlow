@@ -113,14 +113,17 @@ setGen d = modify $ \GState{..} -> GState {genText=d,..}
 (<--) :: DOC -> UntypedExpression -> Gen ()
 x <-- y = gen (x <> text "=" <>  y)
 
-cache :: DOC -> Gen DOC
-cache x = do
+-- | save an intermediate result to a variable and save it to
+-- genAssignTable for future re-use.
+cache :: DOC -> DOC  -> Gen DOC
+cache shap x = do
   let x' = renderWith (Options 92 (const id)) x
   mcache <- M.lookup x' <$> gets genAssignTable
   case mcache of
     Just y -> return y
     Nothing -> do
       v <- newVar
+      gen ("#" <> shap)
       v <-- x
       modify (\g -> g {genAssignTable = M.insert x' v (genAssignTable g)})
       return v
@@ -213,7 +216,7 @@ generatePure x = do
     Just v -> return v
     Nothing -> do
       e <- generatePure' (\s x' -> knownSShape s $ generatePure x') typeSShape x
-      v <- cache e
+      v <- cache (showShapeType @s) e
       modify (\g -> g {genPureTable = (snMapInsert2 sn v) (genPureTable g)})
       return v
 
