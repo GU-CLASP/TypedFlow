@@ -55,7 +55,7 @@ tldmDocsummary embs filters dropProb = do
   return $ \document ->
     let embeddedDoc :: Tensor [n,e] (Flt t)
         embeddedDoc = drpEmb (mapT (embedding @e @vocSize embs) document)
-    in reduceMax @Dim0 (conv' @'[n] filters embeddedDoc)
+    in reduceMax axis0 (conv' @'[n] filters embeddedDoc)
 
 -- | Parameter for topics. This is effectively map from document
 -- features (a) to topic representations (vectors of size b) via k
@@ -63,7 +63,7 @@ tldmDocsummary embs filters dropProb = do
 data TopicP t a k b = TopicP {topicDistributions :: (T '[a,k] (Flt t))  -- ^ a linear map from documents features (a) to topic distributions (k)
                              ,topicRepresentations :: (T '[k,b] (Flt t)) -- ^ a linear map from topic distributions (k) to topic representations (b)
                              }
-  
+
 instance (KnownNat a, KnownNat k, KnownNat b, KnownBits t) => KnownTensors (TopicP t a k b) where
   travTensor f s (TopicP x y) = TopicP <$> travTensor f (s<>"_A") x <*> travTensor f (s<>"_B") y
 instance (KnownNat a, KnownNat k, KnownNat b, KnownBits t) => ParamWithDefault (TopicP t a k b) where
@@ -85,7 +85,7 @@ mkTdlmTopic :: forall
 mkTdlmTopic separationConstant (TopicP topicInput topicOutput) = do
   drpS   <- mkDropout (DropProb 0.1)
   let topicNormalized :: T '[kk,b] (Flt t)
-      topicNormalized = mapT (/ (sqrt (reduceSum @Dim0 (square topicOutput)) :: T '[b] (Flt t))) topicOutput
+      topicNormalized = mapT (/ (sqrt (reduceSum axis0  (square topicOutput)) :: T '[b] (Flt t))) topicOutput
       -- matrix of correlation between the topics
       topicCorrelation :: T '[b,b] (Flt t)
       topicCorrelation = matmul (transpose01 topicNormalized) topicNormalized
