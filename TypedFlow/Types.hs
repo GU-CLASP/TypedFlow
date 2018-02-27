@@ -716,7 +716,7 @@ type IndexTensor indexShape containerShape w = T (indexShape ++ '[Length contain
 
 data T (s :: Shape) (t :: Typ) where
   T :: UntypedExpression -> T s t
-  Noise :: T s t -> T s t
+  Noise :: SShape s0 -> SShape s1 -> (forall s'. SShape s' -> T (s'++s1) t) -> T (s0 ++ s1) t
   BinOp :: (KnownTyp t, KnownTyp u) => BinOp -> SShape s0 -> SShape s1 -> SShape s2 -> SShape s3 -> T (s0 ++ s1) t -> T (s0 ++ s2) u -> T (s0 ++ s3) v
   UnOp :: KnownTyp t => UnOp -> SShape s0 -> SShape s1 -> SShape s2 -> T (s0 ++ s1) t -> T (s0 ++ s2) u
   Unbroadcast :: Sat KnownNat n -> Unique -> T (n ': s) t -> T s t

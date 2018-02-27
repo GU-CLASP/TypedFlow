@@ -160,6 +160,9 @@ compileGen options names fGen =
  where batchSize = natSat @batchSize
 
 
+newtype PlaceHolder s t nm = PH (Tensor s t)
+
+
 -- | batchify and compile a simple model
 compile :: forall batchSize sx tx sy ty sy_ ty_ p.
            (KnownNat batchSize, KnownShape sx, KnownTyp tx, KnownShape sy, KnownTyp ty, KnownShape sy_, KnownTyp ty_, KnownShape p) =>
