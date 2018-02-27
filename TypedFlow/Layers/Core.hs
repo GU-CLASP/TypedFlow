@@ -70,7 +70,7 @@ instance (KnownNat numObjects, KnownBits b, KnownNat embeddingSize) => KnownTens
   travTensor f s (EmbeddingP p) = EmbeddingP <$> travTensor f s p
 
 instance (KnownNat numObjects, KnownBits b, KnownNat embeddingSize) => ParamWithDefault (EmbeddingP numObjects embeddingSize b) where
-  defaultInitializer = EmbeddingP (randomUniform (-0.05) 0.05)
+  defaultInitializer = EmbeddingP <$> (randomUniform (-0.05) 0.05)
 
 -- | embedding layer
 embedding :: ∀ embeddingSize numObjects t. KnownNat embeddingSize => KnownNat numObjects =>
@@ -83,7 +83,7 @@ instance (KnownNat a, KnownNat b, KnownBits t) => KnownTensors (DenseP t a b) wh
   travTensor f s (DenseP x y) = DenseP <$> travTensor f (s<>"_w") x <*> travTensor f (s<>"_bias") y
 
 instance (KnownNat n, KnownNat m, KnownBits b) => ParamWithDefault (DenseP b n m) where
-  defaultInitializer = DenseP glorotUniform (truncatedNormal 0.1)
+  defaultInitializer = DenseP <$> glorotUniform <*> (truncatedNormal 0.1)
 
 -- | Dense layer (Apply a linear function)
 (#), dense :: ∀m n t. KnownNat n => KnownNat m => KnownBits t => DenseP t n m -> Tensor '[n] (Flt t) -> Tensor '[m] (Flt t)
@@ -103,8 +103,9 @@ mkDropout :: forall s t. KnownShape s => KnownBits t => DropProb -> Gen (Tensor 
 mkDropout (DropProb dropProb) = do
   let keepProb = 1.0 Prelude.- dropProb
   isTraining <- gets genTrainingPlaceholder
+  noise <- randomUniform keepProb (1 Prelude.+ keepProb)
   let mask = if_ isTraining
-               (floor (randomUniform keepProb (1 Prelude.+ keepProb)) ⊘ constant keepProb)
+               (floor noise ⊘ constant keepProb)
                ones
   return (mask ⊙)
 
@@ -138,8 +139,8 @@ instance (KnownNat outChannels,KnownNat inChannels, KnownShape filterSpatialShap
                        prodAssoc @(Product filterSpatialShape) @inChannels @outChannels $
                        knownAppend @filterSpatialShape @'[inChannels,outChannels] $
                        knownProduct @filterSpatialShape $
-                       ConvP (reshape i) (constant 0.1)
-    where i :: T '[Product filterSpatialShape*inChannels,outChannels] (Flt t)
+                       ConvP <$> (reshape <$> i) <*> pure (constant 0.1)
+    where i :: Gen (T '[Product filterSpatialShape*inChannels,outChannels] (Flt t))
           i = knownProduct @filterSpatialShape glorotUniform
 
 instance (KnownNat outChannels,KnownNat inChannels, KnownShape filterSpatialShape, KnownBits t) =>

@@ -134,7 +134,7 @@ data AdditiveScoringP sz keySize valueSize t = AdditiveScoringP
 instance (KnownNat n, KnownNat k, KnownNat v, KnownBits t) => KnownTensors (AdditiveScoringP k v n t) where
   travTensor f s (AdditiveScoringP x y z) = AdditiveScoringP <$> travTensor f (s<>"_v") x <*> travTensor f (s<>"_w1") y <*> travTensor f (s<>"_w2") z
 instance (KnownNat n, KnownNat k, KnownNat v, KnownBits t) => ParamWithDefault (AdditiveScoringP k v n t) where
-  defaultInitializer = AdditiveScoringP glorotUniform glorotUniform glorotUniform
+  defaultInitializer = AdditiveScoringP <$> glorotUniform <*> glorotUniform <*> glorotUniform
 
 -- | An additive scoring function. See https://arxiv.org/pdf/1412.7449.pdf
 additiveScoring :: forall sz keySize valueSize t. KnownNat valueSize => KnownNat sz => KnownNat keySize => KnownBits t =>

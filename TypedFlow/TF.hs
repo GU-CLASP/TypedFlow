@@ -239,7 +239,7 @@ data Distrib = NormalDistr | UniformDistr
 
 -- | Random tensor with variance scaling according to deeplearning lore.
 varianceScaling :: forall inDim outDim t. KnownNat inDim => (KnownNat outDim, KnownBits t) =>
-   Float -> VarianceScaleMode -> Distrib -> Tensor '[inDim,outDim] ('Typ 'Float t)
+   Float -> VarianceScaleMode -> Distrib -> Gen (Tensor '[inDim,outDim] ('Typ 'Float t))
 varianceScaling factor mode distr = case distr of
                                    UniformDistr -> randomUniform (-limit) limit
                                    NormalDistr -> truncatedNormal limit
@@ -253,7 +253,7 @@ varianceScaling factor mode distr = case distr of
     limit = Prelude.sqrt ((case distr of NormalDistr -> 1.3; UniformDistr -> 3) Prelude.* factor Prelude./ n)
 
 
-glorotUniform :: forall inDim outDim t. KnownNat inDim => (KnownNat outDim, KnownBits t) => Tensor '[outDim,inDim] ('Typ 'Float t)
+glorotUniform :: forall inDim outDim t. KnownNat inDim => (KnownNat outDim, KnownBits t) => Gen (Tensor '[outDim,inDim] ('Typ 'Float t))
 glorotUniform = varianceScaling 1 VSAvg UniformDistr
 
 -- | 'cons' an element and an array (in the first dimension)
@@ -289,7 +289,7 @@ infixl 7 ·
 
 -- | Create a parameter and initialize it with a suitable default for its type. Control the exact initializer using 'parameter'.
 parameterDefault :: forall p. ParamWithDefault p => String -> Gen p
-parameterDefault name = parameter name defaultInitializer
+parameterDefault name = parameter name =<< defaultInitializer
 
 -- | Create a parameter.
 parameter :: forall p. KnownTensors p => String -> p -> Gen p

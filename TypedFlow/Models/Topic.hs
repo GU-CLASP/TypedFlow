@@ -67,7 +67,7 @@ data TopicP t a k b = TopicP {topicDistributions :: (T '[a,k] (Flt t))  -- ^ a l
 instance (KnownNat a, KnownNat k, KnownNat b, KnownBits t) => KnownTensors (TopicP t a k b) where
   travTensor f s (TopicP x y) = TopicP <$> travTensor f (s<>"_A") x <*> travTensor f (s<>"_B") y
 instance (KnownNat a, KnownNat k, KnownNat b, KnownBits t) => ParamWithDefault (TopicP t a k b) where
-  defaultInitializer = TopicP glorotUniform glorotUniform
+  defaultInitializer = TopicP <$> glorotUniform <*> glorotUniform
 
 -- | A topic modeler. Described 'Topically Driven Neural Language
 -- Model' by Lau, Baldwin and Cohn.  Returns a function converting raw

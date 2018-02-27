@@ -716,7 +716,8 @@ type IndexTensor indexShape containerShape w = T (indexShape ++ '[Length contain
 
 data T (s :: Shape) (t :: Typ) where
   T :: UntypedExpression -> T s t
-  Noise :: SShape s0 -> SShape s1 -> (forall s'. SShape s' -> T (s'++s1) t) -> T (s0 ++ s1) t
+  Noise :: Integer -> -- this is the unique noise identifier, preventing two different noises to ever be re-shared.
+           SShape s0 -> SShape s1 -> (forall s'. SShape s' -> T (s'++s1) t) -> T (s0 ++ s1) t
   BinOp :: (KnownTyp t, KnownTyp u) => BinOp -> SShape s0 -> SShape s1 -> SShape s2 -> SShape s3 -> T (s0 ++ s1) t -> T (s0 ++ s2) u -> T (s0 ++ s3) v
   UnOp :: KnownTyp t => UnOp -> SShape s0 -> SShape s1 -> SShape s2 -> T (s0 ++ s1) t -> T (s0 ++ s2) u
   Unbroadcast :: Sat KnownNat n -> Unique -> T (n ': s) t -> T s t
@@ -805,4 +806,4 @@ instance (KnownTensors p1, KnownTensors p2, KnownTensors p3, KnownTensors p4) =>
   travTensor f s (x,y,z,w) = (,,,) <$> travTensor f (s<>"_1") x <*> travTensor f (s<>"_2") y <*> travTensor f (s<>"_3") z <*> travTensor f (s<>"_4") w
 
 class KnownTensors p => ParamWithDefault p where
-  defaultInitializer :: p
+  defaultInitializer :: Gen p
