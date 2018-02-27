@@ -55,8 +55,6 @@ import TypedFlow.Memo
 broadcast :: forall n s t proxy. KnownTyp t => KnownShape s => KnownNat n
   => Unique -> Bool -> proxy n -> T s t -> T (n : s) t
 broadcast u varyNoise n x = result
-  -- | finished result = result
-  -- | otherwise = error "broadcast: panic"
   where f :: forall s' t'. STyp t' -> SShape s' -> T s' t' -> T (n : s') t'
         f = memo3 memoOrd memoOrd memo (protoBroadcast u varyNoise (proxySat n) (f typeSTyp) finished)
         finished :: forall s' t'. T s' t' -> Bool
