@@ -341,12 +341,10 @@ newtype F g t s = F {fromF :: g s t}
 -- | Heterogeneous tensor vector with the same kind of elements
 type HTV t = NP (F T t)
 
-data Pair a b = a :& b
+type family Frst (x :: (a,b)) where Frst '(x,y) = x
+type family Scnd (x :: (a,b)) where Scnd '(x,y) = y
 
-type family Fst (x :: Pair a b) where Fst (x ':& y) = x
-type family Snd (x :: Pair a b) where Snd (x ':& y) = y
-
-newtype Uncurry g (s :: Pair a b) = Uncurry {fromUncurry :: g (Fst s) (Snd s)}
+newtype Uncurry g (s :: (a,b)) = Uncurry {fromUncurry :: g (Frst s) (Scnd s)}
 
 type HHTV = NP (Uncurry T)
 

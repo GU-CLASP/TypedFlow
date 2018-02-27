@@ -70,7 +70,11 @@ decoder prefix = do
 
 seq2seq :: forall (vocSize :: Nat) (n :: Nat).
                  KnownNat vocSize => (KnownNat n)
-        => Gen (HHTV '[ '[n] ':& Float32, '[n] ':& Int32, '[] ':& Int32, '[n] ':& Int32, '[n] ':& Int32] ->
+        => Gen (HHTV '[ '( '[n], Float32),
+                        '( '[n], Int32),
+                        '( '[],  Int32),
+                        '( '[n], Int32),
+                        '( '[n], Int32)] ->
                 ModelOutput Float32 '[vocSize] '[n])
 seq2seq  = do
   enc <- encoder @256 @vocSize "enc"
@@ -86,12 +90,12 @@ seq2seq  = do
 main :: IO ()
 main = generateFile "s2s.py" (compileGen @256
                                defaultOptions {maxGradientNorm = Just 5}
-                               (LS (HolderName "tgt_weights") $
-                                LS (HolderName "src_in") $
-                                LS (HolderName "src_len") $
-                                LS (HolderName "tgt_in") $
-                                LS (HolderName "tgt_out") $
-                                LZ)
+                               (HolderName "tgt_weights" :*
+                                HolderName "src_in" :*
+                                HolderName "src_len" :*
+                                HolderName "tgt_in" :*
+                                HolderName "tgt_out" :*
+                                Unit)
                                (seq2seq @15 @22))
 
 -- >>> main

@@ -133,9 +133,9 @@ defaultOptions = Options {maxGradientNorm = Nothing}
 
 data HolderName a = HolderName String
 
-class (KnownShape (Fst r), KnownTyp (Snd r)) => KnownPair r where
+class (KnownShape (Frst r), KnownTyp (Scnd r)) => KnownPair r where
 
-instance (KnownShape x, KnownTyp y) => KnownPair (x ':& y) where
+instance (KnownShape x, KnownTyp y) => KnownPair '(x,y) where
 
 genBatchedPlaceholders :: All KnownPair shapesAndTypes => Unique -> Sat KnownNat n -> SList' HolderName shapesAndTypes -> Gen (HHTV shapesAndTypes)
 genBatchedPlaceholders _ _ Unit = return Unit
@@ -169,7 +169,7 @@ compile :: forall batchSize sx tx sy ty sy_ ty_ p.
 compile options fGen = do
   compileGen @batchSize options (HolderName "x" :* HolderName "y" :* Unit) $ do
     f <- fGen
-    let f' :: HHTV '[sx ':& tx, sy ':& ty] -> ModelOutput ty_ p sy_
+    let f' :: HHTV '[ '(sx,tx), '(sy,ty)] -> ModelOutput ty_ p sy_
         f' (Uncurry x :* Uncurry y :* Unit) = f x y
     return f'
 
