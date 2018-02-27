@@ -664,13 +664,14 @@ oneHot1 = oneHot axis1
 -- | Generate a random tensor where each individual element is picked
 -- in a normal distribution with given standard deviation.
 truncatedNormal :: forall s w. KnownShape s => KnownBits w => Float -> T s ('Typ 'Float w)
-truncatedNormal stddev = Noise Unit typeSShape (\sh -> T (funcall "tf.truncated_normal" [showSShape sh, named "stddev" (float stddev), named "dtype" (showTyp @(Flt w))]))
+truncatedNormal stddev = Noise Unit typeSShape (\sh -> T
+  (funcall "tf.truncated_normal" [showSShape (sh .+. typeSShape @s), named "stddev" (float stddev), named "dtype" (showTyp @(Flt w))]))
 
 -- | Generate a random tensor where each individual element is picked
 -- in a uniform distribution with given bounds.
 randomUniform :: forall s t. (KnownShape s, KnownTyp t) => Float -> Float -> T s t
 randomUniform low high = Noise Unit typeSShape (\sh -> T
-  (funcall "tf.random_uniform" [showSShape sh
+  (funcall "tf.random_uniform" [showSShape (sh .+. typeSShape @s)
                                 ,named "minval" (float low)
                                 ,named "maxval" (float high)
                                 ,named "dtype" (showTyp @t)]))
@@ -679,8 +680,8 @@ randomUniform low high = Noise Unit typeSShape (\sh -> T
 -- | Generate an orthorgonal matrix. If the output has more dimensions
 -- than 2 the matrix is reshaped.
 randomOrthogonal :: forall m n t. KnownNat m => (KnownBits t, KnownNat n) => T '[m,n] ('Typ 'Float t)
-randomOrthogonal = Noise Unit mn
-  (\sh -> T (funcall' (funcall "tf.orthogonal_initializer" [named "dtype" (showTyp @('Typ 'Float t))]) [named "shape" (showSShape (sh .+. mn))]))
+randomOrthogonal = Noise Unit mn $ \sh -> T $
+  funcall' (funcall "tf.orthogonal_initializer" [named "dtype" (showTyp @('Typ 'Float t))]) [named "shape" (showSShape (sh .+. mn))]
   where mn = typeSShape @'[m,n]
 
 -- | Clip a tensor
