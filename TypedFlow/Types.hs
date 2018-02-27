@@ -34,7 +34,7 @@ import Unsafe.Coerce
 import Data.Proxy
 import Control.Monad.State
 import Data.Char (toLower)
-import Data.Kind (Constraint)
+import Data.Kind (Constraint,Type)
 import Data.Type.Equality
 import TypedFlow.Memo
 import qualified Data.Map as M
@@ -144,8 +144,8 @@ prodHomoS ::  forall x y k px py. px x -> py y -> ((Product (x ++ y) ~ (Product 
 prodHomoS _ _ k = case prodHomo' @x @y of Refl -> k
 
 knownProduct' :: forall s k. All KnownNat s => SList s -> (KnownNat (Product s) => k) -> k
-knownProduct' LZ k = k
-knownProduct' (LS _ n) k = knownProduct' n k
+knownProduct' Unit k = k
+knownProduct' ((:*) _ n) k = knownProduct' n k
 
 knownProduct :: forall s k. KnownShape s => (KnownNat (Product s) => k) -> k
 knownProduct = knownProduct' @s typeSList
@@ -184,9 +184,9 @@ incrCong k = case incrCong' @x @y of Refl -> k
 
 
 initLast' :: forall s k. {-(0 < Length s) => FIXME -} SList s -> ((Init s ++ '[Last s]) ~ s => k) -> k
-initLast' LZ _ = error "initLast': does not hold on empty lists"
-initLast' (LS _ LZ) k = k
-initLast' (LS _ (LS y ys)) k = initLast' (LS y ys) k
+initLast' Unit _ = error "initLast': does not hold on empty lists"
+initLast' ((:*) _ Unit) k = k
+initLast' ((:*) _ ((:*) y ys)) k = initLast' ((:*) y ys) k
 
 initLast :: forall s k. KnownShape s => ((Init s ++ '[Last s]) ~ s => k) -> k
 initLast = initLast' @s typeSList
@@ -216,53 +216,53 @@ appAssocS _ _ _  k = case appAssoc' @xs @ys @zs of Refl -> k
 
 
 knownLast' :: All KnownNat s => SList s -> (KnownNat (Last s) => k) -> k
-knownLast' LZ _ = error "knownLast: does not hold on empty lists"
-knownLast' (LS _ LZ) k = k
-knownLast' (LS _ (LS y xs)) k = knownLast' (LS y xs) k
+knownLast' Unit _ = error "knownLast: does not hold on empty lists"
+knownLast' ((:*) _ Unit) k = k
+knownLast' ((:*) _ ((:*) y xs)) k = knownLast' ((:*) y xs) k
 
 knownLast :: forall s k. KnownShape s => (KnownNat (Last s) => k) -> k
 knownLast = knownLast' @s typeSList
 
 knownInit' :: All KnownNat s => SList s -> (KnownShape (Init s) => k) -> k
-knownInit' LZ _ = error "knownLast: does not hold on empty lists"
-knownInit' (LS _ LZ) k = k
-knownInit' (LS _ (LS y xs)) k = knownInit' (LS y xs) k
+knownInit' Unit _ = error "knownLast: does not hold on empty lists"
+knownInit' ((:*) _ Unit) k = k
+knownInit' ((:*) _ ((:*) y xs)) k = knownInit' ((:*) y xs) k
 
 knownInit :: forall s k. KnownShape s => (KnownShape (Init s) => k) -> k
 knownInit = knownInit' @s typeSList
 
 splitApp' :: forall ys xs k. SList xs -> ((Take (PeanoLength xs) (xs ++ ys) ~ xs,
                                               Drop (PeanoLength xs) (xs ++ ys) ~ ys) => k) -> k
-splitApp' LZ k = k
-splitApp' (LS _ n) k = splitApp' @ys n k
+splitApp' Unit k = k
+splitApp' ((:*) _ n) k = splitApp' @ys n k
 
 splitApp :: forall xs ys k. KnownLen xs => ((Take (PeanoLength xs) (xs ++ ys) ~ xs,
                                              Drop (PeanoLength xs) (xs ++ ys) ~ ys) => k) -> k
 splitApp = splitApp' @ys (typeSList @xs)
 
 knownAppend' :: forall t s k. (All KnownNat s, KnownShape t) => SList s -> (KnownShape (s ++ t) => k) -> k
-knownAppend' LZ k = k
-knownAppend' (LS _ n) k = knownAppend' @t n k
+knownAppend' Unit k = k
+knownAppend' ((:*) _ n) k = knownAppend' @t n k
 
 
 knownAppend :: forall s t k.  (KnownShape s, KnownShape t) => (KnownShape (s ++ t) => k) -> k
 knownAppend = knownAppend' @t (typeSList @s)
 
 -- knownCons :: proxy x -> SList xs -> (KnownLen (x ': xs) => k) -> k
--- knownCons _ LZ k = k
--- knownCons _ (LS x n) k = knownCons x n k
+-- knownCons _ Unit k = k
+-- knownCons _ ((:*) x n) k = knownCons x n k
 
 -- knownFmap' :: forall f xs. SList xs -> SList (Ap (FMap f) xs)
--- knownFmap' LZ = LZ
--- knownFmap' (LS x n) = LS Proxy (knownFmap' @f n)
+-- knownFmap' Unit = Unit
+-- knownFmap' ((:*) x n) = (:*) Proxy (knownFmap' @f n)
 
-knownSList :: SList' proxy xs -> (KnownLen xs => k) -> k
-knownSList LZ k = k
-knownSList (LS _ n) k = knownSList n k
+knownSList :: NP proxy xs -> (KnownLen xs => k) -> k
+knownSList Unit k = k
+knownSList ((:*) _ n) k = knownSList n k
 
 knownSShape :: SShape xs -> (KnownShape xs => k) -> k
-knownSShape LZ k = k
-knownSShape (LS Sat s) k = knownSShape s k
+knownSShape Unit k = k
+knownSShape ((:*) Sat s) k = knownSShape s k
 
 type family Length xs where
   Length '[] = 0
@@ -289,6 +289,8 @@ instance KnownNat n => Applicative (V n) where
 data NP f (xs :: [k]) where
   Unit :: NP f '[]
   (:*) :: f x -> NP f xs -> NP f (x ': xs)
+type SList' = NP
+
 
 newtype I a = I a
 newtype K a x = K a
@@ -359,8 +361,8 @@ htmap _ Unit = Unit
 htmap f (F x :* xs) = F (f x) :* htmap @f f xs
 
 -- htmap' :: forall f ss t u. All KnownShape ss => (forall s. KnownShape s => Tensor (Ap f s) t -> Tensor s u) -> SList ss -> HTV t (Ap (FMap f) ss) -> HTV u ss 
--- htmap' _ LZ Unit = Unit
--- htmap' f (LS _ n)(F x :* xs) = F (f x) :* htmap' @f f n xs
+-- htmap' _ Unit Unit = Unit
+-- htmap' f ((:*) _ n)(F x :* xs) = F (f x) :* htmap' @f f n xs
 
 hmap :: (forall x. f x -> g x) -> NP f xs -> NP g xs
 hmap _ Unit = Unit
@@ -370,9 +372,14 @@ hendo :: NP Endo xs -> HList xs -> HList xs
 hendo Unit Unit = Unit
 hendo (Endo f :* fs) (I x :* xs) = (I (f x) :* hendo fs xs)
 
-happ :: NP f xs -> NP f ys -> NP f (xs ++ ys)
+appSList, (.+.), happ :: NP f xs -> NP f ys -> NP f (xs ++ ys)
 happ Unit xs = xs
 happ (x :* xs) ys = x :* (happ xs ys)
+appSList = happ
+(.+.) = appSList
+
+(*:) :: forall x xs f. NP f xs -> f x -> NP f (xs ++ '[x])
+xs *: x = appSList xs ((:*) x Unit) 
 
 data Both f g x = Both (f x) (g x)
 
@@ -566,7 +573,7 @@ instance KnownKind 'Int where
   kindVal = SInt
   type HostType 'Int = Int
 
-type SList = SList' Proxy
+type SList = NP Proxy
 
 instance Ord (Sat KnownNat t) where
   compare x@Sat y@Sat = compare (natVal x) (natVal y)
@@ -574,40 +581,28 @@ instance Ord (Sat KnownNat t) where
 instance Eq (Sat KnownNat t) where
    x@Sat == y@Sat = (natVal x) == (natVal y)
 
-type SShape = SList' (Sat KnownNat)
+type SShape = NP (Sat KnownNat)
 
 instance Ord (SShape s) where
   compare x y = compare (shapeToList' x) (shapeToList' y)
 
 instance Eq (SShape s) where
-  LZ == LZ = True
-  (LS x xs) == (LS y ys) = x == y && xs == ys
-
-data SList' f s where
-  LZ :: SList' f '[]
-  LS :: forall x xs f. f x -> SList' f xs -> SList' f (x ': xs)
+  Unit == Unit = True
+  ((:*) x xs) == ((:*) y ys) = x == y && xs == ys
 
 
 instance Show (SShape s) where
   show x = show (shapeToList' x)
 
-appSList, (.+.) :: SList' f xs -> SList' f ys -> SList' f (xs ++ ys)
-appSList LZ x = x
-appSList (LS x xs) ys = LS x (appSList xs ys)
 
-(.+.) = appSList
-
-sl :: forall x xs f. SList' f xs -> f x -> SList' f (xs ++ '[x])
-sl xs x = appSList xs (LS x LZ) 
-
-sListLength :: SList' f s -> Integer
-sListLength LZ = 0
-sListLength (LS _ s) = 1+sListLength s
+sListLength :: NP f s -> Integer
+sListLength Unit = 0
+sListLength ((:*) _ s) = 1+sListLength s
 
 
-sListLenAsNat :: SList' f s -> Sat KnownNat (Length s)
-sListLenAsNat LZ = Sat
-sListLenAsNat (LS _ s) = case sListLenAsNat s of
+sListLenAsNat :: NP f s -> Sat KnownNat (Length s)
+sListLenAsNat Unit = Sat
+sListLenAsNat ((:*) _ s) = case sListLenAsNat s of
   Sat -> Sat
 
 type family PeanoLength xs :: Peano where
@@ -643,11 +638,11 @@ class KnownLen s where
 
 instance KnownLen '[] where
   shapePeano = SZero
-  typeSList = LZ
+  typeSList = Unit
 
 instance KnownLen xs => KnownLen (x ': xs) where
   shapePeano = SSucc (shapePeano @xs)
-  typeSList = LS Proxy (typeSList @xs)
+  typeSList = (:*) Proxy (typeSList @xs)
 
 listTypeLen :: forall xs. KnownLen xs => Integer
 listTypeLen = sListLength (typeSList @xs)
@@ -662,12 +657,12 @@ knownNatVal :: forall x. Sat KnownNat x -> Integer
 knownNatVal Sat = natVal (Proxy @x)
 
 shapeToList' :: SShape s -> [Integer]
-shapeToList' LZ = []
-shapeToList' (LS x xs) = knownNatVal x : shapeToList' xs
+shapeToList' Unit = []
+shapeToList' ((:*) x xs) = knownNatVal x : shapeToList' xs
 
-shapeToList'' :: All KnownNat s => SList' proxy s -> [Integer]
-shapeToList'' LZ = []
-shapeToList'' (LS x xs) = natVal x : shapeToList'' xs
+shapeToList'' :: All KnownNat s => NP proxy s -> [Integer]
+shapeToList'' Unit = []
+shapeToList'' ((:*) x xs) = natVal x : shapeToList'' xs
 
 shapeToList :: ∀(s::Shape). KnownShape s => [Integer]
 shapeToList = shapeToList'' (typeSList @ s)
@@ -679,8 +674,8 @@ proxySShape :: forall s. KnownShape s => Proxy s -> SShape s
 proxySShape _ = typeSShape
 
 sListSShape :: forall s. All KnownNat s => SList s -> SShape s
-sListSShape LZ = LZ
-sListSShape (LS n s) = LS (proxySat n) (sListSShape s)
+sListSShape Unit = Unit
+sListSShape ((:*) n s) = (:*) (proxySat n) (sListSShape s)
 
 type None = 514229 --  fibonnaci prime.
 -- type None = 0 - 1 -- GHC does not like negative Nats.
@@ -727,7 +722,7 @@ data T (s :: Shape) (t :: Typ) where
   BinOp :: (KnownTyp t, KnownTyp u) => BinOp -> SShape s0 -> SShape s1 -> SShape s2 -> SShape s3 -> T (s0 ++ s1) t -> T (s0 ++ s2) u -> T (s0 ++ s3) v
   UnOp :: KnownTyp t => UnOp -> SShape s0 -> SShape s1 -> SShape s2 -> T (s0 ++ s1) t -> T (s0 ++ s2) u
   Unbroadcast :: Sat KnownNat n -> Unique -> T (n ': s) t -> T s t
-  DirectBroadcast :: SShape s0 -> SList' proxy' s1 -> SShape s2 -> SList' proxy' s3 -> T (s0 ++ s2) t -> T (s0 ++ (s1 ++ (s2 ++ s3))) t
+  DirectBroadcast :: SShape s0 -> NP proxy' s1 -> SShape s2 -> NP proxy' s3 -> T (s0 ++ s2) t -> T (s0 ++ (s1 ++ (s2 ++ s3))) t
   ReshapeFrom :: Product s ~ Product s0 => SShape s0 -> T s0 t -> T s t
   Transpose :: SShape s0 -> Permutation s0 s -> T s0 t -> T s t
   Stack :: SShape s0 -> Sat KnownNat m -> SShape s1 -> V m (T (s0 ++ s1) t) -> T (s0 ++ (m ': s1)) t
@@ -765,9 +760,9 @@ satAdd :: forall n m. Sat KnownNat n -> Sat KnownNat m -> Sat KnownNat (n+m)
 satAdd Sat Sat = Sat
 
 zipWithMulSShapes :: SShape xs -> SShape ys -> SShape (ZipWithMulShapes xs ys)
-zipWithMulSShapes LZ _ = LZ
-zipWithMulSShapes _ LZ = LZ
-zipWithMulSShapes (LS x xs) (LS y ys) = LS (satMul x y) (zipWithMulSShapes xs ys)
+zipWithMulSShapes Unit _ = Unit
+zipWithMulSShapes _ Unit = Unit
+zipWithMulSShapes ((:*) x xs) ((:*) y ys) = (:*) (satMul x y) (zipWithMulSShapes xs ys)
 
 data PoolingType = MaxPool | AvgPool deriving Show
 

@@ -115,8 +115,8 @@ mkDropouts :: KnownBits t => KnownLen shapes => All KnownShape shapes => DropPro
 mkDropouts d = appEndoTensor <$> mkDropouts' typeSList where
    mkDropouts' :: forall shapes t. KnownBits t => All KnownShape shapes =>
                   SList shapes -> Gen (NP (EndoTensor ('Typ 'Float t)) shapes)
-   mkDropouts' LZ = return Unit
-   mkDropouts' (LS _ rest) = do
+   mkDropouts' Unit = return Unit
+   mkDropouts' (_ :* rest) = do
      x <- mkDropout d
      xs <- mkDropouts' rest
      return (EndoTensor x :* xs)

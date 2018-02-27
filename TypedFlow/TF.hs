@@ -127,8 +127,8 @@ repeatT :: forall (ss :: [Shape]) t. All KnownShape ss => KnownLen ss =>
            (forall s. KnownShape s => T s t) -> HTV t ss
 repeatT f = zs (typeSList @ss)
   where zs :: forall (s :: [Shape]). All KnownShape s => SList s -> HTV t s
-        zs LZ = Unit
-        zs (LS _ n) = F f :* zs n
+        zs Unit = Unit
+        zs (_ :* n) = F f :* zs n
 
 -- TODO: use a different type for persistent?
 -- | Declare variable which persists between calls to session.run.

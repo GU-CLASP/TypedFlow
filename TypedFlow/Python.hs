@@ -255,8 +255,8 @@ generatePure' rec sR = knownSShape sR $ \case
     SliceOp lo hi -> recx <> list (replicate (fromIntegral (sListLength s0)) (text ":") ++ [integer lo <> text ".." <> integer hi])
     IndexOp axis ix -> recx <> list (replicate (fromIntegral (axis + sListLength s0)) (text ":") ++ [integer ix])
   MatMul s0 a b c x y  -> do
-    recx <- rec (s0 .+. LS a (LS b LZ)) x
-    recy <- rec (s0 .+. LS b (LS c LZ)) y
+    recx <- rec (s0 .+. (:*) a ((:*) b Unit)) x
+    recy <- rec (s0 .+. (:*) b ((:*) c Unit)) y
     return (funcall "tf.matmul" [recx, recy])
   BinOp operation s0 s1 s2 _s3 x y -> do
    recx <- rec (s0 .+. s1) x
@@ -275,16 +275,16 @@ generatePure' rec sR = knownSShape sR $ \case
     rx <- rec s x
     return (func "tf.transpose" [rx] [("perm",list (map (integer . permToFun p) [0.. sListLength s]))])
   Gather indexShape s0 m s1 x ix -> do
-    rx <- rec (s0 .+. (LS m s1)) x
+    rx <- rec (s0 .+. ((:*) m s1)) x
     rix <- rec indexShape ix
     return (func "tf.gather" [rx, rix] [])
   GatherND containerShape elementShape indexShape x ix -> do
     rx <- rec (containerShape .+. elementShape) x
-    rix <- rec (sl indexShape (sListLenAsNat containerShape)) ix
+    rix <- rec (indexShape *: (sListLenAsNat containerShape)) ix
     return (func "tf.gather_nd" [rx, rix] [])
   Convolution bs inChans outChans filterShape s0 x filters -> do
-    recx <- rec (LS bs (sl s0 inChans)) x
-    recFilters <- rec (filterShape .+. (LS inChans (LS outChans LZ))) filters
+    recx <- rec ((:*) bs (s0 *: inChans)) x
+    recFilters <- rec (filterShape .+. ((:*) inChans ((:*) outChans Unit))) filters
     return (func "tf.nn.convolution" [recx, recFilters] [("padding",text (show ("SAME"::String))),("data_format", text (show dataFormat))])
    where dataFormat = case sListLength filterShape of
            1 -> ("NWC" :: String)
@@ -292,7 +292,7 @@ generatePure' rec sR = knownSShape sR $ \case
            3 -> "NDHWC"
            _ -> error "convolution: more than 3 spatial dimensions are not supported!"
   Pool bs window typ numChans outSpatial x -> do
-     rx <- rec (LS bs (zipWithMulSShapes window outSpatial .+. LS numChans LZ)) x
+     rx <- rec ((:*) bs (zipWithMulSShapes window outSpatial .+. (:*) numChans Unit)) x
      return (func "tf.nn.pool"
                   [rx, showSShape window, typ', text (show ("SAME" :: String))]
                   [("strides", showSShape window)])

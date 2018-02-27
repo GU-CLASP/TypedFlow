@@ -253,8 +253,8 @@ chainForwardWithState f (s0 , V (x:xs)) =
 -- | RNN helper
 transposeV :: forall n xs t. All KnownShape xs => KnownNat n =>
                SList xs -> V n (HTV (Flt t) xs) -> HTV (Flt t) (Ap (FMap (Cons n)) xs)
-transposeV LZ _ = Unit
-transposeV (LS _ n) xxs  = F ys' :* yys'
+transposeV Unit _ = Unit
+transposeV (_ :* n) xxs  = F ys' :* yys'
   where (ys,yys) = help @(Tail xs) xxs
         ys' = stack0 ys
         yys' = transposeV n yys
@@ -268,8 +268,8 @@ gatherFinalStates dynLen states = gather states (dynLen ⊝ constant 1)
 
 gathers :: forall n xs t. All KnownShape xs => KnownNat n =>
             SList xs -> T '[] Int32 -> HTV (Flt t) (Ap (FMap (Cons n)) xs) -> HTV (Flt t) xs
-gathers LZ _ Unit = Unit
-gathers (LS _ n) ixs (F x :* xs) = F (gatherFinalStates ixs x) :* gathers @n n ixs xs
+gathers Unit _ Unit = Unit
+gathers (_ :* n) ixs (F x :* xs) = F (gatherFinalStates ixs x) :* gathers @n n ixs xs
 
 -- | @rnnWithCull dynLen@ constructs an RNN as normal, but returns the
 -- state after step @dynLen@ only.

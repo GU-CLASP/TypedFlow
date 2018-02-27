@@ -138,8 +138,8 @@ class (KnownShape (Fst r), KnownTyp (Snd r)) => KnownPair r where
 instance (KnownShape x, KnownTyp y) => KnownPair (x ':& y) where
 
 genBatchedPlaceholders :: All KnownPair shapesAndTypes => Unique -> Sat KnownNat n -> SList' HolderName shapesAndTypes -> Gen (HHTV shapesAndTypes)
-genBatchedPlaceholders _ _ LZ = return Unit
-genBatchedPlaceholders u n@Sat (LS (HolderName name) names) = do
+genBatchedPlaceholders _ _ Unit = return Unit
+genBatchedPlaceholders u n@Sat (HolderName name :* names) = do
   x <- placeholder name
   xs <- genBatchedPlaceholders u n names
   return (Uncurry (Unbroadcast n u x) :* xs)
@@ -167,7 +167,7 @@ compile :: forall batchSize sx tx sy ty sy_ ty_ p.
            -- Model input tIn output tOut
         -> Gen ()
 compile options fGen = do
-  compileGen @batchSize options (LS (HolderName "x") (LS (HolderName "y") LZ)) $ do
+  compileGen @batchSize options (HolderName "x" :* HolderName "y" :* Unit) $ do
     f <- fGen
     let f' :: HHTV '[sx ':& tx, sy ':& ty] -> ModelOutput ty_ p sy_
         f' (Uncurry x :* Uncurry y :* Unit) = f x y
