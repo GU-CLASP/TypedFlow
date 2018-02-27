@@ -82,11 +82,23 @@ type family Init xs where
   Init '[x] = '[]
   Init (x ': xs) = x ': Init xs
 
+
 -- Some proofs.
 
 -- initLast' :: forall s k. ((Init s ++ '[Last s]) ~ s => k) -> k
+
 -- initLast' k = unsafeCoerce# k -- why not?
 
+termCancelation' :: forall a b. (a + b) - b :~: a
+termCancelation' = unsafeCoerce Refl
+
+termCancelation  :: forall a b k. ((((a + b) - b) ~ a) => k) -> k
+termCancelation k = case termCancelation' @a @b of Refl -> k
+
+plusMono :: forall a b k. ((a <= (a+b)) => k) -> k
+plusMono k = case plusMono' of Refl -> k
+  where plusMono' :: (a <=? (a+b)) :~: 'True
+        plusMono' = unsafeCoerce Refl
 
 succPos' :: (1 <=? 1+j) :~: 'True
   -- CmpNat 0 (1 + n) :~: 'LT

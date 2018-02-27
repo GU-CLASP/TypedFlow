@@ -26,7 +26,7 @@ module TypedFlow.Layers.RNN.Cells (
   GRUP(..),
   gru,
   StackP(..),
-  -- stackRU,
+  stackRU,
   ) where
 
 import TypedFlow.Layers.RNN.Base
@@ -105,24 +105,29 @@ instance (KnownNat n, KnownBits w) => KnownTensors (StackP w n) where
 instance (KnownNat n, KnownBits w) => (ParamWithDefault (StackP w n)) where
   defaultInitializer = defStackP
 
--- -- | A stack recurrent unit. The input has two purposes: 1. it is
--- -- saved in a stack. 2. it controls (a dense layer which gives) the
--- -- operation to apply on the stack.  The first type argument is the
--- -- depth of the stack.
--- stackRU :: ∀k n bs w. KnownNat k => KnownNat n => (KnownNat bs) => (KnownBits w) => StackP w n ->
---         RnnCell w '[ '[k+1,n]] (Tensor '[n] (Flt w)) (Tensor '[n] (Flt w))
--- stackRU (StackP w) input = C $ \(VecSing st1) ->
---   succPos @k $
---   plusComm @k @1 $ 
---   let ct1 = nth0' @0 st1
---       hx = concat0 ct1 input
---       action :: T '[3] (Flt w)
---       action = softmax0 (w # hx)
---       tl = slice0 @k @(k+1) st1
---       it = slice0 @0 @k  st1
---       stTilda :: T '[3,k+1,n] (Flt w)
---       stTilda = stack0 (V [st1, tl `concat0` zeros, (expandDim0 input) `concat0` it])
---       st = (squeeze0 (inflate12 (matmul (flatten12 @(k+1) @n stTilda) (expandDim0 action))))
---       ct = nth0' @0 st
---   in (VecSing st, ct)
+-- | A stack recurrent unit. The input has two purposes: 1. it is
+-- saved in a stack. 2. it controls (a dense layer which gives) the
+-- operation to apply on the stack.  The first type argument is the
+-- depth of the stack.
+stackRU :: ∀k n bs w. KnownNat k => KnownNat n => (KnownNat bs) => (KnownBits w) => StackP w n ->
+        RnnCell w '[ '[k+1,n]] (Tensor '[n] (Flt w)) (Tensor '[n] (Flt w))
+stackRU (StackP w) input = C $ \(VecSing st1) ->
+  succPos @k $
+  plusMono @k @1 $
+  plusComm @k @1 $ 
+  termCancelation @k @1 $
+  let ct1 = nth0' @0 st1
+      hx = concat0 ct1 input
+      action :: T '[3] (Flt w)
+      action = softmax0 (w # hx)
+      tl :: T '[k,n] (Flt w)
+      tl = slice0 @1 @(k+1) st1
+      it :: T '[k,n] (Flt w)
+      it = slice0 @0 @k  st1
+      stTilda :: T '[3,k+1,n] (Flt w)
+      stTilda = stack0 (V [st1, tl `concat0` zeros, (expandDim0 input) `concat0` it])
+      st :: T '[k+1,n] (Flt w)
+      st = inflate2 (flatten12 stTilda ∙ action)
+      ct = nth0' @0 st
+  in (VecSing st, ct)
 
