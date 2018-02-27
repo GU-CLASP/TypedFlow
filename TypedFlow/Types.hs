@@ -728,8 +728,8 @@ data T (s :: Shape) (t :: Typ) where
   Where :: T s TFBool  -> T s t -> T s t -> T s t
   If :: Scalar TFBool -> T s t -> T s t -> T s t
   Convolution :: Sat KnownNat bs -> Sat KnownNat inChannels -> Sat KnownNat outChannels -> SShape filterSpatialShape -> SShape s
-            -> T (bs ': s ++ '[inChannels]) t -- ^ input tensor (batched)
-            -> T (filterSpatialShape ++ '[inChannels,outChannels]) t -- ^ filters
+            -> T (bs ': s ++ '[inChannels]) t -- input tensor (batched)
+            -> T (filterSpatialShape ++ '[inChannels,outChannels]) t -- filters
             -> T (bs ': s ++ '[outChannels]) t
   Pool :: Length outSpatial ~ Length window =>
           Sat KnownNat bs -> SShape window -> PoolingType -> Sat KnownNat numChannels -> SShape outSpatial
