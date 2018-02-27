@@ -46,3 +46,4 @@ library
 
   other-modules:
         TypedFlow.Memo
+        TypedFlow.Abstract
