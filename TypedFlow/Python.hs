@@ -225,6 +225,18 @@ generatePure x = do
       modify (\g -> g {genPureTable = (snMapInsert2 sn v) (genPureTable g)})
       return v
 
+genDistr :: forall s s0 t. KnownTyp t => Distribution s t -> SShape s0 -> SShape s -> DOC
+genDistr d sh s1 = case d of
+  TruncatedNormalD stddev -> funcall "tf.truncated_normal"
+    [showSShape (sh .+. s1), named "stddev" (float stddev), named "dtype" (showTyp @t)]
+  UniformD low high -> funcall "tf.random_uniform" [showSShape (sh .+. s1)
+                                ,named "minval" (float low)
+                                ,named "maxval" (float high)
+                                ,named "dtype" (showTyp @t)]
+  OrthogonalD -> 
+    funcall' (funcall "tf.orthogonal_initializer" [named "dtype" (showTyp @t)]) [named "shape" (showSShape (sh .+. s1))]
+
+
 generatePure' :: forall s t. KnownTyp t => (forall s' t'. KnownTyp t' => SShape s' -> T s' t' -> Gen DOC) -> SShape s -> T s t -> Gen DOC
 generatePure' rec sR = knownSShape sR $ \case
   Unbroadcast{} -> error "broadcasting operation did not complete!"
@@ -238,8 +250,8 @@ generatePure' rec sR = knownSShape sR $ \case
           (concat [shapeToList' s0, genericReplicate (sListLength s1) 1
                   ,shapeToList' s2, genericReplicate (sListLength s3) 1 ]))] []
    return (funcall "tf.add" [expanded, func "tf.zeros" [showSShape sR] [("dtype", showTyp @t)]])
-  Noise noiseId s0 _s1 x -> do
-    return $ (x s0) <+> (text "# " <> integer noiseId)
+  Noise noiseId s0 s1 x -> do
+    return $ (genDistr x s0 s1) <+> (text "# " <> integer noiseId)
   T x -> return x
   If c x y -> do
     rc <- rec typeSShape c
