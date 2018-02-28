@@ -289,12 +289,13 @@ infixl 7 ·
 
 -- | Create a parameter and initialize it with a suitable default for its type. Control the exact initializer using 'parameter'.
 parameterDefault :: forall p. ParamWithDefault p => String -> Gen p
-parameterDefault name = parameter name =<< defaultInitializer
+parameterDefault name = parameter name defaultInitializer
 
 -- | Create a parameter.
-parameter :: forall p. KnownTensors p => String -> p -> Gen p
-parameter = travTensor parameter'
-
+parameter :: forall p. KnownTensors p => String -> Gen p -> Gen p
+parameter s p = do
+  x <- p
+  travTensor parameter' s x
 
 
 -- flattenHTV :: KnownTyp t => All KnownShape xs => HTV t xs -> Tensor '[Sum (Ap (FMap CProduct) xs)] t
