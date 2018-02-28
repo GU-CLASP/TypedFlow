@@ -666,7 +666,7 @@ oneHot1 = oneHot axis1
 truncatedNormal :: forall s w. KnownShape s => KnownBits w => Float -> Gen (T s ('Typ 'Float w))
 truncatedNormal stddev = do
   noiseId <- newId
-  return $ Noise noiseId Unit typeSShape $ \sh -> T $
+  return $ Noise noiseId Unit typeSShape $ \sh ->
     funcall "tf.truncated_normal"
     [showSShape (sh .+. typeSShape @s), named "stddev" (float stddev), named "dtype" (showTyp @(Flt w))]
 
@@ -675,7 +675,7 @@ truncatedNormal stddev = do
 randomUniform ::  forall s t. (KnownShape s, KnownTyp t) => Float -> Float -> Gen (T s t)
 randomUniform low high = do
   v <- newId
-  return $ Noise v Unit typeSShape $ \sh -> T $
+  return $ Noise v Unit typeSShape $ \sh ->
     funcall "tf.random_uniform" [showSShape (sh .+. typeSShape @s)
                                 ,named "minval" (float low)
                                 ,named "maxval" (float high)
@@ -687,7 +687,7 @@ randomUniform low high = do
 randomOrthogonal :: forall m n t. KnownNat m => (KnownBits t, KnownNat n) => Gen (T '[m,n] ('Typ 'Float t))
 randomOrthogonal = do
   v <- newId
-  return $ Noise v Unit mn $ \sh -> T $
+  return $ Noise v Unit mn $ \sh ->
     funcall' (funcall "tf.orthogonal_initializer" [named "dtype" (showTyp @('Typ 'Float t))]) [named "shape" (showSShape (sh .+. mn))]
   where mn = typeSShape @'[m,n]
 

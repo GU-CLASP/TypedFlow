@@ -238,7 +238,8 @@ generatePure' rec sR = knownSShape sR $ \case
           (concat [shapeToList' s0, genericReplicate (sListLength s1) 1
                   ,shapeToList' s2, genericReplicate (sListLength s3) 1 ]))] []
    return (funcall "tf.add" [expanded, func "tf.zeros" [showSShape sR] [("dtype", showTyp @t)]])
-  Noise _ s0 s1 x -> rec (s0 .+. s1) (x s0)
+  Noise noiseId s0 _s1 x -> do
+    return $ (x s0) <+> (text "# " <> integer noiseId)
   T x -> return x
   If c x y -> do
     rc <- rec typeSShape c
