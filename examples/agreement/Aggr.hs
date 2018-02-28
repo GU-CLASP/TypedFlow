@@ -9,6 +9,8 @@
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UnicodeSyntax #-}
 
+module Main where
+
 import TypedFlow
 import TypedFlow.Python
 
@@ -50,13 +52,19 @@ main = do
   putStrLn "done!"
 
 -- >>> main
--- <interactive>:6859:2: warning: [-Wdeferred-out-of-scope-variables]
---     • Variable not in scope: main :: IO a0
---     • Perhaps you meant ‘min’ (imported from Prelude)
--- *** Exception: <interactive>:6859:2: error:
---     • Variable not in scope: main :: IO a0
---     • Perhaps you meant ‘min’ (imported from Prelude)
--- (deferred type error)
+-- Parameters (total 112796):
+-- dense_bias: T [12] tf.float32
+-- dense_w: T [160,12] tf.float32
+-- w1_o_bias: T [160] tf.float32
+-- w1_o_w: T [172,160] tf.float32
+-- w1_c_bias: T [160] tf.float32
+-- w1_c_w: T [172,160] tf.float32
+-- w1_i_bias: T [160] tf.float32
+-- w1_i_w: T [172,160] tf.float32
+-- w1_f_bias: T [160] tf.float32
+-- w1_f_w: T [172,160] tf.float32
+-- embs: T [12,12] tf.float32
+-- done!
 
 
 (|>) :: ∀ a b. a -> b -> (a, b)
