@@ -58,17 +58,17 @@ broadcast u varyNoise n x = result
   where f :: forall s' t'. STyp t' -> SShape s' -> T s' t' -> T (n : s') t'
         f = memo3 memoOrd memoOrd memo (protoBroadcast u varyNoise (proxySat n) (f typeSTyp) finished)
         finished :: forall s' t'. T s' t' -> Bool
-        finished = memo (protoFinished u finished)
+        finished = memo (protoFinished u varyNoise finished)
         -- note: the memo table must be shared across all the calls to
         -- 'finished' in 'protoBroadcast' for proper efficiency.
         result = f typeSTyp typeSShape x
 
 
-protoFinished :: Unique -> (forall s' t'. T s' t' -> Bool) -> T s t -> Bool
-protoFinished u rec = \case
+protoFinished :: Unique -> Bool -> (forall s' t'. T s' t' -> Bool) -> T s t -> Bool
+protoFinished u varyNoise rec = \case
   DirectBroadcast _ _ _ _ x -> rec x
   GatherND _ _ _ x y -> rec x && rec y
-  Noise _ _ _ _ -> False
+  Noise _ _ _ _ -> not varyNoise
   If cond x y ->  rec cond && rec x && rec y
   Where cond x y -> rec cond && rec x && rec y
   T _ -> True
@@ -154,7 +154,7 @@ protoBroadcast u varyNoise n@(Sat) rec finished ty s tensor
     | finished x -> GatherND cs es ((:*) n is) x (rec (is .+. (:*) (sListLenAsNat cs) Unit) ix)
     | otherwise -> GatherND ((:*) n cs) es ((:*) n is) (rec (cs .+. es) x) (broadcastIndex' n (sListLenAsNat cs) is (rec (is .+. (:*) (sListLenAsNat cs) Unit) ix))
   Noise v s0 s1 x -> if varyNoise then Noise v (n :* s0) s1 x else simpleBC
-  -- Noise are always trivially 
+  -- Noise are always trivially
   Pool bs@Sat window pt numChans outSpatial x ->
     knownSShape (zipWithMulSShapes window outSpatial .+. (:*) numChans Unit) $
     prodAssocS n bs (productS (zipWithMulSShapes window outSpatial .+. (:*) numChans Unit)) $
@@ -673,7 +673,7 @@ truncatedNormal stddev = do
 randomUniform ::  forall s t. (KnownShape s, KnownTyp t) => Float -> Float -> Gen (T s t)
 randomUniform low high = do
   v <- newId
-  return $ Noise v Unit typeSShape $ UniformD low high
+  return $ Noise v Unit typeSShape (UniformD low high)
 
 
 -- | Generate an orthorgonal matrix. If the output has more dimensions
@@ -681,7 +681,7 @@ randomUniform low high = do
 randomOrthogonal :: forall m n t. KnownNat m => (KnownBits t, KnownNat n) => Gen (T '[m,n] ('Typ 'Float t))
 randomOrthogonal = do
   v <- newId
-  return $ Noise v Unit (typeSShape @'[m,n]) $ OrthogonalD
+  return $ Noise v Unit (typeSShape @'[m,n]) OrthogonalD
 
 -- | Clip a tensor
 clipByValue :: KnownShape s => KnownBits t => Float -> Float -> T s (Flt t) -> T s (Flt t)
