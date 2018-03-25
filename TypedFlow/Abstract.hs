@@ -39,8 +39,7 @@ module TypedFlow.Abstract where
 import System.IO.Unsafe
 import Data.Unique
 import TypedFlow.Python
-import Prelude hiding (tanh,Num(..),Floating(..),round,floor,(/),sqrt)
-import Prelude ((-))
+import Prelude hiding (RealFrac(..))
 import GHC.TypeLits
 import Data.Proxy
 import TypedFlow.Types hiding (T)
@@ -304,16 +303,42 @@ addN :: ∀ s t. KnownTyp t => KnownShape s => [Tensor s t] -> Tensor s t
 addN [] = zeros
 addN ts = foldr1 (+) ts
 
--- | Add two tensors, broacasting along shape @s@
-(+) :: KnownTyp t => KnownShape s => T s t -> T s t -> T s t
-(+) = (⊕)
-infixl 6 +
+instance (KnownTyp t, KnownShape s) => Num (T s t) where
+  (+) = (⊕)
+  (*) = (⊙)
+  signum = unOp "tf.sign"
+  fromInteger x = case typeSTyp @t of
+    STyp SInt b -> knownBits b $ constant (fromIntegral x :: Int)
+    STyp SBool b -> knownBits b $ constant (x /= 0)
+    STyp SFloat b -> knownBits b $ constant (fromIntegral x :: Float)
+  abs = unOp "tf.abs"
+  (-) = (⊝)
+  negate = unOp "-"
+
+instance (KnownBits b, KnownShape s) => Fractional (T s ('Typ 'Float b)) where
+  fromRational x = knownBits (bitsVal @b) $ constant (fromRational x :: Float)
+  (/) = (⊘)
+
+instance (KnownBits b, KnownShape s) => Floating (T s ('Typ 'Float b)) where
+  pi = constant pi
+  exp = unOp "tf.exp"
+  log = unOp "tf.log"
+  sin = unOp "tf.sin"
+  cos = unOp "tf.cos"
+  asin = unOp "tf.asin"
+  acos = unOp "tf.acos"
+  sinh = unOp "tf.sinh"
+  cosh = unOp "tf.cosh"
+  asinh = unOp "tf.asinh"
+  acosh = unOp "tf.acosh"
+  tanh = unOp "tf.tanh"
+  atan = unOp "tf.atan"
+  atanh = unOp "tf.atanh"
+  sqrt = unOp "tf.sqrt"
 
 -- | Divide tensors, broacasting along shape @s@
-(/), (⊘) :: forall s t. KnownBits t => KnownShape s => T s ('Typ 'Float t) -> T s ('Typ 'Float t) -> T s ('Typ 'Float t)
+(⊘) :: forall s t. KnownBits t => KnownShape s => T s ('Typ 'Float t) -> T s ('Typ 'Float t) -> T s ('Typ 'Float t)
 (⊘) = binOp "tf.divide"
-(/) = (⊘)
-infixl 7 /
 
 
 -- | Indexwise equality test.
@@ -343,20 +368,15 @@ unOp op = UnOp (Simple1Op op []) Unit (typeSShape @s) (typeSShape @s)
 binOp :: forall s t u. KnownShape s => KnownTyp t => String -> T s t -> T s t -> T s u
 binOp op = BinOp (Simple2Op op Nothing) Unit (typeSShape @s) (typeSShape @s) (typeSShape @s)
 
-round, sigmoid, tanh, log, relu, floor, sqrt, square
+sigmoid, relu, square, round, floor
    :: ∀ s t. (KnownShape s, KnownBits t) => Tensor s ('Typ 'Float t) -> Tensor s ('Typ 'Float t)
 sigmoid = unOp "tf.sigmoid"
-tanh = unOp "tf.tanh"
-log = unOp "tf.log"
+square = unOp "tf.square"
 relu = unOp "tf.nn.relu"
+
+-- Unfortunately RealFrac is utterly broken; so we have to do this:
 round = unOp "tf.round"
 floor = unOp "tf.floor"
-sqrt = unOp "tf.sqrt"
-square = unOp "tf.square"
-
-negate :: ∀ s t. (KnownShape s, KnownTyp t) => T s t -> T s t
-negate = unOp "-"
-
 
 -- | Take a slice at dimension n from i to j.
 slice :: forall i j s t n. KnownTyp t => KnownShape s => KnownNat j => KnownNat i => (i <= j, j <= At n s, KnownLen s) =>
