@@ -39,7 +39,7 @@ import Data.Monoid ((<>))
 
 --------------------------------------
 -- Cells
-;
+
 -- | Standard RNN gate initializer. (The recurrent kernel is
 -- orthogonal to avoid divergence; the input kernel is glorot)
 cellInitializerBit :: ∀ n x t. (KnownNat n, KnownNat x, KnownBits t) => Gen (DenseP t (n + x) n)
@@ -49,7 +49,7 @@ cellInitializerBit = DenseP <$> (concat0 <$> recurrentInitializer <*> kernelInit
         kernelInitializer :: Gen (Tensor '[x, n] ('Typ 'Float t))
         kernelInitializer = glorotUniform
         biasInitializer = pure zeros
-;
+
 -- | Parameter for an LSTM
 data LSTMP t n x = LSTMP (DenseP t (n+x) n) (DenseP t (n+x) n) (DenseP t (n+x) n) (DenseP t (n+x) n)
 
