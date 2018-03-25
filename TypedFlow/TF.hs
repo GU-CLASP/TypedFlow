@@ -57,9 +57,9 @@ module TypedFlow.TF (
   eye,
   constant,
   -- ** indexwise unary operators
-  round, sqrt, sigmoid, tanh, log, relu, floor, negate, square,
+  round, sigmoid, relu, floor, square,
   -- ** Indexwise binary operators
-  addN, (+), (/), (⊕), (⊝), (⊙), (⊘), equal,
+  addN, (⊕), (⊝), (⊙), (⊘), equal,
   -- ** Products
   (∙), (·), matmul,
   -- ** Reducers
@@ -112,8 +112,7 @@ module TypedFlow.TF (
   repeatT, KnownTensors(..)
   ) where
 
-import Prelude hiding (tanh,Num(..),Floating(..),round,floor,(/),sqrt)
-import qualified Prelude
+import Prelude hiding (RealFrac(..))
 import Text.PrettyPrint.Compact hiding (Last, All,Product,Sum)
 import GHC.TypeLits
 import Data.Proxy

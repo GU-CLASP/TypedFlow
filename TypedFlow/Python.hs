@@ -207,7 +207,7 @@ permToFun = \case
     x -> x
   PermSkip p -> \case
     0 -> 0
-    x -> permToFun p (x-1) Prelude.+ 1
+    x -> permToFun p (x-1) + 1
 
 
 listProxyLen :: forall proxy s. KnownLen s => proxy s -> Integer

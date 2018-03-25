@@ -34,7 +34,7 @@ import TypedFlow.TF
 import TypedFlow.Types
 import GHC.TypeLits
 import TypedFlow.Layers.Core (DenseP(..),(#))
-import Prelude hiding (tanh,Num(..),Floating(..),floor)
+import Prelude hiding (RealFrac(..))
 import Data.Monoid ((<>))
 
 --------------------------------------

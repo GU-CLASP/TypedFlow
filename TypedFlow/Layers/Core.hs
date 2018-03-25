@@ -43,9 +43,7 @@ module TypedFlow.Layers.Core
     ConvP(..), conv, conv', {-convValid,-} maxPool1D, maxPool2D)
 
 where
-
-import Prelude hiding (tanh,Num(..),Floating(..),floor)
-import qualified Prelude
+import Prelude hiding (RealFrac(..))
 import GHC.TypeLits
 import TypedFlow.TF
 import TypedFlow.Types
@@ -101,9 +99,9 @@ data DropProb = DropProb Float
 -- RNN.
 mkDropout :: forall s t. KnownShape s => KnownBits t => DropProb -> Gen (Tensor s ('Typ 'Float t) -> Tensor s ('Typ 'Float t))
 mkDropout (DropProb dropProb) = do
-  let keepProb = 1.0 Prelude.- dropProb
+  let keepProb = 1 - dropProb
   isTraining <- gets genTrainingPlaceholder
-  noise <- randomUniform keepProb (1 Prelude.+ keepProb)
+  noise <- randomUniform keepProb (1 + keepProb)
   let mask = if_ isTraining
                (floor noise ⊘ constant keepProb)
                ones

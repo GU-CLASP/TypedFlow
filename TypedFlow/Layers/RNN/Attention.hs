@@ -46,7 +46,7 @@ module TypedFlow.Layers.RNN.Attention (
   attentiveWithFeedback
   ) where
 
-import Prelude hiding (tanh,Num(..),Floating(..),floor)
+import Prelude hiding (RealFrac(..))
 import GHC.TypeLits
 import TypedFlow.TF
 import TypedFlow.Types

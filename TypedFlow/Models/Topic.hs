@@ -31,7 +31,7 @@ Stability   : experimental
 
 
 module TypedFlow.Models.Topic where
-import Prelude hiding ((/), sqrt, tanh, Num(..))
+import Prelude hiding (RealFrac(..))
 import TypedFlow.TF
 import TypedFlow.Layers
 import TypedFlow.Types
