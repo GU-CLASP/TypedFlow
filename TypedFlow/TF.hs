@@ -115,7 +115,10 @@ module TypedFlow.TF (
   varianceScaling, glorotUniform,
 
   -- ** Heterogeneous vectors
-  repeatT, KnownTensors(..)
+  repeatT, KnownTensors(..),
+
+  -- ** Heterogeneous heterogeneous vectors
+  repeatHT
   ) where
 
 import Prelude hiding (RealFrac(..))
@@ -135,6 +138,15 @@ repeatT f = zs (typeSList @ss)
         zs Unit = Unit
         zs (_ :* n) = F f :* zs n
 
+-- | Repeat a flexible-shape constant vector to form a heterogeneous tensor vector.
+repeatHT :: forall ss. All KnownPair ss => KnownLen ss =>
+           (forall s t. KnownShape s => KnownTyp t => T s t) -> HHTV ss
+repeatHT f = zs (typeSList @ss)
+  where zs :: forall s. All KnownPair s => SList s -> HHTV s
+        zs Unit = Unit
+        zs (_ :* n) = Uncurry f :* zs n
+
+-- TODO: use a different type for persistent?
 -- | Declare variable which persists between calls to session.run.
 persistent :: ∀ (shape :: Shape) t. (KnownTyp t,KnownShape shape) => Bool -> String -> T shape t -> Gen (T shape t)
 persistent trainable name initial = do

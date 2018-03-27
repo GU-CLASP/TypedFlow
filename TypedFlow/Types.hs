@@ -34,7 +34,7 @@ import Unsafe.Coerce
 import Data.Proxy
 import Control.Monad.State
 import Data.Char (toLower)
-import Data.Kind (Constraint,Type)
+import Data.Kind (Constraint)
 import Data.Type.Equality
 import TypedFlow.Memo
 import qualified Data.Map as M
@@ -255,9 +255,6 @@ knownAppend' ((:*) _ n) k = knownAppend' @t n k
 knownAppend :: forall s t k.  (KnownShape s, KnownShape t) => (KnownShape (s ++ t) => k) -> k
 knownAppend = knownAppend' @t (typeSList @s)
 
--- knownCons :: proxy x -> SList xs -> (KnownLen (x ': xs) => k) -> k
--- knownCons _ Unit k = k
--- knownCons _ ((:*) x n) k = knownCons x n k
 
 -- knownFmap' :: forall f xs. SList xs -> SList (Ap (FMap f) xs)
 -- knownFmap' Unit = Unit
@@ -319,6 +316,15 @@ type family All (c :: k -> Constraint) (xs :: [k]) :: Constraint where
   All c '[] = ()
   All c (x ': xs) = (c x, All c xs)
 
+knownAll :: forall constraint s k. SList' (Sat constraint) s -> (All constraint s => KnownLen s => k) -> k
+knownAll Unit k = k
+knownAll (Sat :* xs) k = knownAll xs $ k
+
+allKnown :: forall constraint s proxy. All constraint s => SList' proxy s -> SList' (Sat constraint) s
+allKnown Unit = Unit
+allKnown (_ :* xs) = Sat :* allKnown xs
+
+
 class Fun (c :: k -> Constraint)  where
   type Ap c (t :: k) :: l
 
@@ -335,6 +341,10 @@ class FMap (c :: k -> Constraint) (xs :: [k]) where
 instance Fun c => Fun (FMap c)  where
   type Ap (FMap c) '[] = '[]
   type Ap (FMap c) (x ': xs) = Ap c x ': Ap (FMap c) xs
+
+mapFMap :: forall g f xs. (forall x. f x -> f (Ap g x)) -> SList' f xs -> SList' f (Ap (FMap g) xs)
+mapFMap _ Unit = Unit
+mapFMap f (x :* xs) = f x :* mapFMap @g @f f xs
 
 -- type family All2 (c :: k -> l -> Constraint) (xs :: [k]) (ys :: [l]) :: Constraint where
 --   All2 c '[] '[] = ()
@@ -400,6 +410,13 @@ appSList = happ
 xs *: x = appSList xs ((:*) x Unit) 
 
 data Both f g x = Both (f x) (g x)
+
+bothFromPair :: (f x, g x) -> Both f g x
+bothFromPair (x,y) = (Both x y)
+
+bothToPair :: Both f g x -> (f x, g x)
+bothToPair (Both x y)  = (x,y)
+
 
 hzip :: NP f xs -> NP g xs -> NP (Both f g) xs
 hzip = hzipWith Both
@@ -818,6 +835,16 @@ class KnownTensors p where
 instance (KnownTyp t, KnownShape shape) => KnownTensors (T shape t) where
   travTensor f = f
 
+instance (All KnownPair ys) => KnownTensors (HHTV ys) where
+  travTensor :: forall m. Monad m => (forall s t'. (KnownTyp t', KnownShape s) => String -> T s t' -> m (T s t')) -> String -> (HHTV ys) -> m (HHTV ys)
+  travTensor f s = ttr 0
+    where ttr :: forall xs. All KnownPair xs => Int -> HHTV xs -> m (HHTV xs)
+          ttr _ Unit = return Unit
+          ttr n (Uncurry x :* xs) = do
+            x' <- f (s <> "_" <> show n) x
+            xs' <- ttr (n + 1) xs
+            return (Uncurry x' :* xs')
+
 instance (KnownTyp t, All KnownShape ys) => KnownTensors (HTV t ys) where
   travTensor :: forall m. Monad m => (forall s t'. (KnownTyp t', KnownShape s) => String -> T s t' -> m (T s t')) -> String -> (HTV t ys) -> m (HTV t ys)
   travTensor f s = ttr 0
@@ -825,7 +852,7 @@ instance (KnownTyp t, All KnownShape ys) => KnownTensors (HTV t ys) where
           ttr _ Unit = return Unit
           ttr n (F x :* xs) = do
             x' <- f (s <> "_" <> show n) x
-            xs' <- ttr (n Prelude.+ 1) xs
+            xs' <- ttr (n + 1) xs
             return (F x' :* xs')
 
 instance (KnownTensors p, KnownTensors q) => KnownTensors (p,q) where

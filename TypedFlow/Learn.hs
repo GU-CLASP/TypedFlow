@@ -31,6 +31,7 @@ Stability   : experimental
 
 module TypedFlow.Learn where
 
+import Data.Proxy
 import System.IO.Unsafe
 import Data.Unique
 import TypedFlow.Types
@@ -47,13 +48,6 @@ data ModelOutput t predictionShape s = ModelOutput {modelY :: T (s++predictionSh
                                                    ,modelLoss :: T s Float32 -- ^ loss associated with the prediction
                                                    ,modelCorrect :: T s Float32 -- ^ is the above prediction correct?
                                                    }
-
-instance (KnownShape p, KnownTyp t) => Batched (ModelOutput t p) where
-  batchify :: forall n r. KnownNat n => KnownShape r
-    => (forall s u. KnownTyp u => KnownShape s => T s u -> T (n:s) u) -> ModelOutput t p  r -> ModelOutput t p (n:r)
-  batchify f (ModelOutput{..}) = ModelOutput {modelLoss = f modelLoss
-                                             ,modelY = knownAppend @r @p (f modelY)
-                                             ,modelCorrect = f modelCorrect}
 
 -- | A standard modelling function: (input value, gold value) ↦ (prediction, accuracy, loss).
 -- input is the shape of the input.
@@ -133,9 +127,21 @@ data Options = Options {maxGradientNorm :: Maybe Prelude.Float -- ^ apply gradie
 defaultOptions :: Options
 defaultOptions = Options {maxGradientNorm = Nothing}
 
-
 -- | Name of a placeholder of a given shape and type.
 data HolderName (st :: (Shape,Typ)) = HolderName String
+
+
+-- | A fancily-typed pair of a model output and updateable variables (as an HTV)
+data StateAndOutput t p ss where
+  StateAndOutput :: SList s -> ModelOutput t p s -> HTV t ss -> StateAndOutput t p (s ': ss)
+
+instance (KnownTyp t, KnownShape p) => Batched (StateAndOutput t p) where
+  batchify n f (StateAndOutput s ModelOutput{..} xs)
+    = StateAndOutput (n :* s)
+      ModelOutput{modelLoss = f modelLoss
+                 ,modelY = knownAppend' @p s (f modelY)
+                 ,modelCorrect = f modelCorrect}
+      (batchify n f xs)
 
 genBatchedPlaceholders :: All KnownPair shapesAndTypes => Unique -> Sat KnownNat n -> SList' HolderName shapesAndTypes -> Gen (HHTV shapesAndTypes)
 genBatchedPlaceholders _ _ Unit = return Unit
@@ -144,22 +150,37 @@ genBatchedPlaceholders u n@Sat (HolderName name :* names) = do
   xs <- genBatchedPlaceholders u n names
   return (Uncurry (Unbroadcast n u x) :* xs)
 
-compileGen :: forall batchSize shapesAndTypes sy_ ty_ p.
-           (KnownNat batchSize, All KnownPair shapesAndTypes, KnownShape sy_, KnownTyp ty_, KnownShape p) =>
-           Options
-           -> SList' HolderName shapesAndTypes
-           -> Gen (HHTV shapesAndTypes -> ModelOutput ty_ p sy_)
+
+knownCons :: KnownNat x => Sat KnownShape s -> Sat KnownShape (x ': s)
+knownCons Sat = Sat
+
+compileGen :: forall batchSize shapesAndTypes sy_ ty_ p stateShapes.
+           (KnownNat batchSize, All KnownPair shapesAndTypes, KnownLen stateShapes,
+            All KnownShape stateShapes, KnownShape sy_, KnownTyp ty_, KnownShape p)
+         => Options
+         -> SList' HolderName shapesAndTypes -- ^ names for the inputs
+         -> Gen (HHTV shapesAndTypes -> HTV ty_ stateShapes -> (StateAndOutput ty_ p (sy_ ': stateShapes)) )
          -> Gen ()
-compileGen options names fGen = 
-  compileAlreadyBatched @batchSize @p @sy_ @ty_ options $
-  knownAppend @sy_ @p $ do
-  let u = unsafePerformIO newUnique
-  xs <- genBatchedPlaceholders u batchSize names
-  f <- fGen
-  return $ broadcastGen u True batchSize (f xs)
+compileGen options names fGen = do
+  let u = unsafePerformIO newUnique -- unique identifier for the batch dimension
+      -- (state :: HTV ty_ stateShapes) <- travTensor (persistent False) "state" (repeatT (Unbroadcast batchSize u zeros))
+      unbroadcastStates :: forall ss. SList ss -> HTV ty_ (Ap (FMap (Cons batchSize)) ss) -> HTV ty_ ss
+      unbroadcastStates Unit Unit = Unit
+      unbroadcastStates (_ :* ss) (F x :* xs) = F (Unbroadcast batchSize u x) :* unbroadcastStates ss xs
+      batchedShapesKnown = mapFMap @(Cons batchSize) knownCons (allKnown @KnownShape @stateShapes typeSList)
+  knownAll batchedShapesKnown $
+    compileAlreadyBatched @batchSize @p @sy_ @ty_ @(Ap (FMap (Cons batchSize)) stateShapes) options $ \stateVars ->
+    knownAppend @sy_ @p $ do
+      xs <- genBatchedPlaceholders u batchSize names
+      f <- fGen
+      return $ broadcastGen u True (Proxy @batchSize) (f xs (unbroadcastStates (typeSList) stateVars))
  where batchSize = natSat @batchSize
 
--- | Batchify and compile a simple model
+-- | Turn a stateless modelling function into a trivially stateful one.
+stateless :: KnownLen s => (inputs -> ModelOutput t p s) -> inputs -> HTV t '[] -> StateAndOutput t p '[ s ]
+stateless f x Unit = StateAndOutput typeSList (f x) Unit
+
+-- | Batchify and compile a model with simple input to output mapping.
 compile :: forall batchSize sx tx sy ty sy_ ty_ p.
            (KnownNat batchSize, KnownShape sx, KnownTyp tx, KnownShape sy, KnownTyp ty, KnownShape sy_, KnownTyp ty_, KnownShape p) =>
            Options -> Gen (Tensor sx tx -> Tensor sy ty -> ModelOutput  ty_ p sy_)
@@ -168,11 +189,14 @@ compile :: forall batchSize sx tx sy ty sy_ ty_ p.
 compile options fGen = do
   compileGen @batchSize options (HolderName "x" :* HolderName "y" :* Unit) $ do
     f <- fGen
-    let f' :: HHTV '[ '(sx,tx), '(sy,ty)] -> ModelOutput ty_ p sy_
+    let f' :: HHTV '[ '(sx,tx), '(sy,ty)] -> ModelOutput ty_ p sy_ 
         f' (Uncurry x :* Uncurry y :* Unit) = f x y
-    return f'
+    return (stateless f')
 
-
+-- | @updateStates xs ys@ assigns to the tensor (variables!) xs the values ys.
+updateStates :: forall xs ty. KnownTyp ty => All KnownShape xs => HTV ty xs -> HTV ty xs -> Gen (HTV ty xs)
+updateStates Unit Unit = pure Unit
+updateStates (F x :* xs) (F y :* ys) = (:*) <$> (F <$> modifyPersistent x y) <*> updateStates xs ys
 
 -- | Add a term to the loss. This function is intendend to add
 -- regularizers, ie. losses that do not depend on the predicted
@@ -180,10 +204,14 @@ compile options fGen = do
 addRegularizer :: Scalar Float32 -> Gen ()
 addRegularizer r = modify $ \GState{..} -> GState{genRegularizers=r:genRegularizers,..}
 
--- | Generic a model with non-standard parameters ("x" and "y" must be
--- provided as placeholders manually).
-compileAlreadyBatched :: forall bs p sy ty. KnownNat bs => (KnownShape sy, KnownShape p, KnownTyp ty) =>
-           Options -> Gen (ModelOutput ty p (bs ': sy)) -> Gen ()
+-- | Generic model preparation, with non-standard parameters ("x", "y"
+--  must be provided as placeholders manually).
+compileAlreadyBatched :: forall bs p sy ty stateShapes. KnownNat bs
+           => All KnownShape stateShapes
+           => KnownLen stateShapes
+           => (KnownShape sy, KnownShape p, KnownTyp ty)
+           => Options
+           -> (HTV ty stateShapes -> Gen (StateAndOutput ty p ((bs ': sy) ': stateShapes))) -> Gen ()
 compileAlreadyBatched Options{..} model =
   knownAppend @sy @p $ do
   gen (text "import tensorflow as tf")
@@ -192,7 +220,10 @@ compileAlreadyBatched Options{..} model =
     peekAtAny "batch_size" (showDim @ bs)
     trainingPhasePlaceholder <- placeholder "training_phase"
     modify $ \GState{..} -> GState{genTrainingPlaceholder = trainingPhasePlaceholder,..}
-    ModelOutput{..} <- model
+    (stateVars :: HTV ty stateShapes) <- travTensor (persistent False) "state" (repeatT zeros)
+    (StateAndOutput _ ModelOutput{..} newStates) <- model stateVars
+    updates <- updateStates @stateShapes stateVars newStates
+    peekAtMany "update" updates
     peekAt "y_"  modelY
     regularizers <- gets genRegularizers
     loss <- generatePure (reduceMeanAll modelLoss ⊕ addN regularizers)
