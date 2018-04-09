@@ -37,8 +37,7 @@ import TypedFlow.Types
 import TypedFlow.Abstract (Batched(..),broadcastGen)
 import TypedFlow.Python
 import TypedFlow.TF
-import qualified Prelude (Float)
-import Prelude (($),return,Maybe(..),(=<<),(.),Bool(True),String)
+import Prelude hiding (RealFrac(..))
 import Text.PrettyPrint.Compact (text)
 import Data.Monoid hiding (Last,All)
 import GHC.TypeLits
