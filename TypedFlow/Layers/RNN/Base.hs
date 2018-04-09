@@ -105,8 +105,8 @@ runCell cell = uncurry (flip (runC . cell))
 -- | Run a layer on a tensor
 runRnn :: KnownShape s => KnownNat n => (KnownLen s, KnownShape s1, KnownTyp t1) =>
                   Rnn n t2 states (T s1 t1) (T s t)
-                  -> (HTV (Flt t2) states, Tensor (n : s1) t1)
-                  -> (HTV (Flt t2) states, Tensor (n : s) t)
+                  -> (HTV (Flt t2) states, Tensor (n ': s1) t1)
+                  -> (HTV (Flt t2) states, Tensor (n ': s) t)
 runRnn l (s,x) =
   let x' = unstack0 x
       (s',y) = runCell l (s,x')
