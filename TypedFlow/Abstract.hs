@@ -617,10 +617,16 @@ softmax1 =  softmaxInternal (typeSShape @'[m,n]) (typeSShape @s)
 argmaxInternal :: forall n s0 s1 t u. KnownTyp t => KnownBits u => Sat KnownNat n -> SShape s0 -> SShape s1 -> T (s0 ++ (n ': s1)) t -> T (s0 ++ s1) ('Typ 'Int u)
 argmaxInternal n s0 s1 = UnOp (Axis1Op "tf.argmax" [("output_type",showTyp @('Typ 'Int u))] (sListLength s0)) Unit (s0 .+. (:*) n s1) (s0 .+. s1)
 
--- -- | Argmax along axis @n@
--- argmax :: forall m n u s t. (KnownShape s, KnownBits u, KnownNat m, KnownTyp t) => Axis n s -> Tensor (Take n s ++ (m ': Drop n s)) t -> Tensor s ('Typ 'Int u)
--- argmax AxZero = argmax0
--- argmax (AxSucc n) = knownTail @s $ mapT (argmax @m n)
+axisSplitApp :: Axis n s -> (Take n s ++ Drop n s) :~: s
+axisSplitApp AxZero = Refl
+axisSplitApp (AxSucc n) = case axisSplitApp n of
+  Refl -> Refl
+
+-- | Argmax along axis @n@
+argmax :: forall m n u s t. (KnownShape s, KnownBits u, KnownNat m, KnownTyp t) => Axis n s -> Tensor (Take n s ++ (m ': Drop n s)) t -> Tensor s ('Typ 'Int u)
+argmax n = case axisSplitApp n of
+  Refl -> argmaxInternal (natSat @m) (sShapeTake' n (typeSShape @s)) (sShapeDrop' n s)
+  where s = typeSShape @s
 
 -- | Argmax along the first dimension
 argmax0 :: forall u n s t. (KnownNat n, KnownShape s, KnownBits u, KnownTyp t) => T (n ': s) t -> T s ('Typ 'Int u)
