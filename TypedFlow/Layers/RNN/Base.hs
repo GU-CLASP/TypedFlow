@@ -52,7 +52,7 @@ module TypedFlow.Layers.RNN.Base (
   iterateCellBackward,
   iterateWithCull,
   -- * Monad-like interface for cell construction
-  Component(..), bindC, returnC, liftC,
+  Component(..), bindC, returnC,
   -- rnnBackwardsWithCull,
   )
 
@@ -66,11 +66,13 @@ import TypedFlow.Types
 
 -- | The RNN Component generalized monad. This can be used to build
 -- RNNs cells which do not follow the simple and usual "stacking"
--- pattern.
+-- pattern. This is not a simple monad, because the indexing over
+-- states is non-uniform; see 'BindC'.
 newtype Component t states a = C {runC :: HTV (Flt t) states -> (HTV (Flt t) states , a)}
 
 instance Functor (Component t states) where
   fmap = mapC
+
 
 mapC :: (a -> b) -> Component t s a -> Component t s b
 mapC f c = C $ \s -> 
@@ -89,9 +91,6 @@ bindC f g = C $ \(hsplit @s1 -> (s1,s0)) ->
       (s1',y) = runC (g x) s1
   in (happ s1' s0',y)
 
-liftC :: a -> Component t '[] a
-liftC f = C $ \Unit -> (Unit,f)
-
 -- | A cell (one time-step) in an rnn. @state@ is the state propagated through time.
 type RnnCell t states input output = input -> Component t states output
 
@@ -102,20 +101,21 @@ type Rnn n b state input output = RnnCell b state (V n input) (V n output)
 runCell :: RnnCell t states input output -> (HTV (Flt t) states,input) -> (HTV (Flt t) states, output)
 runCell cell = uncurry (flip (runC . cell))
 
--- | Run a layer on a tensor
-runRnn :: KnownShape s => KnownNat n => (KnownLen s, KnownShape s1, KnownTyp t1) =>
-                  Rnn n t2 states (T s1 t1) (T s t)
-                  -> (HTV (Flt t2) states, Tensor (n ': s1) t1)
-                  -> (HTV (Flt t2) states, Tensor (n ': s) t)
+-- | Run an RNN, using a tensor as input. @n@ is the length of the time sequence. 
+runRnn :: (KnownNat n,KnownShape s0, KnownShape s1, KnownTyp t1)
+       => Rnn n t2 states (T s1 t1) (T s0 t0)
+       -> (HTV (Flt t2) states, Tensor (n ': s1) t1)
+       -> (HTV (Flt t2) states, Tensor (n ': s0) t0)
 runRnn l (s,x) =
   let x' = unstack0 x
       (s',y) = runCell l (s,x')
   in (s',stack0 y)
 
-simpleRnn :: KnownTyp t1 => KnownShape s1 => KnownShape s => KnownNat n
-          => RnnCell t2 states (T s1 t1) (T s t)
+-- | Run an RNN composed of a single RNN cell.
+simpleRnn :: KnownTyp t1 => KnownShape s1 => KnownShape s0 => KnownNat n
+          => RnnCell t2 states (T s1 t1) (T s0 t0)
           -> (HTV (Flt t2) states, Tensor (n : s1) t1)
-          -> (HTV (Flt t2) states, Tensor (n : s) t)
+          -> (HTV (Flt t2) states, Tensor (n : s0) t0)
 simpleRnn = runRnn . iterateCell
 
 -- | Construct a cell from an arbitrary stateful function
@@ -128,7 +128,7 @@ mkCell cell = C . flip (curry cell)
 -- | Convert a pure function (feed-forward layer) to an RNN cell by
 -- ignoring the RNN state.
 timeDistribute :: (a -> b) -> RnnCell t '[] a b
-timeDistribute stateLess a = liftC (stateLess a)
+timeDistribute stateLess a = returnC (stateLess a)
 
 --------------------------------------
 -- Combinators
@@ -145,7 +145,7 @@ infixr .--.
 -- | Compose two rnn layers in parallel.
 bothRnns,(.++.)  :: forall s1 s2 a b c n bits t.
   KnownTyp t => KnownLen s1 => KnownLen s2 => KnownNat n
-  => KnownNat b => KnownNat c 
+  => KnownNat b => KnownNat c
   => Rnn n bits s1 a (T '[b] t) -> Rnn n bits s2 a (T '[c] t) -> Rnn n bits (s2 ++ s1) a (T ('[b+c]) t)
 bothRnns f g x =
   f x `bindC` \y ->
@@ -170,19 +170,21 @@ stackRnnCells l1 l2 x = l1 x `bindC` l2
 -- | Compose two rnn cells in parallel.
 bothRnnCells, (.|.) :: forall s0 s1 a b c t bits. KnownLen s0 => KnownLen s1
   => KnownBits bits
-  => KnownNat b => KnownNat c 
+  => KnownNat b => KnownNat c
   => RnnCell t s0 a (T '[b] (Flt bits))
   -> RnnCell t s1 a (T '[c] (Flt bits))
   -> RnnCell t (s1 ++ s0) a (T '[b+c] (Flt bits))
-bothRnnCells l1 l2 x  = 
-  l1 x `bindC` \y -> 
-  l2 x `bindC` \z -> 
+bothRnnCells l1 l2 x  =
+  l1 x `bindC` \y ->
+  l2 x `bindC` \z ->
   returnC (concat0 y z)
 
 (.|.) = bothRnnCells
 
 
--- | Run the cell, and forward the input to the output, by concatenation with the output of the cell.
+-- | Run the cell, and forward the input to the output, by
+-- concatenation with the output of the cell. This bypass is sometimes
+-- called a 'highway' in the literature.
 withBypass :: forall x y t b s0. KnownNat x => KnownNat y => KnownLen s0
   => KnownTyp t
   => RnnCell b s0 (T '[x] t) (T '[y] t) -> RnnCell b s0 (T '[x] t) (T '[x+y] t)
