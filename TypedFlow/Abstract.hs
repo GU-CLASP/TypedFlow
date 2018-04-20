@@ -271,23 +271,25 @@ reduceMaxAll = reduceAll "max"
 reduceMeanAll = reduceAll "mean"
 reduceSumAll = reduceAll "sum"
 
-sShapeTake :: SPeano n -> SList' f s -> SList' f (Take n s)
-sShapeTake SZero _s = Unit
-sShapeTake (SSucc _) Unit = Unit
-sShapeTake (SSucc n) ((:*) x xs) = (:*) x (sShapeTake n xs)
+sShapeTake' :: Axis n s -> SList' f s -> SList' f (Take n s)
+sShapeTake' AxZero _s = Unit
+sShapeTake' (AxSucc n) ((:*) x xs) = (:*) x (sShapeTake' n xs)
 
-sShapeDrop :: SPeano n -> SList' f s -> SList' f (Drop n s)
-sShapeDrop SZero s = s
-sShapeDrop _ Unit = Unit
-sShapeDrop (SSucc n) ((:*) _ xs) = sShapeDrop n xs
+sShapeDrop' :: Axis n s -> SList' f s -> SList' f (Drop n s)
+sShapeDrop' AxZero s = s
+sShapeDrop' (AxSucc n) ((:*) _ xs) = sShapeDrop' n xs
+
+sShapeDropSucc :: Axis n s -> SList' f s -> SList' f (Drop ('Succ n) s)
+sShapeDropSucc AxZero (_ :* s) = s
+sShapeDropSucc (AxSucc n) (_ :* xs) = sShapeDropSucc n xs
 
 -- | Internal. Use 'reduceSum', etc. instead.
-reduce :: ∀ n s t. KnownTyp t => (KnownShape s) => String -> Axis n -> T s t -> T (Take n s ++ Drop ('Succ n) s) t
-reduce op n x = UnOp (Axis1Op ("tf.reduce_" ++ op) [] (sPeanoInt n)) Unit (typeSShape @s)  (sShapeTake n s .+. sShapeDrop (SSucc n) s)  x
+reduce :: ∀ n s t. KnownTyp t => (KnownShape s) => String -> Axis n s -> T s t -> T (Take n s ++ Drop ('Succ n) s) t
+reduce op n x = UnOp (Axis1Op ("tf.reduce_" ++ op) [] (axisInt n)) Unit (typeSShape @s)  (sShapeTake' n s .+. sShapeDropSucc n s) x
   where s = typeSShape @s
 
 -- | Reduce along a given dimension
-reduceSum, reduceMean, reduceMax :: ∀n s t. (KnownTyp t,KnownShape s) => Axis n -> T s t -> T (Take n s ++ Drop ('Succ n) s) t
+reduceSum, reduceMean, reduceMax :: ∀n s t. (KnownTyp t,KnownShape s) => Axis n s -> T s t -> T (Take n s ++ Drop ('Succ n) s) t
 reduceSum = reduce "sum"
 reduceMean = reduce "mean"
 reduceMax = reduce "max"
@@ -380,9 +382,9 @@ floor = unOp "tf.floor"
 
 -- | Take a slice at dimension n from i to j.
 slice :: forall i j s t n. KnownTyp t => KnownShape s => KnownNat j => KnownNat i => (i <= j, j <= At n s, KnownLen s) =>
-         Axis n -> Tensor s t -> Tensor (Take n s ++ ((j-i) ': Drop ('Succ n) s)) t
+         Axis n s -> Tensor s t -> Tensor (Take n s ++ ((j-i) ': Drop ('Succ n) s)) t
 slice n = UnOp (SliceOp (natVal (Proxy @i)) (natVal (Proxy @j))) Unit (typeSShape @s)
-             (sShapeTake n s .+. (:*) (Sat @Nat @KnownNat @(j-i)) (sShapeDrop (SSucc n) s))
+             (sShapeTake' n s .+. (:*) (Sat @Nat @KnownNat @(j-i)) (sShapeDropSucc n s))
              -- (typeSShape @(Take n s ++ ((j-i) ': Drop ('Succ n) s)))
         where s = typeSShape @s
 
@@ -401,12 +403,13 @@ concatT' :: ∀ s0 d1 d2 s1 t. KnownTyp t =>
     SShape s0 -> Sat KnownNat d1 -> Sat KnownNat d2 -> SShape s1 -> T (s0 ++ (d1 ': s1)) t -> T (s0 ++ (d2 ': s1)) t -> T (s0 ++ ((d1+d2) ': s1)) t
 concatT' s0 d1@Sat d2@Sat s1 = BinOp (Axis2Op "tf.concat" 0) s0 ((:*) d1 s1) ((:*) d2 s1) ((:*) (natSat @(d1+d2)) s1)
 
+-- MAYBE: drop these combinators and use zipWithT instead?
 -- | Concatenate tensors on dimension @n@
 concatT :: ∀ n d1 d2 s t. KnownNat d2 => KnownNat d1 => KnownShape s => (KnownTyp t, (d1+d2) ~ At n s) =>
-    Axis n -> T (Take n s ++ (d1 ': Drop ('Succ n) s)) t -> T (Take n s ++ (d2 ': Drop ('Succ n) s)) t -> T s t
-concatT n = BinOp (Axis2Op "tf.concat" (sPeanoInt n)) Unit
-  (sShapeTake n s .+. (:*) d1 (sShapeDrop (SSucc n) s))
-  (sShapeTake n s .+. (:*) d2 (sShapeDrop (SSucc n) s))
+    Axis n s -> T (Take n s ++ (d1 ': Drop ('Succ n) s)) t -> T (Take n s ++ (d2 ': Drop ('Succ n) s)) t -> T s t
+concatT n = BinOp (Axis2Op "tf.concat" (axisInt n)) Unit
+  (sShapeTake' n s .+. (:*) d1 (sShapeDropSucc n s))
+  (sShapeTake' n s .+. (:*) d2 (sShapeDropSucc n s))
   s
   -- FIXME: Prove Take n s ++ At n s ++ Drop (n+1) s ~ s and use concatT'
   where s = typeSShape @s; d1 = natSat @d1; d2 = natSat @d2
@@ -614,18 +617,18 @@ softmax1 =  softmaxInternal (typeSShape @'[m,n]) (typeSShape @s)
 argmaxInternal :: forall n s0 s1 t u. KnownTyp t => KnownBits u => Sat KnownNat n -> SShape s0 -> SShape s1 -> T (s0 ++ (n ': s1)) t -> T (s0 ++ s1) ('Typ 'Int u)
 argmaxInternal n s0 s1 = UnOp (Axis1Op "tf.argmax" [("output_type",showTyp @('Typ 'Int u))] (sListLength s0)) Unit (s0 .+. (:*) n s1) (s0 .+. s1)
 
--- -- | Argmax along dimension @n@
--- argmax :: forall n u m s t. (KnownShape s, KnownPeano n,KnownBits u) => Tensor (Take n s ++ (m ': Drop n s)) t -> Tensor s ('Typ 'Int u)
--- argmax = argmaxInternal natSat (sShapeTake n (typeSShape @s)) (sShapeDrop n s)
---   where s = typeSShape @s; n = typeSPeano @n
+-- -- | Argmax along axis @n@
+-- argmax :: forall m n u s t. (KnownShape s, KnownBits u, KnownNat m, KnownTyp t) => Axis n s -> Tensor (Take n s ++ (m ': Drop n s)) t -> Tensor s ('Typ 'Int u)
+-- argmax AxZero = argmax0
+-- argmax (AxSucc n) = knownTail @s $ mapT (argmax @m n)
 
 -- | Argmax along the first dimension
 argmax0 :: forall u n s t. (KnownNat n, KnownShape s, KnownBits u, KnownTyp t) => T (n ': s) t -> T s ('Typ 'Int u)
-argmax0 = argmaxInternal (natSat @n) (typeSShape @'[]) (typeSShape @s)
+argmax0 = argmaxInternal (natSat @n) Unit (typeSShape @s)
 
 -- | Argmax along the second dimension
 argmax1 :: forall u m n s t. (KnownNat n, KnownNat m, KnownShape s, KnownBits u, KnownTyp t) => T (m ': n ': s) t -> T (m ': s) ('Typ 'Int u)
-argmax1 = argmaxInternal (natSat @n) (typeSShape @'[m]) (typeSShape @s)
+argmax1 = mapT argmax0
 
 -- | Cast the element type.
 cast :: forall u s t. KnownTyp t => KnownShape s => KnownTyp u => T s t -> T s u
@@ -665,21 +668,17 @@ sparseSoftmaxCrossEntropyWithLogits  =
   BinOp (Simple2Op "tf.nn.sparse_softmax_cross_entropy_with_logits" (Just ("labels","logits")))
      Unit (typeSShape @ '[]) (typeSShape @ '[numClasses]) (typeSShape @ '[])
 
--- | One hot vector along axis @n@
-oneHot :: forall n numClasses s w t. KnownNat numClasses => KnownBits t => KnownBits w =>
-  (KnownShape s) =>
-  Axis n -> Tensor s ('Typ 'Int w) -> Tensor (Take n s ++ (numClasses ': Drop n s)) (Flt t)
-oneHot n = UnOp (Axis1Op "tf.one_hot" [("dtype",showTyp @(Flt t))] (sPeanoInt n)) Unit s
-                 (sShapeTake n s .+. (:*) (natSat @numClasses) (sShapeDrop n s))
-  where s = typeSShape @s
-
 -- | One hot vector along axis 0
-oneHot0 :: forall numClasses w s t. KnownBits w =>KnownShape s => KnownNat numClasses => KnownBits t => Tensor s ('Typ 'Int w) -> Tensor (numClasses ': s) (Flt t)
-oneHot0 = oneHot axis0
+oneHot0 :: forall numClasses w s t. KnownNat numClasses => KnownBits t => KnownBits w =>
+  (KnownShape s) =>
+  Tensor s ('Typ 'Int w) -> Tensor (numClasses ': s) (Flt t)
+oneHot0 = UnOp (Axis1Op "tf.one_hot" [("dtype",showTyp @(Flt t))] 0) Unit s
+                 (natSat @numClasses :* s)
+  where s = typeSShape @s
 
 -- | One hot vector along axis 1
 oneHot1 :: forall numClasses w s m t. KnownBits w =>KnownShape s => KnownNat numClasses => KnownNat m => KnownBits t => Tensor (m ': s) ('Typ 'Int w) -> Tensor (m ': numClasses ': s) (Flt t)
-oneHot1 = oneHot axis1
+oneHot1 = mapT oneHot0
 
 -- | Generate a random tensor where each individual element is picked
 -- in a normal distribution with given standard deviation.

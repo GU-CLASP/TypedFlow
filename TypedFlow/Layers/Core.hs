@@ -161,7 +161,7 @@ conv' (ConvP filters bias) input = mapTT @s (+bias) (convolution @outChannels @f
 conv :: forall outChannels filterSpatialShape inChannels s t.
                KnownShape s => KnownNat inChannels => KnownNat outChannels => KnownShape filterSpatialShape => KnownBits t
             => Length filterSpatialShape <= 3
-            => (Length filterSpatialShape+1) ~ Length s
+            => (Length filterSpatialShape + 1) ~ Length s -- The ranks must match, but not necessarily the dimensions
             => (Last s ~ outChannels)
             => ConvP t outChannels inChannels filterSpatialShape
             -> T (Init s ++ '[inChannels]) ('Typ 'Float t)

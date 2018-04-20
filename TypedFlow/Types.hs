@@ -231,6 +231,13 @@ knownInit' ((:*) _ ((:*) y xs)) k = knownInit' ((:*) y xs) k
 knownInit :: forall s k. KnownShape s => (KnownShape (Init s) => k) -> k
 knownInit = knownInit' @s typeSList
 
+knownTail' :: forall x s k. All KnownNat s => SList (x ': s) -> (KnownShape s => k) -> k
+knownTail' ((:*) _ Unit) k = k
+knownTail' ((:*) _ ((:*) y xs)) k = knownTail' ((:*) y xs) k
+
+knownTail :: forall s x xs k. (s ~ (x ': xs), KnownShape s) => (KnownShape xs => k) -> k
+knownTail = knownTail' @x @xs typeSList
+
 splitApp' :: forall ys xs k. SList xs -> ((Take (PeanoLength xs) (xs ++ ys) ~ xs,
                                               Drop (PeanoLength xs) (xs ++ ys) ~ ys) => k) -> k
 splitApp' Unit k = k
@@ -344,6 +351,9 @@ type HTV t = NP (F T t)
 type family Frst (x :: (a,b)) where Frst '(x,y) = x
 type family Scnd (x :: (a,b)) where Scnd '(x,y) = y
 
+class (KnownShape (Frst r), KnownTyp (Scnd r)) => KnownPair r where
+instance (KnownShape x, KnownTyp y) => KnownPair '(x,y) where
+
 newtype Uncurry g (s :: (a,b)) = Uncurry {fromUncurry :: g (Frst s) (Scnd s)}
 
 type HHTV = NP (Uncurry T)
@@ -410,19 +420,25 @@ hsnoc xs x = happ xs (x :* Unit)
 
 infixr 5 :*
 
-data Peano = Zero | Succ Peano
+data Peano = Zero | Succ Peano -- TODO: type Peano = '[()] (And then SPeano = SList') ?
+
+axis0 :: Axis 'Zero (x ': xs)
+axis0 = AxZero
+axis1 :: Axis ('Succ 'Zero) (x0 ': (x1 ': xs))
+axis1 = AxSucc axis0
+axis2 :: Axis ('Succ ('Succ 'Zero)) (x0 ': (x1 ': (x2 ': xs)))
+axis2 = AxSucc axis1
+axis3 :: Axis ('Succ ('Succ ('Succ 'Zero))) (x0 ': (x1 ': (x2 ': (x3 ': xs))))
+axis3 = AxSucc axis2
 
 
-axis0 :: SPeano 'Zero
-axis0 = SZero
-axis1 :: SPeano ('Succ 'Zero)
-axis1 = SSucc axis0
-axis2 :: SPeano ('Succ ('Succ 'Zero))
-axis2 = SSucc axis1
-axis3 :: SPeano ('Succ ('Succ ('Succ 'Zero)))
-axis3 = SSucc axis2
+data Axis n xs where
+  AxZero :: Axis 'Zero (x ': xs)
+  AxSucc :: Axis n xs -> Axis ('Succ n) (x ': xs)
 
-type Axis = SPeano
+axisInt :: Axis n xs -> Integer
+axisInt AxZero = 0
+axisInt (AxSucc n) = 1 + axisInt n
 
 sPeanoInt :: SPeano n -> Integer
 sPeanoInt (SSucc n) = 1 + sPeanoInt n
@@ -436,6 +452,7 @@ type family PeanoNat (n::Peano) :: Nat where
 data SPeano n where
   SZero :: SPeano 'Zero
   SSucc :: SPeano n -> SPeano ('Succ n)
+
 
 -- data Vec (n::Peano) a where
 --   VNil  :: Vec 'Zero a
@@ -462,6 +479,15 @@ type family Drop n xs where
 type family At n xs where
   At 'Zero (x ': xs) = x
   At ('Succ n) (x ': xs) = At n xs
+
+-- type family Drop n xs where
+--    Drop 'Zero xs            = xs
+--    Drop _ '[]       = '[]
+--    Drop ('Succ n) (x ': xs) = Drop n xs
+
+-- type family At n xs where
+--   At 'Zero (x ': xs) = x
+--   At ('Succ n) (x ': xs) = At n xs
 
 data Kind = Float | Int | Bool deriving (Show,Eq,Ord)
 data SKind (s::Kind) where

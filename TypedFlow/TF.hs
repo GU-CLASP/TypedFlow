@@ -94,7 +94,7 @@ module TypedFlow.TF (
   convolution, 
   -- ** Misc
   cast,
-  oneHot, oneHot0, oneHot1,
+  oneHot0, oneHot1,
   -- ** Testing conditions
   if_, where_,
   -- * Contrib

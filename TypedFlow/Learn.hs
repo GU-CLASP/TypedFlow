@@ -43,7 +43,7 @@ import Data.Monoid hiding (Last,All)
 import GHC.TypeLits
 import Control.Monad.State (modify, gets)
 -- | Triple of values that are always output in a model: prediction, loss and accuracy.
-data ModelOutput t predictionShape s = ModelOutput {modelY :: T (s++predictionShape) t -- ^ prediction (which can contain p-shaped info)
+data ModelOutput t predictionShape s = ModelOutput {modelY :: T (s++predictionShape) t -- ^ prediction (which can contain prediction-shaped info)
                                                    ,modelLoss :: T s Float32 -- ^ loss associated with the prediction
                                                    ,modelCorrect :: T s Float32 -- ^ is the above prediction correct?
                                                    }
@@ -57,7 +57,7 @@ instance (KnownShape p, KnownTyp t) => Batched (ModelOutput t p) where
 
 -- | A standard modelling function: (input value, gold value) ↦ (prediction, accuracy, loss)
 type Model input tIn g p output tOut = T input tIn -> T (g++output) tOut
-                                       -> ModelOutput tOut p output 
+                                       -> ModelOutput tOut p output
 
 -- modelBoth :: -- forall n m s t. KnownTyp t => KnownShape s => KnownNat m => KnownNat n =>
 --     ModelOutput t '[p] s -> ModelOutput t '[q] s -> ModelOutput t '[p + q] s
@@ -128,13 +128,8 @@ defaultOptions :: Options
 defaultOptions = Options {maxGradientNorm = Nothing}
 
 
-
-
-data HolderName a = HolderName String
-
-class (KnownShape (Frst r), KnownTyp (Scnd r)) => KnownPair r where
-
-instance (KnownShape x, KnownTyp y) => KnownPair '(x,y) where
+-- | Name of a placeholder of a given shape and type.
+data HolderName (st :: (Shape,Typ)) = HolderName String
 
 genBatchedPlaceholders :: All KnownPair shapesAndTypes => Unique -> Sat KnownNat n -> SList' HolderName shapesAndTypes -> Gen (HHTV shapesAndTypes)
 genBatchedPlaceholders _ _ Unit = return Unit
@@ -158,11 +153,7 @@ compileGen options names fGen =
   return $ broadcastGen u True batchSize (f xs)
  where batchSize = natSat @batchSize
 
-
-newtype PlaceHolder s t nm = PH (Tensor s t)
-
-
--- | batchify and compile a simple model
+-- | Batchify and compile a simple model
 compile :: forall batchSize sx tx sy ty sy_ ty_ p.
            (KnownNat batchSize, KnownShape sx, KnownTyp tx, KnownShape sy, KnownTyp ty, KnownShape sy_, KnownTyp ty_, KnownShape p) =>
            Options -> Gen (Tensor sx tx -> Tensor sy ty -> ModelOutput  ty_ p sy_)
