@@ -634,7 +634,8 @@ argmax0 = argmaxInternal (natSat @n) Unit (typeSShape @s)
 
 -- | Argmax along the second dimension
 argmax1 :: forall u m n s t. (KnownNat n, KnownNat m, KnownShape s, KnownBits u, KnownTyp t) => T (m ': n ': s) t -> T (m ': s) ('Typ 'Int u)
-argmax1 = mapT argmax0
+argmax1 = argmaxInternal (natSat @n) (natSat @m :* Unit) (typeSShape @s)
+-- argmax1 = mapT argmax0 -- equivalent?
 
 -- | Cast the element type.
 cast :: forall u s t. KnownTyp t => KnownShape s => KnownTyp u => T s t -> T s u
