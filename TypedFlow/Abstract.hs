@@ -731,7 +731,11 @@ gather = Gather typeSShape Unit (natSat @n) typeSShape
 --   prodHomo @indexShape @'[1] $
 --   (reshapeAuto ix)
 
-
+-- | @(lookup i xs) = xs[i]@. This function returns an element of a
+-- tensor at a dynamic index. This is a version of 'gather'
+-- specialised to a scalar index.
+lookupT :: KnownShape xs => KnownNat n => Scalar Int32 -> Tensor (n ': xs) t -> Tensor xs t
+lookupT ix xs = gather xs ix
 
 -- | x by y maxpool layer.
 maxPool2D :: forall windowx windowy height width channels t.
