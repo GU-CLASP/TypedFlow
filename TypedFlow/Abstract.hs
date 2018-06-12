@@ -398,13 +398,14 @@ slice0 :: forall i j m s t. KnownShape s => KnownNat m => KnownTyp t => KnownNat
 slice0 = slice @i @j axis0
 
 
--- | Concatenate tensors with explicit shapes
+-- MAYBE: drop these combinators and use zipWithT instead?
+-- | Concatenate tensors with explicit shapes. Recommended: use @zipWithTT (concat0 ...)@ instead.
 concatT' :: ∀ s0 d1 d2 s1 t. KnownTyp t =>
     SShape s0 -> Sat KnownNat d1 -> Sat KnownNat d2 -> SShape s1 -> T (s0 ++ (d1 ': s1)) t -> T (s0 ++ (d2 ': s1)) t -> T (s0 ++ ((d1+d2) ': s1)) t
 concatT' s0 d1@Sat d2@Sat s1 = BinOp (Axis2Op "tf.concat" 0) s0 ((:*) d1 s1) ((:*) d2 s1) ((:*) (natSat @(d1+d2)) s1)
 
 -- MAYBE: drop these combinators and use zipWithT instead?
--- | Concatenate tensors on dimension @n@
+-- | Concatenate tensors on dimension @n@. Recommended: use @zipWithTT (concat0 ...)@ instead.
 concatT :: ∀ n d1 d2 s t. KnownNat d2 => KnownNat d1 => KnownShape s => (KnownTyp t, (d1+d2) ~ At n s) =>
     Axis n s -> T (Take n s ++ (d1 ': Drop ('Succ n) s)) t -> T (Take n s ++ (d2 ': Drop ('Succ n) s)) t -> T s t
 concatT n = BinOp (Axis2Op "tf.concat" (axisInt n)) Unit
@@ -587,6 +588,25 @@ zipWithT :: forall (n :: Nat) (s :: [Nat]) (t :: Typ) (s1 :: [Nat]) (t1 :: Typ) 
             -> Tensor (n ': s2) t2
 zipWithT f x y = broadcast u False (Proxy @n) (f (Unbroadcast (natSat @n) u x) (Unbroadcast (natSat @n) u y))
   where u = unsafePerformIO newUnique
+
+-- | zip  a function along the few first dimensions of a tensor, given by the first type parameter
+zipWithTT :: forall a (s :: [Nat]) (s1 :: [Nat]) (s2 :: Shape) (t :: Typ) (t1 :: Typ)  (t2 :: Typ).
+            KnownTyp t1 => KnownTyp t => KnownShape s => KnownShape s1 => KnownShape a => KnownShape s2 => KnownTyp t2
+            => (T s t -> T s1 t1 -> T s2 t2)
+            -> Tensor (a ++ s) t
+            -> Tensor (a ++ s1) t1
+            -> Tensor (a ++ s2) t2
+zipWithTT f x y = 
+            prodHomo @a @s1 $
+            prodHomo @a @s2 $
+            prodHomo @a @s $
+            knownProduct @a $
+            knownAppend @a @s1 $
+            knownAppend @a @s2 $
+            knownAppend @a @s $
+            reshape (zipWithT @(Product a) f (reshape x) (reshape y))
+
+
 
 -- | Size-preserving convolution operation.
 convolution :: forall outputChannels filterSpatialShape inChannels s t.

@@ -100,6 +100,7 @@ module TypedFlow.TF (
   -- * Contrib
   -- ** Mapping
   mapT, zipWithT, 
+  mapTT, zipWithTT,
   consT0, snocT0,
   -- ** Losses
   sigmoidCrossEntropyWithLogits,

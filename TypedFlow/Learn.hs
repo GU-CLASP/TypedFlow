@@ -55,13 +55,19 @@ instance (KnownShape p, KnownTyp t) => Batched (ModelOutput t p) where
                                              ,modelY = knownAppend @r @p (f modelY)
                                              ,modelCorrect = f modelCorrect}
 
--- | A standard modelling function: (input value, gold value) ↦ (prediction, accuracy, loss)
+-- | A standard modelling function: (input value, gold value) ↦ (prediction, accuracy, loss).
+-- input is the shape of the input.
+-- output is the shape of the output (one element per individual loss and accuracy)
+-- p is the shape of each output element.
+-- g is the shape of each gold output --- often equal to p.
 type Model input tIn g p output tOut = T input tIn -> T (g++output) tOut
                                        -> ModelOutput tOut p output
 
--- modelBoth :: -- forall n m s t. KnownTyp t => KnownShape s => KnownNat m => KnownNat n =>
---     ModelOutput t '[p] s -> ModelOutput t '[q] s -> ModelOutput t '[p + q] s
--- modelBoth (ModelOutput y1 l1 c1) (ModelOutput y2 l2 c2) = ModelOutput (concatT (lengthAsAxis @s) y1 y2) (l1 + l2) (c1 + c2)
+modelBoth :: forall p q s t. 
+    KnownShape s => KnownTyp t => KnownNat q => KnownNat p => ModelOutput t '[p] s -> ModelOutput t '[q] s -> ModelOutput t '[p + q] s
+modelBoth (ModelOutput y1 l1 c1) (ModelOutput y2 l2 c2) = ModelOutput arst (l1 + l2) (c1 + c2)
+    where arst :: T (s ++ '[p + q]) t
+          arst = zipWithTT @s @'[p] @'[q] concat0 y1 y2
 
 -- | First type argument is the number of classes.  @categorical
 -- logits gold@ return (prediction, accuraccy, loss)
@@ -110,8 +116,8 @@ timedCategorical targetWeights logits y =
       modelLoss = cast @Float32 (crossEntropies ⊙ targetWeights)
   in ModelOutput{..}
 
--- | Model with several binary outputs.
-binary :: Model '[] Float32 '[] '[] '[] Int32
+-- | Model with @n@ binary outputs.
+binary :: KnownNat n => Model '[n] Float32 '[] '[] '[n] Int32
 binary logits y =
   let y_ = cast @Int32 (round sigy_)
       sigy_ = sigmoid logits
