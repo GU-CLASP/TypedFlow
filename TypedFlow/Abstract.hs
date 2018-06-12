@@ -353,6 +353,10 @@ equal = binOp "tf.equal"
 (⊙) = binOp "tf.multiply"
 (⊕) = binOp "tf.add"
 
+maxT,minT :: ∀ (s :: Shape) t. (KnownShape s, KnownTyp t) => Tensor s t -> Tensor s t -> Tensor s t
+maxT = binOp "tf.maximum"
+minT = binOp "tf.minimum"
+
 lessThan :: ∀ (s :: Shape) t. (KnownShape s, KnownTyp t) => Tensor s t -> Tensor s t -> Tensor s TFBool
 lessThan = binOp "tf.less"
 

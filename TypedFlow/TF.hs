@@ -60,6 +60,7 @@ module TypedFlow.TF (
   round, sigmoid, relu, floor, square,
   -- ** Indexwise binary operators
   addN, (⊕), (⊝), (⊙), (⊘), equal,
+  minT, maxT,
   -- ** Products
   (∙), (·), matmul,
   -- ** Reducers
