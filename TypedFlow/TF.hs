@@ -131,7 +131,6 @@ repeatT f = zs (typeSList @ss)
         zs Unit = Unit
         zs (_ :* n) = F f :* zs n
 
--- TODO: use a different type for persistent?
 -- | Declare variable which persists between calls to session.run.
 persistent :: ∀ (shape :: Shape) t. (KnownTyp t,KnownShape shape) => Bool -> String -> T shape t -> Gen (T shape t)
 persistent trainable name initial = do
@@ -139,7 +138,9 @@ persistent trainable name initial = do
   when trainable (newParameter (ParamInfo name (shapeToList @shape) (typVal @t) (T v)))
   i <- generatePure initial
   v <-- funcall "tf.Variable" [i, named "name" (string (show (name))), named "trainable" (bool trainable)]
-  return (T v)
+  let result = T v
+  peekAt name result
+  return result
 
 
 -- | Declare a parameter to optimize. The shape of parameter should
@@ -250,8 +251,8 @@ varianceScaling factor mode distr = case distr of
     n = max 1 $ case mode of
                   VSFanIn -> fan_in
                   VSFanOut -> fan_out
-                  VSAvg -> (fan_in Prelude.+ fan_out) Prelude./ 2
-    limit = Prelude.sqrt ((case distr of NormalDistr -> 1.3; UniformDistr -> 3) Prelude.* factor Prelude./ n)
+                  VSAvg -> (fan_in + fan_out) / 2
+    limit = sqrt ((case distr of NormalDistr -> 1.3; UniformDistr -> 3) * factor / n)
 
 
 glorotUniform :: forall inDim outDim t. KnownNat inDim => (KnownNat outDim, KnownBits t) => Gen (Tensor '[outDim,inDim] ('Typ 'Float t))
