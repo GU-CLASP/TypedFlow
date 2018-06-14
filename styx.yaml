@@ -7,4 +7,4 @@ nix-deps:
     - hscolour
 
 nixpkgs:
-  url: https://github.com/NixOS/nixpkgs-channels/archive/nixos-17.09.tar.gz
+  url: https://github.com/NixOS/nixpkgs-channels/archive/nixos-18.03.tar.gz
