@@ -77,6 +77,7 @@ module TypedFlow.TF (
   last0, nth0, nth0', lookupT, gather,
   -- ** Split and concatenate
   slice, slice0, slice1,
+  litStack0,
   stack0, unstack0,
   stack1,
   concatT, concat0, concat1,
@@ -141,7 +142,6 @@ persistent trainable name initial = do
   let result = T v
   peekAt name result
   return result
-
 
 -- | Declare a parameter to optimize. The shape of parameter should
 -- not depend on dimensions which can change between runs, such as the

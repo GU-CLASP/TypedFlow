@@ -540,6 +540,13 @@ stackN = appRUnit @Nat @s $
 unstack0 :: ∀ s (n::Nat) t. KnownTyp t => KnownNat n => KnownShape s => (KnownLen s) => Tensor (n ': s) t -> V n (T s t)
 unstack0 x = V [nth0 i x | i <- [0..natVal (Proxy @n) - 1]  ]
 
+-- | Stack a tensor vector. (To be used on literal lists of tensors.)
+litStack0 :: KnownShape s => KnownLen xs => TV s t xs -> Tensor (Length xs ': s) t
+litStack0 tv = knownSList tv $ stack0 $ toV tv
+  where toV :: TV s t xs -> V (Length xs) (T s t)
+        toV Unit = V []
+        toV (K x :* xs) = V (x : xs') where V xs' = toV xs
+
 permN :: SList s -> Permutation (n ': s) (s ++ '[n])
 permN Unit = PermId
 permN ((:*) _n s) = PermSwap `PermTrans` PermSkip (permN s)

@@ -345,6 +345,10 @@ instance Fun c => Fun (FMap c)  where
 -- | Flip at type level
 newtype F g t s = F {fromF :: g s t}
 
+
+-- | Tensor vector. (Elements in the indexing list are ignored.)
+type TV s t = NP (K (Tensor s t))
+
 -- | Heterogeneous tensor vector with the same kind of elements
 type HTV t = NP (F T t)
 
@@ -356,6 +360,7 @@ instance (KnownShape x, KnownTyp y) => KnownPair '(x,y) where
 
 newtype Uncurry g (s :: (a,b)) = Uncurry {fromUncurry :: g (Frst s) (Scnd s)}
 
+-- | Tensor vector heterogenous in types and shapes.
 type HHTV = NP (Uncurry T)
 
 hhead :: NP f (x ': xs) -> f x
@@ -375,6 +380,11 @@ htmap f (F x :* xs) = F (f x) :* htmap @f f xs
 hmap :: (forall x. f x -> g x) -> NP f xs -> NP g xs
 hmap _ Unit = Unit
 hmap f (x :* xs) = f x :* hmap f xs
+
+kmap :: (a -> b) -> NP (K a) xs -> NP (K b) xs
+kmap _ Unit = Unit
+kmap f (K x :* xs) = K (f x) :* kmap f xs
+
 
 hendo :: NP Endo xs -> HList xs -> HList xs
 hendo Unit Unit = Unit
@@ -444,7 +454,6 @@ sPeanoInt :: SPeano n -> Integer
 sPeanoInt (SSucc n) = 1 + sPeanoInt n
 sPeanoInt SZero = 0
 
-
 type family PeanoNat (n::Peano) :: Nat where
   PeanoNat 'Zero = 0
   PeanoNat ('Succ n) = PeanoNat n + 1
@@ -452,19 +461,6 @@ type family PeanoNat (n::Peano) :: Nat where
 data SPeano n where
   SZero :: SPeano 'Zero
   SSucc :: SPeano n -> SPeano ('Succ n)
-
-
--- data Vec (n::Peano) a where
---   VNil  :: Vec 'Zero a
---   VCons :: a -> Vec n a -> Vec ('Succ n) a
-
--- vecToList :: Vec n a -> [a]
--- vecToList VNil = []
--- vecToList (VCons x xs) = x : vecToList xs
-
--- type family App n (xs :: Vec n a) ys where
---    App 'Zero 'VNil  xs            =  xs
---    App ('Succ n) ('VCons x xs) ys =  x ': App n xs ys
 
 type family Take n xs where
    Take 'Zero xs            =  '[]
@@ -656,7 +652,7 @@ withKnownNat n f = withKnownNat (n `div` 2) (if n `mod` 2 == 0 then f2x else f2x
 -- withKnownNat :: forall k. Int -> (forall (n::Nat). KnownNat n => k) -> k
 -- withKnownNat n f = withKnownNat' n (\proxy -> appProxy proxy f)
 
-class KnownLen s where
+class KnownNat (Length s) => KnownLen s where
   shapePeano :: SPeano (PeanoLength s)
   typeSList :: SList s
 
