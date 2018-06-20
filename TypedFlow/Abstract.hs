@@ -374,9 +374,10 @@ unOp op = UnOp (Simple1Op op []) Unit (typeSShape @s) (typeSShape @s)
 binOp :: forall s t u. KnownShape s => KnownTyp t => String -> T s t -> T s t -> T s u
 binOp op = BinOp (Simple2Op op Nothing) Unit (typeSShape @s) (typeSShape @s) (typeSShape @s)
 
-sigmoid, relu, square, round, floor
+sigmoid, relu, square, round, floor, hardSigmoid
    :: ∀ s t. (KnownShape s, KnownBits t) => Tensor s ('Typ 'Float t) -> Tensor s ('Typ 'Float t)
 sigmoid = unOp "tf.sigmoid"
+hardSigmoid = unOp "tf.keras.backend.hard_sigmoid"
 square = unOp "tf.square"
 relu = unOp "tf.nn.relu"
 
