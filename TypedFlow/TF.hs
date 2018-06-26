@@ -109,7 +109,9 @@ module TypedFlow.TF (
   softmaxCrossEntropyWithLogits,
   sparseSoftmaxCrossEntropyWithLogits,
   -- ** Initializers
-  truncatedNormal, randomUniform, randomOrthogonal, varianceScaling, glorotUniform,
+  noise,
+  Distribution(..),
+  varianceScaling, glorotUniform,
 
   -- ** Heterogeneous vectors
   repeatT, KnownTensors(..)
@@ -242,9 +244,9 @@ data Distrib = NormalDistr | UniformDistr
 -- | Random tensor with variance scaling according to deeplearning lore.
 varianceScaling :: forall inDim outDim t. KnownNat inDim => (KnownNat outDim, KnownBits t) =>
    Float -> VarianceScaleMode -> Distrib -> Gen (Tensor '[inDim,outDim] ('Typ 'Float t))
-varianceScaling factor mode distr = case distr of
-                                   UniformDistr -> randomUniform (-limit) limit
-                                   NormalDistr -> truncatedNormal limit
+varianceScaling factor mode distr = noise $ case distr of
+                                   UniformDistr -> UniformD (-limit) limit
+                                   NormalDistr -> TruncatedNormalD limit
   where
     fan_in = fromIntegral (natVal (Proxy @inDim))
     fan_out = fromIntegral (natVal (Proxy @outDim))

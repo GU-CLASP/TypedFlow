@@ -45,7 +45,7 @@ import Data.Monoid ((<>))
 cellInitializerBit :: ∀ n x t. (KnownNat n, KnownNat x, KnownBits t) => Gen (DenseP t (n + x) n)
 cellInitializerBit = DenseP <$> (concat0 <$> recurrentInitializer <*> kernelInitializer) <*> biasInitializer
   where recurrentInitializer :: Gen (Tensor '[n, n] ('Typ 'Float t))
-        recurrentInitializer = randomOrthogonal
+        recurrentInitializer = noise $ OrthogonalD
         kernelInitializer :: Gen (Tensor '[x, n] ('Typ 'Float t))
         kernelInitializer = glorotUniform
         biasInitializer = pure zeros

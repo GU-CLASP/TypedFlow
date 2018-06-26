@@ -736,9 +736,12 @@ instance Show DOC where
 -- | An indexing tensor in the format expected by GatherND
 type IndexTensor indexShape containerShape w = T (indexShape ++ '[Length containerShape]) ('Typ 'Int w)
 
+-- | Description of a random distribution
 data Distribution (s :: Shape) (t :: Typ) where
-  TruncatedNormalD :: Float -> Distribution s ('Typ 'Float w)
-  UniformD :: Float -> Float -> Distribution s t
+  -- | Each element is from a truncated normal distribution with given standard dev.
+  TruncatedNormalD :: Float ->  Distribution s ('Typ 'Float w)
+  -- | Each element is from a uniform distribution with given bounds (low, high)
+  UniformD :: Float -> Float -> Distribution s ('Typ 'Float w)
   OrthogonalD  :: Distribution '[m,n] ('Typ 'Float w)
 
 data T (s :: Shape) (t :: Typ) where

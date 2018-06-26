@@ -36,7 +36,7 @@ module TypedFlow.Layers.Core
     -- * Dense
     DenseP(..), dense, (#),
     -- * Dropout
-    DropProb(..), mkDropout, mkDropouts,
+    DropProb(..), mkMask, mkDropout, mkDropouts,
     -- * Embedding
     EmbeddingP(..), embedding, 
     -- * Convolutional
@@ -68,7 +68,7 @@ instance (KnownNat numObjects, KnownBits b, KnownNat embeddingSize) => KnownTens
   travTensor f s (EmbeddingP p) = EmbeddingP <$> travTensor f s p
 
 instance (KnownNat numObjects, KnownBits b, KnownNat embeddingSize) => ParamWithDefault (EmbeddingP numObjects embeddingSize b) where
-  defaultInitializer = EmbeddingP <$> (randomUniform (-0.05) 0.05)
+  defaultInitializer = EmbeddingP <$> (noise $ UniformD (-0.05) 0.05)
 
 -- | embedding layer
 embedding :: ∀ embeddingSize numObjects t. KnownNat embeddingSize => KnownNat numObjects =>
@@ -81,7 +81,7 @@ instance (KnownNat a, KnownNat b, KnownBits t) => KnownTensors (DenseP t a b) wh
   travTensor f s (DenseP x y) = DenseP <$> travTensor f (s<>"_w") x <*> travTensor f (s<>"_bias") y
 
 instance (KnownNat n, KnownNat m, KnownBits b) => ParamWithDefault (DenseP b n m) where
-  defaultInitializer = DenseP <$> glorotUniform <*> (truncatedNormal 0.1)
+  defaultInitializer = DenseP <$> glorotUniform <*> (noise $ TruncatedNormalD 0.1)
 
 -- | Dense layer (Apply a linear function)
 (#), dense :: ∀m n t. KnownNat n => KnownNat m => KnownBits t => DenseP t n m -> Tensor '[n] (Flt t) -> Tensor '[m] (Flt t)
@@ -94,18 +94,23 @@ dense = (#)
 data DropProb = DropProb Float
 
 -- | Generate a dropout function. The mask applied by the returned
--- function will be constant for any given call to mkDropout. This
--- behavior allows to use the same mask in the several steps of an
--- RNN.
+-- function will be constant for any given call to mkDropout.  See
+-- 'noise' for the sampling behaviour.
 mkDropout :: forall s t. KnownShape s => KnownBits t => DropProb -> Gen (Tensor s ('Typ 'Float t) -> Tensor s ('Typ 'Float t))
-mkDropout (DropProb dropProb) = do
+mkDropout d = (⊙) <$> mkMask d
+
+
+-- | Generate a 0-1 mask with given probability, suitable for dropout,
+-- or all ones if not in training phase. See 'noise' for the sampling
+-- behaviour.
+mkMask :: forall s t. KnownShape s => KnownBits t => DropProb -> Gen (Tensor s (Flt t))
+mkMask (DropProb dropProb) = do
   let keepProb = 1 - dropProb
   isTraining <- gets genTrainingPlaceholder
-  noise <- randomUniform keepProb (1 + keepProb)
-  let mask = if_ isTraining
-               (floor noise ⊘ constant keepProb)
+  r <- noise $ UniformD keepProb (1 + keepProb)
+  return $ if_ isTraining
+               (floor r ⊘ constant keepProb)
                ones
-  return (mask ⊙)
 
 newtype EndoTensor t s = EndoTensor (Tensor s t -> Tensor s t)
 

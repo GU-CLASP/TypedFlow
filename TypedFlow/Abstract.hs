@@ -153,7 +153,9 @@ protoBroadcast u varyNoise n@(Sat) rec finished ty s tensor
     | finished x -> GatherND cs es ((:*) n is) x (rec (is .+. (:*) (sListLenAsNat cs) Unit) ix)
     | otherwise -> GatherND ((:*) n cs) es ((:*) n is) (rec (cs .+. es) x) (broadcastIndex' n (sListLenAsNat cs) is (rec (is .+. (:*) (sListLenAsNat cs) Unit) ix))
   Noise v s0 s1 x -> if varyNoise then Noise v (n :* s0) s1 x else simpleBC
-  -- Noise are always trivially
+  -- When varying noise, then we extend the shape of the noise (so
+  -- more stuff is sampled), otherwise we copy the noise using simple
+  -- broadcasting
   Pool bs@Sat window pt numChans outSpatial x ->
     knownSShape (zipWithMulSShapes window outSpatial .+. (:*) numChans Unit) $
     prodAssocS n bs (productS (zipWithMulSShapes window outSpatial .+. (:*) numChans Unit)) $
@@ -719,33 +721,16 @@ oneHot0 = UnOp (Axis1Op "tf.one_hot" [("dtype",showTyp @(Flt t))] 0) Unit s
 oneHot1 :: forall numClasses w s m t. KnownBits w =>KnownShape s => KnownNat numClasses => KnownNat m => KnownBits t => Tensor (m ': s) ('Typ 'Int w) -> Tensor (m ': numClasses ': s) (Flt t)
 oneHot1 = mapT oneHot0
 
--- | Generate a random tensor where each individual element is picked
--- in a normal distribution with given standard deviation.
-truncatedNormal :: forall s w. KnownShape s => KnownBits w => Float -> Gen (T s ('Typ 'Float w))
-truncatedNormal stddev = do
-  noiseId <- newId
-  return $ Noise noiseId Unit typeSShape $ TruncatedNormalD stddev
-
--- | Generate a random tensor where each individual element is picked
--- in a uniform distribution with given bounds.
-randomUniform ::  forall s t. (KnownShape s, KnownTyp t) => Float -> Float -> Gen (T s t)
-randomUniform low high = do
-  v <- newId
-  return $ Noise v Unit typeSShape (UniformD low high)
-
-
--- | Generate an orthorgonal matrix. If the output has more dimensions
--- than 2 the matrix is reshaped.
-randomOrthogonal :: forall m n t. KnownNat m => (KnownBits t, KnownNat n) => Gen (T '[m,n] ('Typ 'Float t))
-randomOrthogonal = do
-  v <- newId
-  return $ Noise v Unit (typeSShape @'[m,n]) OrthogonalD
+-- | Generate a random tensor whose distribution is given. A new noise
+-- is sampled for each element in a batch.
+noise :: KnownShape s => Distribution s t -> Gen (T s t)
+noise d = do
+  noiseId <- newId -- necessary for correct broadcasting behaviour
+  return $ Noise noiseId Unit typeSShape d
 
 -- | Clip a tensor
 clipByValue :: KnownShape s => KnownBits t => Float -> Float -> T s (Flt t) -> T s (Flt t)
 clipByValue lo hi = UnOp (Simple1Op "tf.clip_by_value" [float lo,float hi]) Unit typeSShape typeSShape
-
-
 
 -- | (where_ c x y)[i] = if c[i] then x[i] else y[i]
 where_ :: T s TFBool -> T s t -> T s t -> T s t

@@ -233,7 +233,7 @@ genDistr d sh s1 = case d of
                                 ,named "minval" (float low)
                                 ,named "maxval" (float high)
                                 ,named "dtype" (showTyp @t)]
-  OrthogonalD -> 
+  OrthogonalD ->
     funcall' (funcall "tf.orthogonal_initializer" [named "dtype" (showTyp @t)]) [named "shape" (showSShape (sh .+. s1))]
 
 
