@@ -98,7 +98,7 @@ module TypedFlow.TF (
   cast,
   oneHot0, oneHot1,
   -- ** Testing conditions
-  if_, where_,
+  if_, where_, lessThan,
   -- * Contrib
   -- ** Mapping
   mapT, zipWithT, 
