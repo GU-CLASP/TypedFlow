@@ -95,6 +95,7 @@ module TypedFlow.TF (
   -- ** Convolutions
   convolution, 
   -- ** Misc
+  stopGradient,
   cast,
   oneHot0, oneHot1,
   -- ** Testing conditions

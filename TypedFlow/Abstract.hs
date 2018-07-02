@@ -340,6 +340,11 @@ instance (KnownBits b, KnownShape s) => Floating (T s ('Typ 'Float b)) where
   atanh = unOp "tf.atanh"
   sqrt = unOp "tf.sqrt"
 
+-- | Pretend that the argument is a constant for the purposes of
+-- gradient computation
+stopGradient :: ∀ s t. KnownTyp t => KnownShape s => Tensor s t -> Tensor s t
+stopGradient = unOp "tf.stop_gradient"
+
 -- | Divide tensors, broacasting along shape @s@
 (⊘) :: forall s t. KnownBits t => KnownShape s => T s ('Typ 'Float t) -> T s ('Typ 'Float t) -> T s ('Typ 'Float t)
 (⊘) = binOp "tf.divide"
