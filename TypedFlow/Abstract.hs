@@ -262,16 +262,17 @@ constant :: forall s t w. KnownShape s => KnownBits w => KnownKind t => HostType
 constant c = T (funcall "tf.constant" [pretty c, named "shape" (showShapeType @s), named "dtype" (showTyp @('Typ t w))])
 
 
--- | Internal. Use 'reduceMeanAll', etc. instead.
-reduceAll :: forall s t. KnownTyp t => KnownShape s => String -> Tensor s t -> Tensor '[] t
+reduceAll :: forall s t. KnownTyp t => KnownShape s =>
+     (∀n s'. (KnownTyp t,KnownShape s') => Axis n s' -> T s' t -> T (Take n s' ++ Drop ('Succ n) s') t) -> Tensor s t -> Tensor '[] t
 reduceAll op x = knownProduct @s $
-   reduce op axis0 (reshapeTo ((:*) (productS (typeSShape @s)) Unit) x)
+   op axis0 (reshapeTo ((:*) (productS (typeSShape @s)) Unit) x)
 
 -- | Mean value of the input tensor.
-reduceMeanAll, reduceSumAll, reduceMaxAll :: ∀ (s :: Shape) t. KnownTyp t => KnownShape s => Tensor s t -> Tensor '[] t
-reduceMaxAll = reduceAll "max"
-reduceMeanAll = reduceAll "mean"
-reduceSumAll = reduceAll "sum"
+reduceMeanAll, reduceSumAll, reduceMaxAll, reduceMinAll :: ∀ (s :: Shape) t. KnownTyp t => KnownShape s => Tensor s t -> Tensor '[] t
+reduceMaxAll = reduceAll reduceMax
+reduceMeanAll = reduceAll reduceMean
+reduceSumAll = reduceAll reduceSum
+reduceMinAll = reduceAll reduceMin
 
 sShapeTake' :: Axis n s -> SList' f s -> SList' f (Take n s)
 sShapeTake' AxZero _s = Unit
@@ -291,10 +292,11 @@ reduce op n x = UnOp (Axis1Op ("tf.reduce_" ++ op) [] (axisInt n)) Unit (typeSSh
   where s = typeSShape @s
 
 -- | Reduce along a given dimension
-reduceSum, reduceMean, reduceMax :: ∀n s t. (KnownTyp t,KnownShape s) => Axis n s -> T s t -> T (Take n s ++ Drop ('Succ n) s) t
+reduceSum, reduceMean, reduceMax, reduceMin :: ∀n s t. (KnownTyp t,KnownShape s) => Axis n s -> T s t -> T (Take n s ++ Drop ('Succ n) s) t
 reduceSum = reduce "sum"
 reduceMean = reduce "mean"
 reduceMax = reduce "max"
+reduceMin = reduce "max"
 
 
 -- | Sum along the first dimension
