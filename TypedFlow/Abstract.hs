@@ -296,7 +296,7 @@ reduceSum, reduceMean, reduceMax, reduceMin :: ∀n s t. (KnownTyp t,KnownShape 
 reduceSum = reduce "sum"
 reduceMean = reduce "mean"
 reduceMax = reduce "max"
-reduceMin = reduce "max"
+reduceMin = reduce "min"
 
 
 -- | Sum along the first dimension
