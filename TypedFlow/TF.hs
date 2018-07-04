@@ -64,8 +64,8 @@ module TypedFlow.TF (
   -- ** Products
   (∙), (·), matmul,
   -- ** Reducers
-  reduceMeanAll, reduceSumAll, reduceMaxAll,
-  reduceSum, reduceMean, reduceMax,
+  reduceMeanAll, reduceSumAll, reduceMinAll, reduceMaxAll,
+  reduceSum, reduceMean, reduceMin, reduceMax,
   -- argmax,
   argmax0, argmax1,
   softmax0, softmax1,
