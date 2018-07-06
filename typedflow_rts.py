@@ -148,7 +148,7 @@ def train (session, model,
             print(".",end="")
             sys.stdout.flush()
             maybeTrain = [model["train"]] if isTraining else []
-            results = session.run([model["loss"],model["accuracy"]] + maybeTrain + extraVectors,
+            results = session.run([model["loss"],model["accuracy"]] + maybeTrain + extraVectors + [model["update"]],
                                   feed_dict=dict([(model["training_phase"],isTraining)] +
                                                  [(model[k],inputs[k]) for k in inputs]))
             loss = results[0]

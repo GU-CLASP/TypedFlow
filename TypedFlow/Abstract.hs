@@ -1,3 +1,4 @@
+{-# LANGUAGE InstanceSigs #-}
 {-|
 Module      : TypedFlow.Abstract
 Description : Abstract Tensor representations
@@ -82,11 +83,23 @@ protoFinished u varyNoise rec = \case
   Convolution _bs _inChans _outChans _filterShape _s x filters -> rec x && rec filters
   Pool _ _ _ _ _ x  -> rec x
 
-class Batched (f :: Shape -> Type) where
-  batchify :: forall n r. KnownNat n => KnownShape r => (forall s t. KnownTyp t => KnownShape s => T s t -> T (n:s) t) -> f r -> f (n:r)
+class Batched (f :: [Shape] -> Type) where
+  -- | Applying an expansion function to all the tensors in the given structure.
+  batchify :: forall n r. KnownNat n => All KnownShape r
+    => Proxy n -> (forall s t. KnownTyp t => KnownShape s => T s t -> T (n:s) t)
+    -> f r  -> f (Ap (FMap (Cons n)) r)
 
-broadcastGen :: KnownNat n => Batched f => KnownShape r => Unique -> Bool -> proxy n -> f r -> f (n : r)
-broadcastGen u varyNoise n = batchify (broadcast u varyNoise n)
+batchifyHTV :: forall n r ty. KnownTyp ty => KnownNat n => All KnownShape r => Proxy n -> (forall s t. KnownTyp t => KnownShape s => T s t -> T (n:s) t)
+  -> HTV ty r  -> HTV ty (Ap (FMap (Cons n)) r)
+batchifyHTV _ _ Unit = Unit
+batchifyHTV n bc (F x :* xs) = F (bc x) :* batchifyHTV n bc xs
+
+instance KnownTyp ty => Batched (HTV ty) where
+  batchify = batchifyHTV
+
+-- | Perform broadcast on all the tensors in the given structure
+broadcastGen  :: KnownNat n => Batched f => All KnownShape r => Unique -> Bool -> Proxy n -> f r -> f (Ap (FMap (Cons n)) r)
+broadcastGen u varyNoise n = batchify n (broadcast u varyNoise n)
 
 testSatEqual :: forall n m. Sat KnownNat n -> Sat KnownNat m -> Maybe (n :~: m)
 testSatEqual Sat Sat = testEqual (Proxy @n) (Proxy @m)
