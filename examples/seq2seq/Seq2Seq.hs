@@ -96,7 +96,7 @@ main = generateFile "s2s.py" (compileGen @256
                                 HolderName "tgt_in" :*
                                 HolderName "tgt_out" :*
                                 Unit)
-                               (seq2seq @15 @22))
+                               (stateless <$> seq2seq @15 @22))
 
 -- >>> main
 -- Parameters (total 889041):
