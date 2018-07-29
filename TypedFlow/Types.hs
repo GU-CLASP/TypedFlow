@@ -295,6 +295,12 @@ data NP f (xs :: [k]) where
   (:*) :: f x -> NP f xs -> NP f (x ': xs)
 type SList' = NP
 
+(.+.) = appSList
+infixr 5 .+.
+infixr 5 *:
+infixr 5 :*
+(*:) :: forall x xs f. NP f xs -> f x -> NP f (xs ++ '[x])
+xs *: x = appSList xs (x :* Unit)
 
 newtype I a = I a
 newtype K a x = K a
@@ -404,10 +410,6 @@ appSList, (.+.), happ :: NP f xs -> NP f ys -> NP f (xs ++ ys)
 happ Unit xs = xs
 happ (x :* xs) ys = x :* (happ xs ys)
 appSList = happ
-(.+.) = appSList
-
-(*:) :: forall x xs f. NP f xs -> f x -> NP f (xs ++ '[x])
-xs *: x = appSList xs ((:*) x Unit) 
 
 data Both f g x = Both (f x) (g x)
 
@@ -445,7 +447,6 @@ hsplit xys = splitApp @xs @ys (hsplit' (shapePeano @xs) xys)
 hsnoc :: NP f xs -> f x -> NP f (xs ++ '[x])
 hsnoc xs x = happ xs (x :* Unit)
 
-infixr 5 :*
 
 data Peano = Zero | Succ Peano -- TODO: type Peano = '[()] (And then SPeano = SList') ?
 

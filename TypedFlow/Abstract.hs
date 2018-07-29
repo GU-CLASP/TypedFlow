@@ -161,19 +161,19 @@ protoBroadcast :: forall n s t.
 protoBroadcast u varyNoise n@(Sat) rec finished ty s tensor
   | finished tensor = simpleBC
   | otherwise = knownTyp ty $ case tensor of
-  DirectBroadcast s0 s1 s2 s3 x -> DirectBroadcast ((:*) n s0) s1 s2 s3 (rec (s0 .+. s2) x)
+  DirectBroadcast s0 s1 s2 s3 x -> DirectBroadcast (n :* s0) s1 s2 s3 (rec (s0 .+. s2) x)
   GatherND cs es is x ix
-    | finished x -> GatherND cs es ((:*) n is) x (rec (is .+. (:*) (sListLenAsNat cs) Unit) ix)
-    | otherwise -> GatherND ((:*) n cs) es ((:*) n is) (rec (cs .+. es) x) (broadcastIndex' n (sListLenAsNat cs) is (rec (is .+. (:*) (sListLenAsNat cs) Unit) ix))
+    | finished x -> GatherND cs es (n :* is) x (rec (is *: sListLenAsNat cs) ix)
+    | otherwise -> GatherND (n :* cs) es (n :* is) (rec (cs .+. es) x) (broadcastIndex' n (sListLenAsNat cs) is (rec (is *: sListLenAsNat cs) ix))
   Noise v s0 s1 x -> if varyNoise then Noise v (n :* s0) s1 x else simpleBC
   -- When varying noise, then we extend the shape of the noise (so
   -- more stuff is sampled), otherwise we copy the noise using simple
   -- broadcasting
   Pool bs@Sat window pt numChans outSpatial x ->
-    knownSShape (zipWithMulSShapes window outSpatial .+. (:*) numChans Unit) $
-    prodAssocS n bs (productS (zipWithMulSShapes window outSpatial .+. (:*) numChans Unit)) $
-    prodAssocS n bs (productS (outSpatial .+. (:*) numChans Unit)) $
-    reshapeFrom ((:*) (satMul n bs) (outSpatial *: numChans)) $
+    knownSShape (zipWithMulSShapes window outSpatial *: numChans) $
+    prodAssocS n bs (productS (zipWithMulSShapes window outSpatial *: numChans)) $
+    prodAssocS n bs (productS (outSpatial *: numChans)) $
+    reshapeFrom (satMul n bs :* outSpatial *: numChans) $
     Pool (satMul n bs) window pt numChans outSpatial (reshapeAuto (rec typeSShape x))
   If cond x y
     | finished cond -> If cond (rec s x) (rec s y)
@@ -184,41 +184,41 @@ protoBroadcast u varyNoise n@(Sat) rec finished ty s tensor
     | u == u' -> case testSatEqual p n of
         Nothing -> UnOp (Simple1Op "panic.unbroadcast" [integer (natVal n)
                                                        ,integer (natVal p)])
-                         Unit ((:*) p s) ((:*) n s) x
+                         Unit (p :* s) (n :* s) x
         Just Refl -> x
-    | otherwise -> knownSShape s $ Unbroadcast p u' (transpose01 (rec ((:*) p s) x))
+    | otherwise -> knownSShape s $ Unbroadcast p u' (transpose01 (rec (p :* s) x))
   MatMul Unit a@Sat b@Sat c@Sat x y
      -- this optimisation is absolutely critical to implement dense
      -- layers efficiently (at least with TF 1.3). (about 10x performance increase)
-     | finished y -> inflate2 (MatMul Unit (satMul n a) b c (flatten2 (rec ((:*) a ((:*) b Unit)) x)) y)
-  MatMul s0 a b c x y -> MatMul ((:*) n s0) a b c (rec (s0 .+. ((:*) a ((:*) b Unit))) x) (rec (s0 .+. (:*) b ((:*) c Unit)) y)
-  BinOp op s0 s1 s2 s3 x y -> BinOp op ((:*) n s0) s1 s2 s3 (rec (s0 .+. s1) x) (rec (s0 .+. s2) y)
-  UnOp op s0 s1 s2 x -> UnOp op ((:*) n s0) s1 s2 (rec (s0 .+. s1) x)
+     | finished y -> inflate2 (MatMul Unit (satMul n a) b c (flatten2 (rec (a :* b :* Unit) x)) y)
+  MatMul s0 a b c x y -> MatMul (n :* s0) a b c (rec (s0 .+. a :* b :* Unit) x) (rec (s0 .+. b :* c :* Unit) y)
+  BinOp op s0 s1 s2 s3 x y -> BinOp op (n :* s0) s1 s2 s3 (rec (s0 .+. s1) x) (rec (s0 .+. s2) y)
+  UnOp op s0 s1 s2 x -> UnOp op (n :* s0) s1 s2 (rec (s0 .+. s1) x)
   Gather is Unit m s1 x ix
     -- this optimisation is important to get efficient embeddings
-    | finished x -> Gather ((:*) n is) Unit m s1 x (rec is ix)
+    | finished x -> Gather (n :* is) Unit m s1 x (rec is ix)
   Gather is s0 m s1 x ix
-    | finished ix -> Gather is ((:*) n s0) m s1 (rec (s0 .+. (:*) m s1) x) ix
+    | finished ix -> Gather is (n :* s0) m s1 (rec (s0 .+. m :* s1) x) ix
     -- otherwise, Gather is not strong enough, and we need to convert
     -- it to GatherND before broadcasting.
-    | otherwise -> appAssocS s0 ((:*) m Unit) s1 $
-                   lengthHomoS s0 ((:*) m Unit) $
-                   prodHomoS is ((:*) (natSat @1) Unit) $
+    | otherwise -> appAssocS s0 (m :* Unit) s1 $
+                   lengthHomoS s0 (m :* Unit) $
+                   prodHomoS is ((natSat @1) :* Unit) $
                    knownSShape is $
-                   rec s (GatherND ((*:) s0 m) s1 (s0 .+. is) x (broadcastIndexMany m s0 is (reshapeAuto ix)))
-  Transpose s0 t x -> Transpose ((:*) n s0) (PermSkip t) (rec s0 x)
-  ReshapeFrom s0 x -> reshapeFrom ((:*) n s0) (rec s0 x)
-  Stack s0 m s1 xs -> Stack ((:*) n s0) m s1 (fmap (rec (s0 .+. s1)) xs)
+                   rec s (GatherND (s0 *: m) s1 (s0 .+. is) x (broadcastIndexMany m s0 is (reshapeAuto ix)))
+  Transpose s0 t x -> Transpose (n :* s0) (PermSkip t) (rec s0 x)
+  ReshapeFrom s0 x -> reshapeFrom (n :* s0) (rec s0 x)
+  Stack s0 m s1 xs -> Stack (n :* s0) m s1 (fmap (rec (s0 .+. s1)) xs)
   Convolution bs@(Sat) inChans outChans filterShape s0 x filters
     | finished filters ->
-      prodAssocS n bs (productS ((*:) s0 inChans)) $
-      prodAssocS n bs (productS ((*:) s0 outChans)) $
-      knownSShape ((*:) s0 inChans)  $
-      reshapeFrom ((:*) (satMul n bs) (s0 *: outChans)) $
+      prodAssocS n bs (productS (s0 *: inChans)) $
+      prodAssocS n bs (productS (s0 *: outChans)) $
+      knownSShape (s0 *: inChans)  $
+      reshapeFrom (satMul n bs :* s0 *: outChans) $
       Convolution (satMul n bs) inChans outChans filterShape s0 (reshapeAuto (rec typeSShape x)) filters
     | otherwise -> error "broadcast on convolution filter not implemented"
  where simpleBC :: Tensor (n ': s) t
-       simpleBC = appRUnit @Nat @s $ DirectBroadcast Unit ((:*) n Unit) s Unit tensor
+       simpleBC = appRUnit @Nat @s $ DirectBroadcast Unit (n :* Unit) s Unit tensor
 
 testEqual :: KnownNat m => KnownNat n => Proxy m -> Proxy n -> Maybe (m :~: n)
 testEqual m n = if natVal m == natVal n then Just (unsafeCoerce Refl) else Nothing
