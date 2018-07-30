@@ -48,6 +48,7 @@ import Data.Type.Equality
 import Unsafe.Coerce
 import Data.Kind (Type,)
 import TypedFlow.Types (T(..))
+import TypedFlow.Types.Proofs
 import Text.PrettyPrint.Compact hiding (All,Last,Product,Sum)
 import TypedFlow.Memo
 
@@ -149,6 +150,10 @@ broadcastIndexMany n ((:*) m@Sat cs) is x =
   broadcastIndexMany n cs is x
   -- is
 
+--  Product (filterSpatialShape ++ '[inChannels, outChannels * n])
+-- Product ((filterSpatialShape ++ '[inChannels, outChannels]) ++ '[n])
+
+
 protoBroadcast :: forall n s t.
   Unique -> Bool
   -> Sat KnownNat n
@@ -214,21 +219,22 @@ protoBroadcast u varyNoise n@(Sat) rec finished ty s tensor
       prodAssocS n bs (productS (s0 *: inChans)) $
       prodAssocS n bs (productS (s0 *: outChans)) $
       knownSShape (s0 *: inChans)  $
-      reshapeFrom (satMul n bs :* s0 *: outChans) $
+      reshapeFrom (satMul n bs :* s0 *: outChans) $ 
       Convolution (satMul n bs) inChans outChans filterShape s0 (reshapeAuto (rec typeSShape x)) filters
-    | otherwise -> error "broadcast on convolution filter not implemented"
+    | finished x ->
+      knownSShape (filterShape .+. inChans :* outChans :* Unit) $
+      knownSShape (bs :* s0 .+. outChans :* Unit) $
+      transposeN' $
+      reshapeProven (ANat bs !:* AShape s0 *:! (ANat outChans :*: ANat n))
+                    ((ANat bs !:* AShape s0 *:! ANat outChans) *:! ANat n) $
+      Convolution bs inChans (outChans `satMul` n) filterShape s0 x $
+      reshapeProven ((AShape filterShape :++: (ANat inChans !:* Single (ANat outChans))) *:! ANat n)
+                    (AShape filterShape :++: ANat inChans !:* Single (ANat outChans :*: ANat n)) $
+      transposeN $
+      rec typeSShape filters
+    | otherwise -> error "broadcast on both convolution filter and data not implemented"
  where simpleBC :: Tensor (n ': s) t
        simpleBC = appRUnit @Nat @s $ DirectBroadcast Unit (n :* Unit) s Unit tensor
-
-testEqual :: KnownNat m => KnownNat n => Proxy m -> Proxy n -> Maybe (m :~: n)
-testEqual m n = if natVal m == natVal n then Just (unsafeCoerce Refl) else Nothing
-
-prodAssocS :: forall (x :: Nat) (y :: Nat) (z :: Nat) k (proxy :: Nat -> Type) . proxy x -> proxy y -> proxy z -> (((x * y) * z) ~ (x * (y * z)) => k) -> k
-prodAssocS _ _ _ = prodAssoc @x @y @z
-
-productS :: forall s. SShape s -> Sat KnownNat (Product s)
-productS s = knownSShape s $ knownProduct @s $ Sat
-
 
 inversePerm :: Permutation a b -> Permutation b a
 inversePerm PermId = PermId
@@ -241,6 +247,10 @@ atShape _ x = x
 
 reshapeAuto :: forall s s0 t. KnownShape s0 => Product s ~ Product s0 => T s0 t -> T s t
 reshapeAuto = reshapeFrom typeSShape
+
+reshapeProven :: forall s s0 t n. ShapeX s0 n -> ShapeX s n -> T s0 t -> T s t
+reshapeProven s1 s2 = case decideProductEq s1 s2 of
+                        Refl -> knownSShape (exprSShape s1) $ reshapeAuto
 
 reshapeTo :: forall s s0 t proxy. KnownShape s0=> Product s ~ Product s0 => proxy s -> T s0 t -> T s t
 reshapeTo _ = reshapeAuto

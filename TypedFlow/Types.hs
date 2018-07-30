@@ -109,31 +109,6 @@ succPos k = case succPos' @n  of
   Refl -> k
 
 
-plusComm' :: forall x y. (x + y) :~: (y + x)
-plusComm' = unsafeCoerce Refl
-
-plusComm :: forall x y k. ((x + y) ~ (y + x) => k) -> k
-plusComm k = case plusComm' @x @y of
-  Refl -> k
-
-plusAssoc' :: forall x y z. (x + y) + z :~: x + (y + z)
-plusAssoc' = unsafeCoerce Refl
-
-plusAssoc :: forall x y z k. (((x + y) + z) ~ (x + (y + z)) => k) -> k
-plusAssoc k = case plusAssoc' @x @y @z of
-  Refl -> k
-
-plusAssocS :: forall x y z k px py pz. px x -> py y -> pz z -> (((x + y) + z) ~ (x + (y + z)) => k) -> k
-plusAssocS _ _ _ k = case plusAssoc' @x @y @z of
-  Refl -> k
-
-prodAssoc' :: forall x y z. (x * y) * z :~: x * (y * z)
-prodAssoc' = unsafeCoerce Refl
-
-prodAssoc :: forall (x::Nat) (y::Nat) (z::Nat) k. (((x * y) * z) ~ (x * (y * z)) => k) -> k
-prodAssoc k = case prodAssoc' @x @y @z of
-  Refl -> k
-
 prodHomo' ::  forall x y. Product (x ++ y) :~: Product x * Product y
 prodHomo' = unsafeCoerce Refl
 
