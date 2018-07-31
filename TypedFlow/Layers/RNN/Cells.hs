@@ -32,6 +32,7 @@ module TypedFlow.Layers.RNN.Cells (
 import TypedFlow.Layers.RNN.Base
 import TypedFlow.TF
 import TypedFlow.Types
+import TypedFlow.Types.Proofs
 import GHC.TypeLits
 import TypedFlow.Layers.Core (DenseP(..),(#))
 import Prelude hiding (RealFrac(..))

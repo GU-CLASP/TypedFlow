@@ -42,7 +42,8 @@ library
        TypedFlow.Models.Topic,
        TypedFlow.Python,
        TypedFlow.TF,
-       TypedFlow.Types
+       TypedFlow.Types,
+       TypedFlow.Types.Proofs
 
   other-modules:
         TypedFlow.Memo

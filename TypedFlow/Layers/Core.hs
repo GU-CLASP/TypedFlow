@@ -47,6 +47,7 @@ import Prelude hiding (RealFrac(..))
 import GHC.TypeLits
 import TypedFlow.TF
 import TypedFlow.Types
+import TypedFlow.Types.Proofs
 import TypedFlow.Abstract
 import Control.Monad.State (gets)
 import Data.Monoid ((<>))

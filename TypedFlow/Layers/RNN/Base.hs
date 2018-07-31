@@ -61,6 +61,7 @@ import Prelude hiding (tanh,Num(..),Floating(..),floor)
 import GHC.TypeLits
 import TypedFlow.TF
 import TypedFlow.Types
+import TypedFlow.Types.Proofs
 -- import Data.Type.Equality
 -- import Data.Kind (Type,Constraint)
 
@@ -75,7 +76,7 @@ instance Functor (Component t states) where
 
 
 mapC :: (a -> b) -> Component t s a -> Component t s b
-mapC f c = C $ \s -> 
+mapC f c = C $ \s ->
   let (s',x) = runC c s
   in (s', f x)
 
@@ -188,7 +189,7 @@ bothRnnCells l1 l2 x  =
 withBypass :: forall x y t b s0. KnownNat x => KnownNat y => KnownLen s0
   => KnownTyp t
   => RnnCell b s0 (T '[x] t) (T '[y] t) -> RnnCell b s0 (T '[x] t) (T '[x+y] t)
-withBypass cell x = appEmpty @s0 $
+withBypass cell x = appRUnit @s0 $
   cell x `bindC` \y ->
   returnC (concat0 x y)
 

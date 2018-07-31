@@ -50,6 +50,7 @@ import Prelude hiding (RealFrac(..))
 import GHC.TypeLits
 import TypedFlow.TF
 import TypedFlow.Types
+import TypedFlow.Types.Proofs (appRUnit)
 import Data.Monoid ((<>))
 import TypedFlow.Layers.RNN.Base
 
@@ -91,7 +92,7 @@ attentiveWithFeedback ::forall attSize cellSize inputSize w ss. KnownNat inputSi
   AttentionFunction w cellSize attSize ->
   RnnCell w ss                   (T '[inputSize+attSize] (Flt w)) (T '[cellSize] (Flt w)) ->
   RnnCell w ('[attSize] ': ss)   (T '[inputSize        ] (Flt w)) (T '[attSize] (Flt w))
-attentiveWithFeedback attn cell = appEmpty @ss $ withFeedback (cell .-. timeDistribute attn)
+attentiveWithFeedback attn cell = appRUnit @ss $ withFeedback (cell .-. timeDistribute attn)
 
 
 -- -- | LSTM for an attention model. The result of attention is fed to the next step.

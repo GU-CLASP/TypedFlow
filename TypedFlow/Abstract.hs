@@ -45,7 +45,6 @@ import GHC.TypeLits
 import Data.Proxy
 import TypedFlow.Types hiding (T)
 import Data.Type.Equality
-import Unsafe.Coerce
 import Data.Kind (Type,)
 import TypedFlow.Types (T(..))
 import TypedFlow.Types.Proofs
@@ -128,7 +127,7 @@ broadcastIndex' n@Sat cr is ix = concatT' ((:*) n is) (natSat @1) cr Unit nIndex
         nIndex = DirectBroadcast Unit Unit ((:*) n Unit) (is .+. (:*) (natSat @1) Unit) range
 
 directBroadcast0 :: forall n s t. KnownShape s => KnownNat n => T s t -> T (n:s) t
-directBroadcast0 = appEmpty @s $ DirectBroadcast Unit ((:*) (natSat @n) Unit) (typeSShape @s) Unit
+directBroadcast0 = appRUnit @s $ DirectBroadcast Unit ((:*) (natSat @n) Unit) (typeSShape @s) Unit
 
 broadcastIndexMany :: forall n containerShape indexShape w.
   KnownBits w =>
@@ -234,7 +233,7 @@ protoBroadcast u varyNoise n@(Sat) rec finished ty s tensor
       rec typeSShape filters
     | otherwise -> error "broadcast on both convolution filter and data not implemented"
  where simpleBC :: Tensor (n ': s) t
-       simpleBC = appRUnit @Nat @s $ DirectBroadcast Unit (n :* Unit) s Unit tensor
+       simpleBC = appRUnit @s $ DirectBroadcast Unit (n :* Unit) s Unit tensor
 
 inversePerm :: Permutation a b -> Permutation b a
 inversePerm PermId = PermId
@@ -566,7 +565,7 @@ stack1 = stackT @'[m]
 
 -- | Concatenate @n@ tensors along the last dimension
 stackN :: ∀ s (n::Nat) t. KnownNat n => KnownShape s => V n (T s t) -> Tensor (s ++ '[n]) t
-stackN = appRUnit @Nat @s $
+stackN = appRUnit @s $
          stackT @s @'[]
 
 -- | Split a tensors into @n@ tensors along the first dimension

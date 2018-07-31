@@ -35,6 +35,7 @@ import Data.Proxy
 import System.IO.Unsafe
 import Data.Unique
 import TypedFlow.Types
+import TypedFlow.Types.Proofs (knownAppend, knownAppendS)
 import TypedFlow.Abstract (Batched(..),broadcastGen)
 import TypedFlow.Python
 import TypedFlow.TF
@@ -139,7 +140,7 @@ instance (KnownTyp t, KnownShape p) => Batched (StateAndOutput t p) where
   batchify n f (StateAndOutput s ModelOutput{..} xs)
     = StateAndOutput (n :* s)
       ModelOutput{modelLoss = f modelLoss
-                 ,modelY = knownAppend' @p s (f modelY)
+                 ,modelY = knownAppendS s (Proxy @p) (f modelY)
                  ,modelCorrect = f modelCorrect}
       (batchify n f xs)
 
