@@ -420,7 +420,7 @@ floor = unOp "tf.floor"
 slice :: forall i j s t n. KnownTyp t => KnownShape s => KnownNat j => KnownNat i => (i <= j, j <= At n s, KnownLen s) =>
          Axis n s -> Tensor s t -> Tensor (Take n s ++ ((j-i) ': Drop ('Succ n) s)) t
 slice n = UnOp (SliceOp (natVal (Proxy @i)) (natVal (Proxy @j))) Unit (typeSShape @s)
-             (sShapeTake' n s .+. (:*) (Sat @Nat @KnownNat @(j-i)) (sShapeDropSucc n s))
+             (sShapeTake' n s .+. (:*) (natSat @(j-i)) (sShapeDropSucc n s))
              -- (typeSShape @(Take n s ++ ((j-i) ': Drop ('Succ n) s)))
         where s = typeSShape @s
 
@@ -593,7 +593,7 @@ transposeN  = Transpose typeSShape (permN (typeSList @s))
 
 -- | Transposition. See the type for the permutation of dimensions.
 transposeN' :: ∀ s n t. KnownNat n => KnownShape s => T (s ++ '[n]) t -> T (n ': s) t
-transposeN' = Transpose (typeSShape @s *: (Sat @Nat @KnownNat @n)) (inversePerm (permN (typeSList @s)))
+transposeN' = Transpose (typeSShape @s *: (natSat @n)) (inversePerm (permN (typeSList @s)))
 
 -- | Transposition. See the type for the permutation of dimensions.
 transpose01 :: ∀ s m n t. KnownNat n => KnownNat m => KnownShape s => T (m ': n ': s) t -> T (n ': m ': s) t

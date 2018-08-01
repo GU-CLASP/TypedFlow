@@ -30,12 +30,10 @@ module TypedFlow.Types where
 
 import Text.PrettyPrint.Compact hiding (All,Last,Product,Sum)
 import GHC.TypeLits
-import Unsafe.Coerce
 import Data.Proxy
 import Control.Monad.State
 import Data.Char (toLower)
 import Data.Kind (Constraint)
-import Data.Type.Equality
 import TypedFlow.Memo
 import qualified Data.Map as M
 import Data.Unique
@@ -50,7 +48,7 @@ proxySat :: forall (b::k) (a :: k -> Constraint) proxy. a b => proxy b -> Sat a 
 proxySat _ = Sat
 
 natSat :: forall n. KnownNat n => Sat KnownNat n
-natSat = Sat @Nat @KnownNat
+natSat = Sat
 
 type DOC = Doc ()
 
