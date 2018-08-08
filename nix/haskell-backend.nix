@@ -59,5 +59,5 @@ let # pkgsSource = fetchTarball "https://github.com/NixOS/nixpkgs/archive/7098bc
 in
   pkgs.stdenv.mkDerivation {
     name = "tensorflow-env";
-    buildInputs = [(pkgs.haskellPackages.ghcWithPackages (hps: with hps; [ tensorflow-ops random HUnit ]))];
+    buildInputs = [(pkgs.haskellPackages.ghcWithPackages (hps: with hps; [ tensorflow-ops tensorflow-core-ops tensorflow-opgen tensorflow base containers ghc-typelits-knownnat mtl pretty-compact ]))];
   }
