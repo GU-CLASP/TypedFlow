@@ -289,7 +289,7 @@ snocT0 xs x = concat0 xs (expandDim0 x)
 -- matvecmulBatch m v = squeeze0 (matmul m (expandDim0 v))
 
 -- | Product of a matrix of weights with a vector.
-(∙) :: (KnownNat cols, KnownNat rows, KnownTyp t) => Tensor '[cols, rows] t -> Tensor '[cols] t -> Tensor '[rows] t
+(∙) :: (TFNumeric t, KnownNat cols, KnownNat rows, KnownTyp t) => Tensor '[cols, rows] t -> Tensor '[cols] t -> Tensor '[rows] t
 m ∙ v = squeeze0 (matmul (expandDim0 v) m)
 infixl 7 ∙
 

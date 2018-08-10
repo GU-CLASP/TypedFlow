@@ -280,9 +280,8 @@ range = T (func "tf.range" [] [("start",integer 0),
                                ("dtype",showTyp @('Typ 'Int w))])
 
 -- | Constant
-constant :: forall s t w. KnownShape s => KnownBits w => KnownKind t => HostType t -> T s ('Typ t w)
-constant c = T (funcall "tf.constant" [pretty c, named "shape" (showShapeType @s), named "dtype" (showTyp @('Typ t w))])
-
+constant :: forall s t. KnownShape s => KnownTyp t => HaskType t -> T s t
+constant c = T (funcall "tf.constant" [prettyKnown @t c, named "shape" (showShapeType @s), named "dtype" (showTyp @t)])
 
 reduceAll :: forall s t. KnownTyp t => KnownShape s =>
      (∀n s'. (KnownTyp t,KnownShape s') => Axis n s' -> T s' t -> T (Take n s' ++ Drop ('Succ n) s') t) -> Tensor s t -> Tensor '[] t
@@ -327,42 +326,46 @@ reduceSum0 = reduceSum axis0
 
 
 
-addN :: ∀ s t. KnownTyp t => KnownShape s => [Tensor s t] -> Tensor s t
+addN :: ∀ s t. TFNumeric t => KnownShape s => [Tensor s t] -> Tensor s t
 addN [] = zeros
 addN ts = foldr1 (+) ts
 
-instance (KnownTyp t, KnownShape s) => Num (T s t) where
+instance (TFNumeric t, KnownShape s) => Num (T s t) where
   (+) = (⊕)
   (*) = (⊙)
   signum = unOp "tf.sign"
   fromInteger x = case typeSTyp @t of
-    STyp SInt b -> knownBits b $ constant (fromIntegral x :: Int)
-    STyp SBool b -> knownBits b $ constant (x /= 0)
-    STyp SFloat b -> knownBits b $ constant (fromIntegral x :: Float)
+    STyp SInt   SB32 _ -> constant (fromIntegral x)
+    STyp SInt   SB64 _ -> constant (fromIntegral x)
+    STyp SBool  _ _ -> constant (x /= 0)
+    STyp SFloat SB32 _ -> constant (fromIntegral x)
+    STyp SFloat SB64 _ -> constant (fromIntegral x)
   abs = unOp "tf.abs"
   (-) = (⊝)
   negate = unOp "-"
 
 instance (KnownBits b, KnownShape s) => Fractional (T s ('Typ 'Float b)) where
-  fromRational x = knownBits (bitsVal @b) $ constant (fromRational x :: Float)
+  fromRational x = knownFractional @b (constant $ fromRational x)
   (/) = (⊘)
 
 instance (KnownBits b, KnownShape s) => Floating (T s ('Typ 'Float b)) where
-  pi = constant pi
-  exp = unOp "tf.exp"
-  log = unOp "tf.log"
-  sin = unOp "tf.sin"
-  cos = unOp "tf.cos"
-  asin = unOp "tf.asin"
-  acos = unOp "tf.acos"
-  sinh = unOp "tf.sinh"
-  cosh = unOp "tf.cosh"
+  pi    = constant $ case bitsVal @b of
+    SB32 -> pi
+    SB64 -> pi
+  exp   = unOp "tf.exp"
+  log   = unOp "tf.log"
+  sin   = unOp "tf.sin"
+  cos   = unOp "tf.cos"
+  asin  = unOp "tf.asin"
+  acos  = unOp "tf.acos"
+  sinh  = unOp "tf.sinh"
+  cosh  = unOp "tf.cosh"
   asinh = unOp "tf.asinh"
   acosh = unOp "tf.acosh"
-  tanh = unOp "tf.tanh"
-  atan = unOp "tf.atan"
+  tanh  = unOp "tf.tanh"
+  atan  = unOp "tf.atan"
   atanh = unOp "tf.atanh"
-  sqrt = unOp "tf.sqrt"
+  sqrt  = unOp "tf.sqrt"
 
 -- | Pretend that the argument is a constant for the purposes of
 -- gradient computation
@@ -396,7 +399,7 @@ infixl 6 ⊕,⊝
 
 
 -- | Matrix multiplication (note that shape @s@ is preserved)
-matmul :: forall m n o t. KnownNat m => KnownNat o => KnownNat n => KnownTyp t => T '[n,o] t -> T '[o,m] t -> T '[n,m] t
+matmul :: forall m n o t. TFNumeric t => KnownNat m => KnownNat o => KnownNat n => KnownTyp t => T '[n,o] t -> T '[o,m] t -> T '[n,m] t
 matmul = MatMul Unit Sat Sat Sat
 
 unOp :: forall s t. KnownShape s => KnownTyp t => String -> T s t -> T s t
@@ -666,7 +669,7 @@ convolution x filters = knownAppend @s @'[outputChannels] $
              (expandDim0 x)
              filters)
 
-softmaxInternal :: KnownBits w => SShape s0 -> SShape s1 -> T (s0 ++ s1) ('Typ 'Float w) -> T (s0 ++ s1) ('Typ 'Float w)
+softmaxInternal :: forall s0 s1 w. KnownBits w => SShape s0 -> SShape s1 -> T (s0 ++ s1) ('Typ 'Float w) -> T (s0 ++ s1) ('Typ 'Float w)
 softmaxInternal s0 s1 = UnOp (Axis1Op "tf.nn.softmax" [] (sListLength s0 - 1)) Unit (s0 .+. s1) (s0 .+. s1)
 
 -- | Softmax along the first dimension
@@ -758,7 +761,7 @@ noise d = do
   return $ Noise noiseId Unit typeSShape d
 
 -- | Clip a tensor
-clipByValue :: KnownShape s => KnownBits t => Float -> Float -> T s (Flt t) -> T s (Flt t)
+clipByValue :: forall s t. KnownShape s => KnownBits t => Float -> Float -> T s (Flt t) -> T s (Flt t)
 clipByValue lo hi = UnOp (Simple1Op "tf.clip_by_value" [float lo,float hi]) Unit typeSShape typeSShape
 
 -- | (where_ c x y)[i] = if c[i] then x[i] else y[i]

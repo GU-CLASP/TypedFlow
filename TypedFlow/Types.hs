@@ -24,6 +24,7 @@
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE UndecidableSuperClasses #-}
 {-# LANGUAGE UnicodeSyntax #-}
+{-# LANGUAGE LambdaCase #-}
 {-# OPTIONS_GHC -fplugin GHC.TypeLits.KnownNat.Solver #-}
 
 module TypedFlow.Types where
@@ -32,11 +33,12 @@ import Text.PrettyPrint.Compact hiding (All,Last,Product,Sum)
 import GHC.TypeLits
 import Data.Proxy
 import Control.Monad.State
-import Data.Char (toLower)
 import Data.Kind (Constraint)
 import TypedFlow.Memo
 import qualified Data.Map as M
 import Data.Unique
+import qualified Data.Int as Hask
+import Data.Type.Equality
 
 data Sat (a :: k -> Constraint) (b::k) where
   Sat :: forall b a. a b => Sat a b
@@ -143,7 +145,6 @@ knownAll (Sat :* xs) k = knownAll xs $ k
 allKnown :: forall constraint s proxy. All constraint s => SList' proxy s -> SList' (Sat constraint) s
 allKnown Unit = Unit
 allKnown (_ :* xs) = Sat :* allKnown xs
-
 
 class Fun (c :: k -> Constraint)  where
   type Ap c (t :: k) :: l
@@ -337,9 +338,16 @@ data NBits = B32 | B64 | B1 deriving (Show,Eq,Ord)
 data SNBits s where
   SB32 :: SNBits 'B32
   SB64 :: SNBits 'B64
-  SB1 :: SNBits 'B1
 
 data Typ = Typ Kind NBits deriving (Eq,Ord)
+type family TypKind (t :: Typ) where TypKind ('Typ k b)  = k
+type family TypBits (t :: Typ) where TypBits ('Typ k b)  = b
+
+type TFNumeric t = (NumericKind (TypKind t), KnownBits (TypBits t), t ~ 'Typ (TypKind t) (TypBits t))
+
+class KnownKind t => NumericKind t where
+instance NumericKind 'Float
+instance NumericKind 'Int
 
 kVal :: SKind t1 -> Kind
 kVal SFloat = Float
@@ -350,7 +358,6 @@ instance Eq (SKind t) where x == y = kVal x == kVal y
 instance Ord (SKind t) where compare x y = compare (kVal x) (kVal y)
 
 nbitsVal :: SNBits w -> NBits
-nbitsVal SB1 = B1
 nbitsVal SB64 = B64
 nbitsVal SB32 = B32
 
@@ -358,25 +365,22 @@ instance Eq (SNBits t) where x == y = nbitsVal x == nbitsVal y
 instance Ord (SNBits t) where compare x y = compare (nbitsVal x) (nbitsVal y)
 
 sTypTyp :: STyp t1 -> Typ
-sTypTyp (STyp k b) = Typ (kVal k) (nbitsVal b)
+sTypTyp (STyp k b Refl) = Typ (kVal k) (nbitsVal b)
 
 instance Eq (STyp t) where x == y = sTypTyp x == sTypTyp y
 instance Ord (STyp t) where compare x y = compare (sTypTyp x) (sTypTyp y)
 
 data STyp t where
-  STyp :: SKind k -> SNBits b -> STyp ('Typ k b)
+  STyp :: SKind (TypKind t) -> SNBits (TypBits t) -> (t :~: 'Typ (TypKind t) (TypBits t)) -> STyp t
+
 
 
 type Flt t = 'Typ 'Float t
 type Float32 = 'Typ 'Float 'B32
 type Int32 = 'Typ 'Int 'B32
 type Int64 = 'Typ 'Int 'B64
-type TFBool = 'Typ 'Bool 'B1
+type TFBool = 'Typ 'Bool 'B32
 type Scalar t = T '[] t
-
-instance Show Typ where
-  show (Typ Bool _)= "tf.bool"
-  show (Typ k l) = "tf." ++ map toLower (show k) ++ drop 1 (show l)
 
 type Shape = [Nat]
 
@@ -385,24 +389,31 @@ class (KnownLen s, All KnownNat s) => KnownShape s where
 instance KnownShape '[]
 instance (KnownNat x, KnownShape xs) => KnownShape (x ': xs)
 
-class KnownTyp t where
-  typeSTyp :: STyp t
+type KnownTyp t = (KnownBits (TypBits t), KnownKind (TypKind t), t ~ 'Typ (TypKind t) (TypBits t))
+
+typeSTyp :: forall t. KnownTyp t => STyp t
+typeSTyp = STyp (kindVal @(TypKind t)) (bitsVal @(TypBits t)) Refl
+
+type family HaskType t where
+  HaskType Float32 = Float
+  HaskType ('Typ 'Float 'B64) = Double
+  HaskType ('Typ 'Int 'B64) = Hask.Int64
+  HaskType ('Typ 'Int 'B32) = Hask.Int32
+  HaskType ('Typ 'Bool w) = Bool
 
 class KnownBits t where
   bitsVal :: SNBits t
 
-instance KnownBits 'B1 where bitsVal = SB1
 instance KnownBits 'B32 where bitsVal = SB32
 instance KnownBits 'B64 where bitsVal = SB64
 
-instance (KnownBits l, KnownKind k) => KnownTyp ('Typ k l) where
-  typeSTyp = STyp (kindVal @k) (bitsVal @l)
-
 typVal :: forall t. KnownTyp t => Typ
-typVal = sTypTyp (typeSTyp @t)
+typVal = Typ (kVal k) (nbitsVal b)
+  where k = kindVal @(TypKind t)
+        b = bitsVal @(TypBits t)
+
 
 knownBits :: SNBits t -> (KnownBits t => k) -> k
-knownBits SB1 k = k
 knownBits SB32 k = k
 knownBits SB64 k = k
 
@@ -411,28 +422,43 @@ knownKind SFloat k = k
 knownKind SInt k = k
 knownKind SBool k = k
 
+numericKnown :: forall t k. TFNumeric t => (KnownTyp t => k) -> k
+numericKnown k = case kindVal @(TypKind t) of
+  SFloat -> k
+  SBool -> k
+  SInt -> k
+
 knownTyp :: STyp t -> (KnownTyp t => k) -> k
-knownTyp (STyp k b) r = knownBits b $ knownKind k $ r
+knownTyp (STyp k b Refl) r = knownKind k $ knownBits b r
+
+knownFractional :: forall w k. KnownBits w => (Fractional (HaskType ('Typ 'Float w)) => k) -> k
+knownFractional k = case bitsVal @w of
+    SB32 -> k
+    SB64 -> k
+
+prettyKnown :: forall t. KnownTyp t => HaskType t -> DOC
+prettyKnown = case kindVal @(TypKind t) of
+  SInt -> case bitsVal @(TypBits t) of
+    SB32 -> int . fromIntegral
+    SB64 -> int . fromIntegral
+  SBool -> bool
+  SFloat -> case bitsVal @(TypBits t) of
+    SB32 -> float
+    SB64 -> double
 
 class Pretty t where
   pretty :: t -> DOC
 
 instance Pretty Bool where pretty = bool
 instance Pretty Float where pretty = float
-instance Pretty Int where pretty = int
-class (Pretty (HostType t)) => KnownKind t where
-  kindVal :: SKind t
-  type HostType t
+instance Pretty Double where pretty = double
+instance Pretty Hask.Int64 where pretty = int . fromIntegral
+instance Pretty Hask.Int32 where pretty = int . fromIntegral
 
-instance KnownKind 'Bool where
-  kindVal = SBool
-  type HostType 'Bool = Bool
-instance KnownKind 'Float where
-  kindVal = SFloat
-  type HostType 'Float = Float
-instance KnownKind 'Int where
-  kindVal = SInt
-  type HostType 'Int = Int
+class KnownKind t where kindVal :: SKind t
+instance KnownKind 'Bool where kindVal = SBool
+instance KnownKind 'Float where kindVal = SFloat
+instance KnownKind 'Int where kindVal = SInt
 
 type SList = NP Proxy
 
@@ -598,12 +624,12 @@ data T (s :: Shape) (t :: Typ) where
   ReshapeFrom :: Product s ~ Product s0 => SShape s0 -> T s0 t -> T s t
   Transpose :: SShape s0 -> Permutation s0 s -> T s0 t -> T s t
   Stack :: SShape s0 -> Sat KnownNat m -> SShape s1 -> V m (T (s0 ++ s1) t) -> T (s0 ++ (m ': s1)) t
-  Gather :: KnownBits w => SShape indexShape -> SShape s0 -> Sat KnownNat m -> SShape s1
+  Gather :: KnownTyp ('Typ 'Int w) => SShape indexShape -> SShape s0 -> Sat KnownNat m -> SShape s1
     -> T (s0 ++ (m ': s1)) t -> T indexShape ('Typ 'Int w) -> T (s0 ++ indexShape ++ s1) t
-  GatherND :: KnownBits w => SShape containerShape -> SShape elementShape -> SShape indexShape
+  GatherND :: KnownTyp ('Typ 'Int w) => SShape containerShape -> SShape elementShape -> SShape indexShape
     -> T (containerShape ++ elementShape) t -> IndexTensor indexShape containerShape w -> T (indexShape ++ elementShape) t
 
-  MatMul :: forall s m n o t. SShape s -> Sat KnownNat n -> Sat KnownNat  o -> Sat KnownNat m -> T (s ++ '[n,o]) t -> T (s ++ [o,m]) t -> T (s ++ [n,m]) t
+  MatMul :: forall s m n o t. TFNumeric t => SShape s -> Sat KnownNat n -> Sat KnownNat  o -> Sat KnownNat m -> T (s ++ '[n,o]) t -> T (s ++ [o,m]) t -> T (s ++ [n,m]) t
   Where :: T s TFBool  -> T s t -> T s t -> T s t
   If :: Scalar TFBool -> T s t -> T s t -> T s t
   Convolution :: Sat KnownNat bs -> Sat KnownNat inChannels -> Sat KnownNat outChannels -> SShape filterSpatialShape -> SShape s

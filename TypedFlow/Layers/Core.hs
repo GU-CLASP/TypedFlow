@@ -110,7 +110,7 @@ mkMask (DropProb dropProb) = do
   isTraining <- gets genTrainingPlaceholder
   r <- noise $ UniformD keepProb (1 + keepProb)
   return $ if_ isTraining
-               (floor r ⊘ constant keepProb)
+               (floor r ⊘ constant (knownFractional @t $ realToFrac keepProb))
                ones
 
 newtype EndoTensor t s = EndoTensor (Tensor s t -> Tensor s t)
@@ -143,7 +143,7 @@ instance (KnownNat outChannels,KnownNat inChannels, KnownShape filterSpatialShap
                        prodAssoc @(Product filterSpatialShape) @inChannels @outChannels $
                        knownAppend @filterSpatialShape @'[inChannels,outChannels] $
                        knownProduct @filterSpatialShape $
-                       ConvP <$> (reshape <$> i) <*> pure (constant 0.1)
+                       ConvP <$> (reshape <$> i) <*> pure (knownFractional @t (constant 0.1))
     where i :: Gen (T '[Product filterSpatialShape*inChannels,outChannels] (Flt t))
           i = knownProduct @filterSpatialShape glorotUniform
 

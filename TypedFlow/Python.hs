@@ -38,6 +38,7 @@ Stability   : experimental
 
 module TypedFlow.Python where
 
+import Data.Char (toLower)
 import Data.Proxy
 import Data.List (genericReplicate)
 import GHC.TypeLits
@@ -318,4 +319,8 @@ generatePure' rec sR = knownSShape sR $ \case
    where typ' = text $ (show $ case typ of MaxPool -> "MAX"; AvgPool -> "AVG" :: String)
  -- where rec :: forall s' t'. KnownTyp t' => SShape s' -> T s' t' -> DOC
  --       rec = generatePure' 
+
+instance Show Typ where
+  show (Typ Bool _) = "tf.bool"
+  show (Typ k l) = "tf." ++ map toLower (show k) ++ drop 1 (show l)
 
