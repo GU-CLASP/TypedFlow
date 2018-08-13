@@ -70,6 +70,8 @@ import TypedFlow.Types.Proofs
 -- pattern. This is not a simple monad, because the indexing over
 -- states is non-uniform; see 'BindC'.
 newtype Component t states a = C {runC :: HTV (Flt t) states -> (HTV (Flt t) states , a)}
+-- Note: states are tensors only, because we need to index into them
+-- in the time dimension in iterateWithCull
 
 instance Functor (Component t states) where
   fmap = mapC
