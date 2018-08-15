@@ -36,7 +36,7 @@ import System.IO.Unsafe
 import Data.Unique
 import TypedFlow.Types
 import TypedFlow.Types.Proofs (knownAppend, knownAppendS)
-import TypedFlow.Abstract (Batched(..),broadcastGen)
+import TypedFlow.Abstract (Batched(..),broadcastGen,defaultT)
 import TypedFlow.Python
 import TypedFlow.TF
 import Prelude hiding (RealFrac(..))
@@ -221,7 +221,7 @@ compileAlreadyBatched Options{..} model =
     peekAtAny "batch_size" (showDim @ bs)
     trainingPhasePlaceholder <- placeholder "training_phase"
     modify $ \GState{..} -> GState{genTrainingPlaceholder = trainingPhasePlaceholder,..}
-    (stateVars :: HTV ty stateShapes) <- travTensor (persistent False) "state" (repeatT zeros)
+    (stateVars :: HTV ty stateShapes) <- travTensor (persistent False) "state" (repeatT defaultT)
     (StateAndOutput _ ModelOutput{..} newStates) <- model stateVars
     updates <- updateStates @stateShapes stateVars newStates
     peekAtMany "update" updates

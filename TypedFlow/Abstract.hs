@@ -259,8 +259,14 @@ reshapeFrom _ (ReshapeFrom s1 x) = ReshapeFrom s1 x -- avoid reshaping over and 
 reshapeFrom s0 x = ReshapeFrom s0 x
 
 -- | Zeros
-zeros :: ∀ t (shape :: Shape). KnownShape shape => KnownTyp t => (T shape t)
+zeros :: ∀ t (shape :: Shape). KnownNumeric t => KnownShape shape => (T shape t)
 zeros = T (funcall "tf.zeros" [showShapeType @shape, named "dtype" (showTyp @t)])
+
+defaultT :: ∀ t (shape :: Shape). KnownShape shape => KnownTyp t => (T shape t)
+defaultT = case typeSTyp @t of
+                 STyp SFloat _ _ -> zeros
+                 STyp SInt _ _ -> zeros
+                 STyp SBool _ _ -> constant False
 
 -- | Ones
 ones :: ∀ t (shape :: Shape). KnownShape shape => KnownTyp t => (T shape t)
@@ -280,8 +286,11 @@ range = T (func "tf.range" [] [("start",integer 0),
                                ("dtype",showTyp @('Typ 'Int w))])
 
 -- | Constant
-constant :: forall s t. KnownShape s => KnownTyp t => HaskType t -> T s t
-constant c = T (funcall "tf.constant" [prettyKnown @t c, named "shape" (showShapeType @s), named "dtype" (showTyp @t)])
+constant :: forall s t w. KnownShape s => KnownBits w => KnownKind t => HaskType ('Typ t w) -> T s ('Typ t w)
+constant c = appRUnit @s $ broadcastTT @s (scalar c)
+
+scalar :: forall t w. KnownBits w => KnownKind t => HaskType ('Typ t w) -> Scalar ('Typ t w)
+scalar c = T (funcall "tf.constant" [prettyKnown @('Typ t w) c, named "shape" (showShapeType @'[]), named "dtype" (showTyp @('Typ t w))])
 
 reduceAll :: forall s t. KnownTyp t => KnownShape s =>
      (∀n s'. (KnownTyp t,KnownShape s') => Axis n s' -> T s' t -> T (Take n s' ++ Drop ('Succ n) s') t) -> Tensor s t -> Tensor '[] t
@@ -326,46 +335,39 @@ reduceSum0 = reduceSum axis0
 
 
 
-addN :: ∀ s t. TFNumeric t => KnownShape s => [Tensor s t] -> Tensor s t
+addN :: ∀ s t. KnownNumeric t => KnownShape s => [Tensor s t] -> Tensor s t
 addN [] = zeros
 addN ts = foldr1 (+) ts
 
-instance (TFNumeric t, KnownShape s) => Num (T s t) where
+instance (KnownNumeric t, KnownShape s) => Num (T s t) where
   (+) = (⊕)
   (*) = (⊙)
   signum = unOp "tf.sign"
-  fromInteger x = case typeSTyp @t of
-    STyp SInt   SB32 _ -> constant (fromIntegral x)
-    STyp SInt   SB64 _ -> constant (fromIntegral x)
-    STyp SBool  _ _ -> constant (x /= 0)
-    STyp SFloat SB32 _ -> constant (fromIntegral x)
-    STyp SFloat SB64 _ -> constant (fromIntegral x)
+  fromInteger x = knownNum @t $ constant (fromIntegral x)
   abs = unOp "tf.abs"
   (-) = (⊝)
   negate = unOp "-"
 
 instance (KnownBits b, KnownShape s) => Fractional (T s ('Typ 'Float b)) where
-  fromRational x = knownFractional @b (constant $ fromRational x)
+  fromRational x = knownFloating @b $ constant (fromRational x :: HaskType ('Typ 'Float b))
   (/) = (⊘)
 
 instance (KnownBits b, KnownShape s) => Floating (T s ('Typ 'Float b)) where
-  pi    = constant $ case bitsVal @b of
-    SB32 -> pi
-    SB64 -> pi
-  exp   = unOp "tf.exp"
-  log   = unOp "tf.log"
-  sin   = unOp "tf.sin"
-  cos   = unOp "tf.cos"
-  asin  = unOp "tf.asin"
-  acos  = unOp "tf.acos"
-  sinh  = unOp "tf.sinh"
-  cosh  = unOp "tf.cosh"
+  pi = knownFloating @b $ constant pi
+  exp = unOp "tf.exp"
+  log = unOp "tf.log"
+  sin = unOp "tf.sin"
+  cos = unOp "tf.cos"
+  asin = unOp "tf.asin"
+  acos = unOp "tf.acos"
+  sinh = unOp "tf.sinh"
+  cosh = unOp "tf.cosh"
   asinh = unOp "tf.asinh"
   acosh = unOp "tf.acosh"
-  tanh  = unOp "tf.tanh"
-  atan  = unOp "tf.atan"
+  tanh = unOp "tf.tanh"
+  atan = unOp "tf.atan"
   atanh = unOp "tf.atanh"
-  sqrt  = unOp "tf.sqrt"
+  sqrt = unOp "tf.sqrt"
 
 -- | Pretend that the argument is a constant for the purposes of
 -- gradient computation
@@ -399,7 +401,7 @@ infixl 6 ⊕,⊝
 
 
 -- | Matrix multiplication (note that shape @s@ is preserved)
-matmul :: forall m n o t. TFNumeric t => KnownNat m => KnownNat o => KnownNat n => KnownTyp t => T '[n,o] t -> T '[o,m] t -> T '[n,m] t
+matmul :: forall m n o t. KnownNumeric t => KnownNat m => KnownNat o => KnownNat n => KnownTyp t => T '[n,o] t -> T '[o,m] t -> T '[n,m] t
 matmul = MatMul Unit Sat Sat Sat
 
 unOp :: forall s t. KnownShape s => KnownTyp t => String -> T s t -> T s t
@@ -610,6 +612,18 @@ transposeN01 = Transpose (typeSShape @s .+. typeSShape @'[m,n]) (permN01 (typeSL
 sequenceMask :: forall maxlen. KnownNat maxlen => Tensor '[] Int32 -> Tensor '[maxlen] TFBool
 sequenceMask lens = mapT (lens `lessThan`) (range @maxlen)
 
+-- | simple broadcasting of a tensor
+broadcastT :: forall n s t. KnownShape s => KnownNat n => KnownTyp t => KnownLen s => T s t ->  T (n ': s) t
+broadcastT x = broadcast u False (Proxy @n) x
+  where u = unsafePerformIO newUnique
+
+-- | simple broadcasting of a tensor
+broadcastTT :: forall a s t. KnownShape s => KnownTyp t => KnownShape a => KnownLen s => T s t ->  T (a ++ s) t
+broadcastTT x = prodHomo @a @s $
+                knownProduct @a $
+                knownAppend @a @s $
+                reshape (broadcastT @(Product a) x)
+
 -- | Map a function along the first dimension of a tensor
 mapT :: forall n s r t u. KnownShape r => KnownNat n => KnownTyp u => KnownLen r => KnownLen s => (T s t -> T r u) ->  T (n ': s) t -> T (n ': r) u
 mapT f x = broadcast u False (Proxy @n) (f (Unbroadcast (natSat @n) u x))
@@ -669,7 +683,7 @@ convolution x filters = knownAppend @s @'[outputChannels] $
              (expandDim0 x)
              filters)
 
-softmaxInternal :: forall s0 s1 w. KnownBits w => SShape s0 -> SShape s1 -> T (s0 ++ s1) ('Typ 'Float w) -> T (s0 ++ s1) ('Typ 'Float w)
+softmaxInternal :: KnownBits w => SShape s0 -> SShape s1 -> T (s0 ++ s1) ('Typ 'Float w) -> T (s0 ++ s1) ('Typ 'Float w)
 softmaxInternal s0 s1 = UnOp (Axis1Op "tf.nn.softmax" [] (sListLength s0 - 1)) Unit (s0 .+. s1) (s0 .+. s1)
 
 -- | Softmax along the first dimension

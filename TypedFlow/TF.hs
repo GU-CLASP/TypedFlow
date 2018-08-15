@@ -285,11 +285,8 @@ snocT0 xs x = concat0 xs (expandDim0 x)
 ----------------
 -- Helpers
 
--- matvecmulBatch :: ∀ s cols rows t. (KnownLen s) =>  Tensor (cols ': rows ': s) t -> Tensor (cols ': s) t -> Tensor (rows ': s) t
--- matvecmulBatch m v = squeeze0 (matmul m (expandDim0 v))
-
 -- | Product of a matrix of weights with a vector.
-(∙) :: (TFNumeric t, KnownNat cols, KnownNat rows, KnownTyp t) => Tensor '[cols, rows] t -> Tensor '[cols] t -> Tensor '[rows] t
+(∙) :: (KnownNumeric t, KnownNat cols, KnownNat rows, KnownTyp t) => Tensor '[cols, rows] t -> Tensor '[cols] t -> Tensor '[rows] t
 m ∙ v = squeeze0 (matmul (expandDim0 v) m)
 infixl 7 ∙
 
@@ -298,9 +295,6 @@ infixl 7 ∙
   Tensor '[n] t -> Tensor '[n] t -> Tensor '[] t
 x · y = reduceSum0 (x ⊙ y)
 infixl 7 ·
-
-
-
 
 -------------------------
 -- Generic parameters

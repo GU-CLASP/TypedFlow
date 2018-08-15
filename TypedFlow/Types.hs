@@ -343,7 +343,8 @@ data Typ = Typ Kind NBits deriving (Eq,Ord)
 type family TypKind (t :: Typ) where TypKind ('Typ k b)  = k
 type family TypBits (t :: Typ) where TypBits ('Typ k b)  = b
 
-type TFNumeric t = (NumericKind (TypKind t), KnownBits (TypBits t), t ~ 'Typ (TypKind t) (TypBits t))
+type KnownNumeric t = (NumericKind (TypKind t), KnownBits (TypBits t), t ~ 'Typ (TypKind t) (TypBits t))
+
 
 class KnownKind t => NumericKind t where
 instance NumericKind 'Float
@@ -372,8 +373,6 @@ instance Ord (STyp t) where compare x y = compare (sTypTyp x) (sTypTyp y)
 
 data STyp t where
   STyp :: SKind (TypKind t) -> SNBits (TypBits t) -> (t :~: 'Typ (TypKind t) (TypBits t)) -> STyp t
-
-
 
 type Flt t = 'Typ 'Float t
 type Float32 = 'Typ 'Float 'B32
@@ -412,8 +411,7 @@ typVal = Typ (kVal k) (nbitsVal b)
   where k = kindVal @(TypKind t)
         b = bitsVal @(TypBits t)
 
-
-knownBits :: SNBits t -> (KnownBits t => k) -> k
+knownBits :: SNBits t -> (KnownBits t => Fractional (HaskType ('Typ 'Float t)) => Floating (HaskType ('Typ 'Float t)) => k) -> k
 knownBits SB32 k = k
 knownBits SB64 k = k
 
@@ -422,17 +420,19 @@ knownKind SFloat k = k
 knownKind SInt k = k
 knownKind SBool k = k
 
-numericKnown :: forall t k. TFNumeric t => (KnownTyp t => k) -> k
-numericKnown k = case kindVal @(TypKind t) of
-  SFloat -> k
-  SBool -> k
-  SInt -> k
-
 knownTyp :: STyp t -> (KnownTyp t => k) -> k
 knownTyp (STyp k b Refl) r = knownKind k $ knownBits b r
 
-knownFractional :: forall w k. KnownBits w => (Fractional (HaskType ('Typ 'Float w)) => k) -> k
-knownFractional k = case bitsVal @w of
+knownFloating :: forall w k. KnownBits w => (Fractional (HaskType ('Typ 'Float w)) => Floating (HaskType ('Typ 'Float w)) => k) -> k
+knownFloating = knownBits (bitsVal @w) 
+
+knownNum :: forall t k. KnownNumeric t => (KnownTyp t => Num (HaskType t) => k) -> k
+knownNum k = case kindVal @(TypKind t) of
+  SFloat -> case bitsVal @(TypBits t) of
+    SB32 -> k
+    SB64 -> k
+  SBool -> error "KnownNumeric bug"
+  SInt -> case bitsVal @(TypBits t) of
     SB32 -> k
     SB64 -> k
 
@@ -618,7 +618,7 @@ data T (s :: Shape) (t :: Typ) where
            Distribution s1 t ->
            T (s0 ++ s1) t
   BinOp :: (KnownTyp t, KnownTyp u) => BinOp -> SShape s0 -> SShape s1 -> SShape s2 -> SShape s3 -> T (s0 ++ s1) t -> T (s0 ++ s2) u -> T (s0 ++ s3) v
-  UnOp :: KnownTyp t => UnOp -> SShape s0 -> SShape s1 -> SShape s2 -> T (s0 ++ s1) t -> T (s0 ++ s2) u
+  UnOp :: KnownTyp t => UnOp (HaskType t) (HaskType u) -> SShape s0 -> SShape s1 -> SShape s2 -> T (s0 ++ s1) t -> T (s0 ++ s2) u
   Unbroadcast :: Sat KnownNat n -> Unique -> T (n ': s) t -> T s t
   DirectBroadcast :: SShape s0 -> NP proxy' s1 -> SShape s2 -> NP proxy' s3 -> T (s0 ++ s2) t -> T (s0 ++ (s1 ++ (s2 ++ s3))) t
   ReshapeFrom :: Product s ~ Product s0 => SShape s0 -> T s0 t -> T s t
@@ -629,7 +629,7 @@ data T (s :: Shape) (t :: Typ) where
   GatherND :: KnownTyp ('Typ 'Int w) => SShape containerShape -> SShape elementShape -> SShape indexShape
     -> T (containerShape ++ elementShape) t -> IndexTensor indexShape containerShape w -> T (indexShape ++ elementShape) t
 
-  MatMul :: forall s m n o t. TFNumeric t => SShape s -> Sat KnownNat n -> Sat KnownNat  o -> Sat KnownNat m -> T (s ++ '[n,o]) t -> T (s ++ [o,m]) t -> T (s ++ [n,m]) t
+  MatMul :: forall s m n o t. KnownNumeric t => SShape s -> Sat KnownNat n -> Sat KnownNat  o -> Sat KnownNat m -> T (s ++ '[n,o]) t -> T (s ++ [o,m]) t -> T (s ++ [n,m]) t
   Where :: T s TFBool  -> T s t -> T s t -> T s t
   If :: Scalar TFBool -> T s t -> T s t -> T s t
   Convolution :: Sat KnownNat bs -> Sat KnownNat inChannels -> Sat KnownNat outChannels -> SShape filterSpatialShape -> SShape s
@@ -666,8 +666,8 @@ data PoolingType = MaxPool | AvgPool deriving Show
 
 type Tensor shape = T shape
 
-data UnOp  = Simple1Op String [DOC] | SliceOp Integer Integer | Axis1Op String [(String,DOC)] Integer | IndexOp {indexOpAxis :: Integer, indexOpIndex :: Integer}
-             deriving Show
+data UnOp t u = Simple1Op String [DOC] | SliceOp Integer Integer | Axis1Op String [(String,DOC)] Integer | IndexOp {indexOpAxis :: Integer, indexOpIndex :: Integer}
+             -- deriving Show
 data BinOp = Simple2Op String (Maybe (String,String)) | Axis2Op String Integer deriving Show
 
 data Permutation (s :: [k]) (t :: [k]) where

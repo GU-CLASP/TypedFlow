@@ -55,7 +55,7 @@ generateFile fname g = do
   forM_ params printParam
   writeFile fname output
   where (output,params) = generate g
-        printParam ParamInfo{..} = putStrLn (paramName ++ ": " ++ "T " ++ render (showShape' paramShape)  ++ " " ++ show paramDType)
+        printParam ParamInfo{..} = putStrLn (paramName ++ ": " ++ "T " ++ render (showShape' paramShape)  ++ " " ++ showT paramDType)
 
 named :: String -> DOC -> DOC
 named fname x = text (fname <> "=") <> x
@@ -67,7 +67,7 @@ genFun name args body = do
 
 
 showTyp :: forall t. KnownTyp t => DOC
-showTyp = text (show (typVal @t))
+showTyp = text (showT (typVal @t))
 
 showShape' ::  [Integer] -> DOC
 showShape' s = list (map (showDim' "None") s)
@@ -320,7 +320,7 @@ generatePure' rec sR = knownSShape sR $ \case
  -- where rec :: forall s' t'. KnownTyp t' => SShape s' -> T s' t' -> DOC
  --       rec = generatePure' 
 
-instance Show Typ where
-  show (Typ Bool _) = "tf.bool"
-  show (Typ k l) = "tf." ++ map toLower (show k) ++ drop 1 (show l)
+showT :: Typ -> [Char]
+showT (Typ Bool _) = "tf.bool"
+showT (Typ k l) = "tf." ++ map toLower (show k) ++ drop 1 (show l)
 
