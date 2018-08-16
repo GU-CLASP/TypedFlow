@@ -182,7 +182,7 @@ protoBroadcast u varyNoise n@(Sat) rec finished ty s tensor
   Where cond x y -> Where (rec s cond) (rec s x) (rec s y)
   T _ -> error "panic: broadcast constant should be finished!"
   Unbroadcast p@Sat u' x
-    | u == u' -> case testEqual p n of
+    | u == u' -> case testEq p n of
         Nothing -> UnOp (Simple1Op "panic.unbroadcast" [integer (natVal n)
                                                        ,integer (natVal p)])
                          Unit (p :* s) (n :* s) x
