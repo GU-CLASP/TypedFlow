@@ -39,7 +39,6 @@ module TypedFlow.Abstract where
 
 import System.IO.Unsafe
 import Data.Unique
-import TypedFlow.Python
 import Prelude hiding (RealFrac(..))
 import GHC.TypeLits
 import Data.Proxy
@@ -50,6 +49,8 @@ import TypedFlow.Types (T(..))
 import TypedFlow.Types.Proofs
 import Text.PrettyPrint.Compact hiding (All,Last,Product,Sum)
 import TypedFlow.Memo
+import qualified Data.IntMap as IM
+import Data.IntMap (IntMap)
 
 
 broadcast :: forall n s t proxy. KnownTyp t => KnownShape s => KnownNat n
@@ -183,8 +184,7 @@ protoBroadcast u varyNoise n@(Sat) rec finished ty s tensor
   T _ -> error "panic: broadcast constant should be finished!"
   Unbroadcast p@Sat u' x
     | u == u' -> case testEq p n of
-        Nothing -> UnOp (Simple1Op "panic.unbroadcast" [integer (natVal n)
-                                                       ,integer (natVal p)])
+        Nothing -> UnOp (error "panic.unbroadcast")
                          Unit (p :* s) (n :* s) x
         Just Refl -> x
     | otherwise -> knownSShape s $ Unbroadcast p u' (transpose01 (rec (p :* s) x))
@@ -257,7 +257,7 @@ reshapeFrom s0 x = ReshapeFrom s0 x
 
 -- | Zeros
 zeros :: ∀ t (shape :: Shape). KnownNumeric t => KnownShape shape => (T shape t)
-zeros = T (funcall "tf.zeros" [showShapeType @shape, named "dtype" (showTyp @t)])
+zeros = constant $ knownNum @t $ 0
 
 defaultT :: ∀ t (shape :: Shape). KnownShape shape => KnownTyp t => (T shape t)
 defaultT = case typeSTyp @t of
@@ -266,28 +266,23 @@ defaultT = case typeSTyp @t of
                  STyp SBool _ _ -> constant False
 
 -- | Ones
-ones :: ∀ t (shape :: Shape). KnownShape shape => KnownTyp t => (T shape t)
-ones = T (funcall "tf.ones" [showShapeType @shape, named "dtype" (showTyp @t)])
+ones :: ∀ t (shape :: Shape). KnownShape shape => KnownNumeric t => (T shape t)
+ones = knownNum @t $ constant 1
 
 -- | Identity matrix in dimensions m,n (extended with zeros if m ≠ n), and repeated on shape s.
-eye :: ∀ m n s t. KnownShape s => KnownNat m => KnownNat n => KnownTyp t => (T (m ': n ': s) t)
-eye = T (funcall "tf.eye" [showDim @n,
-                            named "num_columns" (showDim @m),
-                            named "batch_shape" (showShapeType @s),
-                            named "dtype" (showTyp @t)])
+eye :: ∀ n t. KnownNat n => KnownNumeric t => (T '[n,n] t)
+eye = T Eye
 
 -- | range[i] = i
 range :: forall n w. KnownNat n => KnownBits w => T '[n] ('Typ 'Int w)
-range = T (func "tf.range" [] [("start",integer 0),
-                               ("limit",integer (natVal (Proxy @n))),
-                               ("dtype",showTyp @('Typ 'Int w))])
+range = T (Range (natSat @n))
 
 -- | Constant
 constant :: forall s t w. KnownShape s => KnownBits w => KnownKind t => HaskType ('Typ t w) -> T s ('Typ t w)
 constant c = appRUnit @s $ broadcastTT @s (scalar c)
 
 scalar :: forall t w. KnownBits w => KnownKind t => HaskType ('Typ t w) -> Scalar ('Typ t w)
-scalar c = T (funcall "tf.constant" [prettyKnown @('Typ t w) c, named "shape" (showShapeType @'[]), named "dtype" (showTyp @('Typ t w))])
+scalar = T . Constant
 
 reduceAll :: forall s t. KnownTyp t => KnownShape s =>
      (∀n s'. (KnownTyp t,KnownShape s') => Axis n s' -> T s' t -> T (Take n s' ++ Drop ('Succ n) s') t) -> Tensor s t -> Tensor '[] t
@@ -314,16 +309,16 @@ sShapeDropSucc AxZero (_ :* s) = s
 sShapeDropSucc (AxSucc n) (_ :* xs) = sShapeDropSucc n xs
 
 -- | Internal. Use 'reduceSum', etc. instead.
-reduce :: ∀ n s t. KnownTyp t => (KnownShape s) => String -> Axis n s -> T s t -> T (Take n s ++ Drop ('Succ n) s) t
-reduce op n x = UnOp (Axis1Op ("tf.reduce_" ++ op) [] (axisInt n)) Unit (typeSShape @s)  (sShapeTake' n s .+. sShapeDropSucc n s) x
+reduce :: ∀ n s t. KnownTyp t => (KnownShape s) => ReduceOp -> Axis n s -> T s t -> T (Take n s ++ Drop ('Succ n) s) t
+reduce op n x = UnOp (Axis1Op (Reduce op) (axisInt n)) Unit (typeSShape @s)  (sShapeTake' n s .+. sShapeDropSucc n s) x
   where s = typeSShape @s
 
 -- | Reduce along a given dimension
 reduceSum, reduceMean, reduceMax, reduceMin :: ∀n s t. (KnownTyp t,KnownShape s) => Axis n s -> T s t -> T (Take n s ++ Drop ('Succ n) s) t
-reduceSum = reduce "sum"
-reduceMean = reduce "mean"
-reduceMax = reduce "max"
-reduceMin = reduce "min"
+reduceSum = reduce Sum
+reduceMean = reduce Mean
+reduceMax = reduce Max
+reduceMin = reduce Min
 
 
 -- | Sum along the first dimension
@@ -339,11 +334,11 @@ addN ts = foldr1 (+) ts
 instance (KnownNumeric t, KnownShape s) => Num (T s t) where
   (+) = (⊕)
   (*) = (⊙)
-  signum = unOp "tf.sign"
+  signum = unOp Sign
   fromInteger x = knownNum @t $ constant (fromIntegral x)
-  abs = unOp "tf.abs"
+  abs = unOp Abs
   (-) = (⊝)
-  negate = unOp "-"
+  negate = unOp Negate
 
 instance (KnownBits b, KnownShape s) => Fractional (T s ('Typ 'Float b)) where
   fromRational x = knownFloating @b $ constant (fromRational x :: HaskType ('Typ 'Float b))
@@ -351,25 +346,25 @@ instance (KnownBits b, KnownShape s) => Fractional (T s ('Typ 'Float b)) where
 
 instance (KnownBits b, KnownShape s) => Floating (T s ('Typ 'Float b)) where
   pi = knownFloating @b $ constant pi
-  exp = unOp "tf.exp"
-  log = unOp "tf.log"
-  sin = unOp "tf.sin"
-  cos = unOp "tf.cos"
-  asin = unOp "tf.asin"
-  acos = unOp "tf.acos"
-  sinh = unOp "tf.sinh"
-  cosh = unOp "tf.cosh"
-  asinh = unOp "tf.asinh"
-  acosh = unOp "tf.acosh"
-  tanh = unOp "tf.tanh"
-  atan = unOp "tf.atan"
-  atanh = unOp "tf.atanh"
-  sqrt = unOp "tf.sqrt"
+  exp = unOp Exp
+  log = unOp Log
+  sin = unOp Sin
+  cos = unOp Cos
+  asin = unOp Asin
+  acos = unOp Acos
+  sinh = unOp Sinh
+  cosh = unOp Cosh
+  asinh = unOp Asinh
+  acosh = unOp Acosh
+  tanh = unOp Tanh
+  atan = unOp Atan
+  atanh = unOp Atanh
+  sqrt = unOp Sqrt
 
 -- | Pretend that the argument is a constant for the purposes of
 -- gradient computation
 stopGradient :: ∀ s t. KnownTyp t => KnownShape s => Tensor s t -> Tensor s t
-stopGradient = unOp "tf.stop_gradient"
+stopGradient = unOp StopGradient
 
 -- | Divide tensors, broacasting along shape @s@
 (⊘) :: forall s t. KnownBits t => KnownShape s => T s ('Typ 'Float t) -> T s ('Typ 'Float t) -> T s ('Typ 'Float t)
@@ -401,22 +396,22 @@ infixl 6 ⊕,⊝
 matmul :: forall m n o t. KnownNumeric t => KnownNat m => KnownNat o => KnownNat n => KnownTyp t => T '[n,o] t -> T '[o,m] t -> T '[n,m] t
 matmul = MatMul Unit Sat Sat Sat
 
-unOp :: forall s t. KnownShape s => KnownTyp t => String -> T s t -> T s t
-unOp op = UnOp (Simple1Op op []) Unit (typeSShape @s) (typeSShape @s)
+unOp :: forall s t. KnownShape s => KnownTyp t => Simple1Op -> T s t -> T s t
+unOp op = UnOp (Simple1Op op) Unit (typeSShape @s) (typeSShape @s)
 
 binOp :: forall s t u. KnownShape s => KnownTyp t => String -> T s t -> T s t -> T s u
 binOp op = BinOp (Simple2Op op Nothing) Unit (typeSShape @s) (typeSShape @s) (typeSShape @s)
 
 sigmoid, relu, square, round, floor, hardSigmoid
    :: ∀ s t. (KnownShape s, KnownBits t) => Tensor s ('Typ 'Float t) -> Tensor s ('Typ 'Float t)
-sigmoid = unOp "tf.sigmoid"
-hardSigmoid = unOp "tf.keras.backend.hard_sigmoid"
-square = unOp "tf.square"
-relu = unOp "tf.nn.relu"
+sigmoid = unOp Sigmoid
+hardSigmoid = unOp HardSigmoid
+square = unOp Square
+relu = unOp Relu
 
 -- Unfortunately RealFrac is utterly broken; so we have to do this:
-round = unOp "tf.round"
-floor = unOp "tf.floor"
+round = unOp Round
+floor = unOp Floor
 
 -- | Take a slice at dimension n from i to j.
 slice :: forall i j s t n. KnownTyp t => KnownShape s => KnownNat j => KnownNat i => (i <= j, j <= At n s, KnownLen s) =>
@@ -681,7 +676,7 @@ convolution x filters = knownAppend @s @'[outputChannels] $
              filters)
 
 softmaxInternal :: KnownBits w => SShape s0 -> SShape s1 -> T (s0 ++ s1) ('Typ 'Float w) -> T (s0 ++ s1) ('Typ 'Float w)
-softmaxInternal s0 s1 = UnOp (Axis1Op "tf.nn.softmax" [] (sListLength s0 - 1)) Unit (s0 .+. s1) (s0 .+. s1)
+softmaxInternal s0 s1 = UnOp (Axis1Op SoftMax (sListLength s0 - 1)) Unit (s0 .+. s1) (s0 .+. s1)
 
 -- | Softmax along the first dimension
 softmax0 :: forall n s w. KnownBits w => KnownNat n => KnownShape s => T (n ': s) ('Typ 'Float w) -> T (n ': s) ('Typ 'Float w)
@@ -691,8 +686,8 @@ softmax0 = softmaxInternal (typeSShape @'[n]) (typeSShape @s)
 softmax1 :: forall n m s w.  KnownBits w => KnownNat n => KnownNat m => KnownShape s => T (m ': n ': s) ('Typ 'Float w) -> T (m ': n ': s) ('Typ 'Float w)
 softmax1 =  softmaxInternal (typeSShape @'[m,n]) (typeSShape @s)
 
-argmaxInternal :: forall n s0 s1 t u. KnownTyp t => KnownBits u => Sat KnownNat n -> SShape s0 -> SShape s1 -> T (s0 ++ (n ': s1)) t -> T (s0 ++ s1) ('Typ 'Int u)
-argmaxInternal n s0 s1 = UnOp (Axis1Op "tf.argmax" [("output_type",showTyp @('Typ 'Int u))] (sListLength s0)) Unit (s0 .+. (:*) n s1) (s0 .+. s1)
+argmaxInternal :: forall n s0 s1 t u. KnownNumeric t => KnownBits u => Sat KnownNat n -> SShape s0 -> SShape s1 -> T (s0 ++ (n ': s1)) t -> T (s0 ++ s1) ('Typ 'Int u)
+argmaxInternal n s0 s1 = UnOp (Axis1Op ArgMax (sListLength s0)) Unit (s0 .+. (:*) n s1) (s0 .+. s1)
 
 axisSplitApp :: Axis n s -> (Take n s ++ Drop n s) :~: s
 axisSplitApp AxZero = Refl
@@ -700,23 +695,23 @@ axisSplitApp (AxSucc n) = case axisSplitApp n of
   Refl -> Refl
 
 -- | Argmax along axis @n@
-argmax :: forall m n u s t. (KnownShape s, KnownBits u, KnownNat m, KnownTyp t) => Axis n s -> Tensor (Take n s ++ (m ': Drop n s)) t -> Tensor s ('Typ 'Int u)
+argmax :: forall m n u s t. (KnownShape s, KnownBits u, KnownNat m, KnownNumeric t) => Axis n s -> Tensor (Take n s ++ (m ': Drop n s)) t -> Tensor s ('Typ 'Int u)
 argmax n = case axisSplitApp n of
   Refl -> argmaxInternal (natSat @m) (sShapeTake' n (typeSShape @s)) (sShapeDrop' n s)
   where s = typeSShape @s
 
 -- | Argmax along the first dimension
-argmax0 :: forall u n s t. (KnownNat n, KnownShape s, KnownBits u, KnownTyp t) => T (n ': s) t -> T s ('Typ 'Int u)
+argmax0 :: forall u n s t. (KnownNat n, KnownShape s, KnownBits u, KnownNumeric t) => T (n ': s) t -> T s ('Typ 'Int u)
 argmax0 = argmaxInternal (natSat @n) Unit (typeSShape @s)
 
 -- | Argmax along the second dimension
-argmax1 :: forall u m n s t. (KnownNat n, KnownNat m, KnownShape s, KnownBits u, KnownTyp t) => T (m ': n ': s) t -> T (m ': s) ('Typ 'Int u)
+argmax1 :: forall u m n s t. (KnownNat n, KnownNat m, KnownShape s, KnownBits u, KnownNumeric t) => T (m ': n ': s) t -> T (m ': s) ('Typ 'Int u)
 argmax1 = argmaxInternal (natSat @n) (natSat @m :* Unit) (typeSShape @s)
 -- argmax1 = mapT argmax0 -- equivalent?
 
 -- | Cast the element type.
 cast :: forall u s t. KnownTyp t => KnownShape s => KnownTyp u => T s t -> T s u
-cast = UnOp (Simple1Op "tf.cast" [showTyp @ u]) Unit (typeSShape @s) (typeSShape @s)
+cast = UnOp (Simple1Op Cast) Unit (typeSShape @s) (typeSShape @s)
 
 -- | (dense) softmax cross entropy with logits.
 softmaxCrossEntropyWithLogits :: forall numClasses.
@@ -756,7 +751,7 @@ sparseSoftmaxCrossEntropyWithLogits  =
 oneHot0 :: forall numClasses w s t. KnownNat numClasses => KnownBits t => KnownBits w =>
   (KnownShape s) =>
   Tensor s ('Typ 'Int w) -> Tensor (numClasses ': s) (Flt t)
-oneHot0 = UnOp (Axis1Op "tf.one_hot" [("dtype",showTyp @(Flt t))] 0) Unit s
+oneHot0 = UnOp (Axis1Op OneHot 0) Unit s
                  (natSat @numClasses :* s)
   where s = typeSShape @s
 
@@ -773,7 +768,7 @@ noise d = do
 
 -- | Clip a tensor
 clipByValue :: forall s t. KnownShape s => KnownBits t => Float -> Float -> T s (Flt t) -> T s (Flt t)
-clipByValue lo hi = UnOp (Simple1Op "tf.clip_by_value" [float lo,float hi]) Unit typeSShape typeSShape
+clipByValue lo hi = UnOp (Simple1Op (ClipByValue lo hi)) Unit typeSShape typeSShape
 
 -- | (where_ c x y)[i] = if c[i] then x[i] else y[i]
 where_ :: T s TFBool -> T s t -> T s t -> T s t
@@ -810,3 +805,11 @@ maxPool1D :: forall window width channels t.
 maxPool1D x = squeeze0 (Pool (natSat @1) (typeSShape @'[window]) MaxPool (natSat @channels) (typeSShape @'[width]) (expandDim0 x))
 
 
+
+
+findVar :: IntMap ParamInfo -> Ref s t -> Maybe (String, T s t)
+findVar m (Ref i s0 t0) = case IM.lookup i m of
+     Nothing -> Nothing
+     Just (ParamInfo nm s t x) -> case (testEq s0 s, testEq t0 t) of
+                                    (Just Refl, Just Refl) -> Just (nm,x)
+                                    _ -> Nothing

@@ -49,15 +49,25 @@ import TypedFlow.Memo
 import Text.PrettyPrint.Compact hiding (All,Last,Product,Sum,Options)
 import qualified Text.PrettyPrint.Compact as PP
 import qualified Data.Map as M
+import qualified Data.IntMap as IM
 
+
+paramShape' :: ParamInfo -> [Integer]
+paramShape' (ParamInfo _ s _ _) = shapeToList' s
+
+paramDType ::  ParamInfo -> Typ
+paramDType (ParamInfo _ _ t _) = sTypTyp t
+
+paramName :: ParamInfo -> String
+paramName (ParamInfo nm _ _ _) = nm
 
 generateFile :: String -> Python () -> IO ()
 generateFile fname g = do
-  putStrLn ("Parameters (total " ++ show (sum [product (paramShape p) | p <- params]) ++ "):")
+  putStrLn ("Parameters (total " ++ show (sum [product (paramShape' p) | p <- params]) ++ "):")
   forM_ params printParam
   writeFile fname output
   where (output,params) = generate g
-        printParam p = putStrLn (paramName p ++ ": " ++ "T " ++ render (showShape' (paramShape p))  ++ " " ++ showT (paramDType p))
+        printParam p = putStrLn (paramName p ++ ": " ++ "T " ++ render (showShape' (paramShape' p))  ++ " " ++ showT (paramDType p))
 
 named :: String -> DOC -> DOC
 named fname x = text (fname <> "=") <> x
@@ -102,6 +112,9 @@ showDimM = showDim' "-1" (natVal (Proxy @ n))
 showDim :: forall n. KnownNat n => DOC
 showDim = showDim' "None" (natVal (Proxy @ n))
 
+showDimS :: forall n. Sat KnownNat n -> DOC
+showDimS Sat = showDim @n
+
 str :: Show a => a -> DOC
 str = text . show
 
@@ -111,28 +124,35 @@ gen s = modify $ \GState{..} -> GState {genText=genText $$ s,..}
 setGen :: DOC -> Python ()
 setGen d = modify $ \GState{..} -> GState {genText=d,..}
 
-(<--) :: DOC -> UntypedExpression -> Python ()
-x <-- y = gen (x <> text "=" <>  y)
+(<--) :: Ref s t -> UntypedExpression -> Python ()
+x <-- y = gen (pyVarRepr x <> text "=" <>  y)
 
 -- | save an intermediate result to a variable and save it to
 -- genAssignTable for future re-use.
-cache :: DOC -> DOC  -> Python DOC
-cache shap x = do
+cache :: forall s t. KnownTyp t => KnownShape s => DOC  -> Python DOC
+cache x = do
   let x' = renderWith (PP.Options 92 (const id)) x
   mcache <- M.lookup x' <$> gets genAssignTable
   case mcache of
     Just y -> return y
     Nothing -> do
-      v <- newPyVar
-      gen ("#" <> shap)
+      v <- newPyVar @s @t
+      gen ("#" <> (showShapeType @s))
       v <-- x
-      modify (\g -> g {genAssignTable = M.insert x' v (genAssignTable g)})
-      return v
+      modify (\g -> g {genAssignTable = M.insert x' (pyVarRepr v) (genAssignTable g)})
+      return (pyVarRepr v)
 
-newPyVar :: Python DOC
+newPyVar' :: forall s t. SShape s -> STyp t -> Python (Ref s t)
+newPyVar' s t = knownSShape s $ knownTyp t $ newPyVar @s @t
+
+newPyVar :: forall s t. KnownShape s => KnownTyp t => Python (Ref s t)
 newPyVar = do
   n <- newId
-  return (text ("var" <> show n))
+  modify (\g -> g {genVariables = IM.insert (fromIntegral n) (ParamInfo ("var" <> show n) (typeSShape @s) (typeSTyp @t) (error "newPyVar: no tensor")) (genVariables g)})
+  return $ Ref (fromIntegral n) typeSShape typeSTyp
+
+pyVarRepr :: Ref s t -> DOC
+pyVarRepr (Ref n _ _) = text ("var" <> show n)
 
 tuple :: [DOC] -> DOC
 tuple = parens . sep . punctuate comma
@@ -167,9 +187,9 @@ withDOC f g = do
 
 assignAny :: UntypedExpression -> Python UntypedExpression
 assignAny x = do
-  v <- newPyVar
+  v <- newPyVar @'[] @Float32
   v <-- x
-  return v
+  return (pyVarRepr v)
 
 -- lambda :: (T s t -> T s' t') -> Gen UntypedExpression
 -- lambda f = do
@@ -180,10 +200,11 @@ assignAny x = do
 generate :: Python () -> (String,[ParamInfo])
 generate s = (renderWith (PP.Options 92 (const id)) genText,genParams)
   where GState{..} =  execState s (GState {nextVar = 0
+                                          ,genVariables = mempty
                                           ,genText = mempty
                                           ,genParams=[]
                                           ,genRegularizers=[]
-                                          ,genTrainingPlaceholder = T "NO TRAINING PLACEHOLDER!"
+                                          ,genTrainingPlaceholder = error "NO TRAINING PLACEHOLDER!"
                                           ,genPureTable = mempty
                                           ,genAssignTable = mempty
                                           ,genPeeks=[]})
@@ -212,7 +233,7 @@ generatePure x = do
     Just v -> return v
     Nothing -> do
       e <- generatePure' (\s x' -> knownSShape s $ generatePure x') typeSShape x
-      v <- cache (showShapeType @s) e
+      v <- cache @s @t e
       modify (\g -> g {genPureTable = (snMapInsert2 sn v) (genPureTable g)})
       return v
 
@@ -243,7 +264,17 @@ generatePure' rec sR = knownSShape sR $ \case
    return (funcall "tf.add" [expanded, func "tf.zeros" [showSShape sR] [("dtype", showTyp @t)]])
   Noise noiseId s0 s1 x -> do
     return $ (genDistr x s0 s1) <+> (text "# " <> integer noiseId)
-  T x -> return x
+  T op -> return $ case op of
+    Variable v -> pyVarRepr v
+    (Constant c) -> funcall "tf.constant" [prettyKnown @t c, named "shape" (showSShape sR), named "dtype" (showTyp @t)]
+    Eye -> case sR of
+      n :* _ -> funcall "tf.eye" [showDimS n,
+                                  named "num_columns" (showDimS n),
+                                  named "batch_shape" (showShapeType @'[]),
+                                  named "dtype" (showTyp @t)]
+    (Range n@Sat) -> (func "tf.range" [] [("start",integer 0),
+                               ("limit",integer (natVal n)),
+                               ("dtype",showTyp @t)])
   If c x y -> do
     rc <- rec typeSShape c
     rx <- rec typeSShape x
@@ -258,9 +289,28 @@ generatePure' rec sR = knownSShape sR $ \case
   UnOp operation s0 s1 _s2 x -> do
    recx <- rec (s0 .+. s1) x
    return $ case operation of
-    Axis1Op op args n -> func op [recx] ((axisName,integer (sListLength s0 + n)):args)
-      where axisName = if op == "tf.nn.softmax" then "dim" else "axis" -- use dim before TF 1.5
-    Simple1Op op args -> funcall op (recx:args)
+    Axis1Op op' n ->
+       let (op,args) = case op' of
+                         OneHot -> ("tf.one_hot",[("dtype",showTyp @t)])
+                         ArgMax -> ("tf.argmax",[("output_type",showTyp @t)])
+                         SoftMax -> ("tf.nn.softmax",[])
+                         Reduce r -> ("tf.reduce_" ++ rop, [])
+                            where rop = case r of
+                                           Max -> "max"
+                                           Min -> "min"
+                                           Sum -> "sum"
+                                           Mean -> "mean"
+           axisName = if op == "tf.nn.softmax" then "dim" else "axis"  -- use dim before TF 1.5
+       in func op [recx] ((axisName,integer (sListLength s0 + n)):args)
+    Simple1Op op' -> funcall op (recx:args)
+       where (op,args) = case op' of
+                Cast -> ("tf.cast",[showTyp @t])
+                HardSigmoid -> ("tf.keras.backend.hard_sigmoid",[])
+                Relu -> ("tf.nn.relu",[])
+                Negate -> ("tf.negative",[])
+                StopGradient -> ("tf.stop_gradient",[])
+                ClipByValue lo hi -> ("tf.clip_by_value",[float lo,float hi])
+                _ -> ("tf." ++ map toLower (show op'), [])
     SliceOp lo hi -> recx <> list (replicate (fromIntegral (sListLength s0)) (text ":") ++ [integer lo <> text ".." <> integer hi])
     IndexOp axis ix -> recx <> list (replicate (fromIntegral (axis + sListLength s0)) (text ":") ++ [integer ix])
   MatMul s0 a b c x y  -> do
@@ -321,18 +371,19 @@ interpGen (GPBind a b) = do x <- interpGen a
                             interpGen (b x)
 interpGen (GPVariable trainable name initial) = do
   i <- generatePure initial
-  v <- newPyVar 
+  v <- newPyVar
   v <-- funcall "tf.Variable" [i, named "name" (string (show (name))), named "trainable" (bool trainable)]
-  return (T v)
-
+  return (T (Variable v))
 interpGen (GPPlaceholder s t n) = do
-  let name = text n
+  name <- newPyVar' s t
   name <-- funcall "tf.placeholder" [showSTyp t, named "shape" (showSShape s), named "name" (text (show n))]
-  return (T name)
+  return (T (Variable name))
 interpGen (GPModify ref value) = do
+  res <- newPyVar
   r <- generatePure ref
   v <- generatePure value
-  return (T (funcall "tf.assign" [r,v]))
+  res <-- (funcall "tf.assign" [r,v])
+  return (T (Variable res))
 interpGen (GPState f) = state f
 
 -- TODO: get the parameters from the genParams field
@@ -379,6 +430,4 @@ clipByGlobalNorm maxNorm x = funcall "tf.clip_by_global_norm" [x,float maxNorm] 
 -- | Gradient of wrt. given parameters.
 grad :: UntypedExpression -> UntypedExpression -> UntypedExpression
 grad y vars = funcall "tf.gradients" [y, vars]
-
-
 

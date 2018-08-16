@@ -41,6 +41,7 @@ library
        TypedFlow.Learn,
        TypedFlow.Models.Topic,
        TypedFlow.Python,
+       TypedFlow.Python.Top,
        TypedFlow.TF,
        TypedFlow.Types,
        TypedFlow.Types.Proofs

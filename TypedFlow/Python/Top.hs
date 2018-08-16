@@ -42,6 +42,7 @@ module TypedFlow.Python.Top where
 import GHC.TypeLits
 import Control.Monad.State
 import TypedFlow.Types
+import TypedFlow.Types.Proofs
 import TypedFlow.Learn
 import TypedFlow.Python
 import Text.PrettyPrint.Compact hiding (All,Last,Product,Sum,Options)
@@ -74,6 +75,8 @@ compileGen options names fGen =
 -- | Generic model preparation, with non-standard parameters ("x", "y"
 --  must be provided as placeholders manually).
 compileAlreadyBatched :: forall bs ty stateShapes. KnownNat bs
+           => KnownTyp ty
+           => All KnownShape stateShapes
            => Options
            -> (Gen (HTV ty stateShapes,Scalar Float32)) -> Python ()
 compileAlreadyBatched Options{..} model = do
@@ -86,20 +89,23 @@ compileAlreadyBatched Options{..} model = do
       Nothing -> funcall "optimizer.minimize" [loss]
       Just clip -> funcall "optimizer.apply_gradients" [funcall "zip" [clipByGlobalNorm clip (grad loss params),params]]
     peeks <- mapM paramToPeek =<< gets genPeeks
+    updates' <- untypedExprs updates
     let peeks2 = [("optimizer", (text "optimizer"))
                  ,("batch_size", (showDim @ bs))
                  ,("params", params)
                  ,("train", trainStep)
-                 ,("update", untypedExprs updates)
+                 ,("update", list updates')
                  ]
     gen (text "return " <> dict (peeks ++peeks2))
 
 paramToPeek :: ParamInfo -> Python (String,UntypedExpression)
-paramToPeek (ParamInfo name _ _ x) = do
-  x' <- generatePure x
+paramToPeek (ParamInfo name s t x) = do
+  x' <- knownSShape s $ knownTyp t $ generatePure x
   return (name,x')
 
-untypedExprs :: HTV t xs -> DOC
-untypedExprs htv = (list $ htoList $ hmap (\(F (T x)) -> K x) htv)
+untypedExprs :: All KnownShape xs => KnownTyp t =>  HTV t xs -> Python [DOC]
+untypedExprs Unit = return []
+untypedExprs (F x :* xs) = (:) <$> generatePure x <*> untypedExprs xs
+
 
 

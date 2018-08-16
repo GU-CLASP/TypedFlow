@@ -36,6 +36,8 @@ import Control.Monad.State
 import Data.Kind (Constraint)
 import TypedFlow.Memo
 import qualified Data.Map as M
+import qualified Data.IntMap as IM
+import Data.IntMap (IntMap)
 import Data.Unique
 import qualified Data.Int as Hask
 import Data.Type.Equality
@@ -572,14 +574,14 @@ type None = 514229 --  fibonnaci prime.
 --------------------------------
 -- Generation Effects
 
-
-data ParamInfo = forall s t. (KnownShape s, KnownTyp t) => 
-  ParamInfo {paramName :: String
-            ,paramShape :: [Integer]
-            ,paramDType :: Typ
-            ,paramVar   :: Tensor s t}
+data ParamInfo = forall s t.  
+  ParamInfo  String
+             (SShape s)
+             (STyp t)
+             (Tensor s t)
 data GState = GState {nextVar :: Integer, -- ^ next free variable
                       genText :: DOC,
+                      genVariables :: IntMap ParamInfo,
                       genParams :: [ParamInfo], -- ^ optimizable parameters
                       genPeeks :: [ParamInfo], -- ^ variables available after running the model (outputs)
                       genRegularizers :: [Scalar Float32], -- ^ accumulated regularizers
@@ -593,6 +595,8 @@ data GState = GState {nextVar :: Integer, -- ^ next free variable
                       -- that lost sharing can be recovered
                       -- genPeeks :: [(String,UntypedExpression)]
                      }
+
+
 data Gen a where
   GPVariable :: forall (shape :: Shape) t. (KnownTyp t,KnownShape shape) => Bool -> String -> T shape t -> Gen (T shape t) 
   GPPlaceholder :: forall s t. SShape s -> STyp t -> String -> Gen (T s t)
@@ -651,8 +655,16 @@ data Distribution (s :: Shape) (t :: Typ) where
   UniformD :: Float -> Float -> Distribution s ('Typ 'Float w)
   OrthogonalD  :: Distribution '[m,n] ('Typ 'Float w)
 
+data Ref s t = Ref Int (SShape s) (STyp t)
+
+data NilOp s t where
+  Variable :: Ref s t -> NilOp s t
+  Constant :: HaskType t -> NilOp '[] t
+  Eye :: KnownNumeric t => NilOp '[n,n] t
+  Range :: Sat KnownNat n -> NilOp '[n] ('Typ 'Int w)
+
 data T (s :: Shape) (t :: Typ) where
-  T :: UntypedExpression -> T s t
+  T :: NilOp s t -> T s t
   Noise :: Integer -> -- this is the unique noise identifier, preventing two different noises to ever be re-shared.
            SShape s0 -> SShape s1 ->
            Distribution s1 t ->
@@ -706,7 +718,37 @@ data PoolingType = MaxPool | AvgPool deriving Show
 
 type Tensor shape = T shape
 
-data UnOp t u = Simple1Op String [DOC] | SliceOp Integer Integer | Axis1Op String [(String,DOC)] Integer | IndexOp {indexOpAxis :: Integer, indexOpIndex :: Integer}
+data ReduceOp = Mean | Max | Min | Sum
+data Axis1Op = ArgMax | OneHot | SoftMax | Reduce ReduceOp
+data Simple1Op
+  = Cast
+  | ClipByValue Float Float
+  | Tanh
+  | Sin
+  | Exp
+  | Sigmoid
+  | HardSigmoid
+  | Relu
+  | Square
+  | Floor
+  | Round
+  | StopGradient
+  | Cos
+  | Log
+  | Asin
+  | Acos
+  | Sinh
+  | Cosh
+  | Asinh
+  | Acosh
+  | Atan
+  | Atanh
+  | Sqrt
+  | Negate
+  | Abs
+  | Sign
+  deriving Show
+data UnOp t u = Simple1Op Simple1Op | SliceOp Integer Integer | Axis1Op Axis1Op Integer | IndexOp {indexOpAxis :: Integer, indexOpIndex :: Integer}
              -- deriving Show
 data BinOp = Simple2Op String (Maybe (String,String)) | Axis2Op String Integer deriving Show
 
@@ -756,3 +798,5 @@ instance (KnownTensors p1, KnownTensors p2, KnownTensors p3, KnownTensors p4) =>
 
 class KnownTensors p => ParamWithDefault p where
   defaultInitializer :: Gen p
+
+

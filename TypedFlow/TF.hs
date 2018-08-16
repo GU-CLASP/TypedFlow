@@ -161,7 +161,7 @@ newParameter p =   modify $ \GState{..} -> GState{genParams = p:genParams,..}
 persistent :: ∀ (shape :: Shape) t. (KnownTyp t,KnownShape shape) => Bool -> String -> T shape t -> Gen (T shape t)
 persistent trainable name initial = do
   result <- GPVariable trainable name initial
-  when trainable (newParameter (ParamInfo name (shapeToList @shape) (typVal @t) result))
+  when trainable (newParameter (ParamInfo name (typeSShape @shape) (typeSTyp @t) result))
   peekAt name result
   return result
 
@@ -181,7 +181,7 @@ modifyPersistent v x = (GPModify v x)
 peekAt :: forall s t. (KnownShape s,KnownTyp t) => String -> Tensor s t -> Gen ()
 peekAt name v =  modify $ \GState{..} -> GState{genPeeks = p:genPeeks,..}
   where p :: ParamInfo
-        p = (ParamInfo name (shapeToList @s) (typVal @t) v)
+        p = (ParamInfo name (typeSShape @s) (typeSTyp @t) v)
 
 -- type family AddSpatialDims xs ys where
 --   AddSpatialDims '[x] '[] = '[x]
@@ -255,6 +255,9 @@ infixl 7 ∙
   Tensor '[n] t -> Tensor '[n] t -> Tensor '[] t
 x · y = reduceSum0 (x ⊙ y)
 infixl 7 ·
+
+
+
 
 -------------------------
 -- Generic parameters
