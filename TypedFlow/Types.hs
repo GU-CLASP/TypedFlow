@@ -573,24 +573,64 @@ type None = 514229 --  fibonnaci prime.
 -- Generation Effects
 
 
-data ParamInfo = ParamInfo {paramName :: String
-                           ,paramShape :: [Integer]
-                           ,paramDType :: Typ
-                           ,paramVar   :: forall s t. (KnownShape s, KnownTyp t) => Tensor s t}
+data ParamInfo = forall s t. (KnownShape s, KnownTyp t) => 
+  ParamInfo {paramName :: String
+            ,paramShape :: [Integer]
+            ,paramDType :: Typ
+            ,paramVar   :: Tensor s t}
 data GState = GState {nextVar :: Integer, -- ^ next free variable
                       genText :: DOC,
                       genParams :: [ParamInfo], -- ^ optimizable parameters
+                      genPeeks :: [ParamInfo], -- ^ variables available after running the model (outputs)
                       genRegularizers :: [Scalar Float32], -- ^ accumulated regularizers
                       genTrainingPlaceholder :: Scalar TFBool, -- ^ flag which is true when training
                       genPureTable :: SSNMap2 Shape Typ T DOC,
                       -- ^ Table mapping pointers to their
                       -- interpretations, so that sharing in the data
                       -- structures can be exploited when generating
-                      genAssignTable :: M.Map String DOC,
+                      genAssignTable :: M.Map String DOC
                       -- ^ Table mapping expressions to variables, so
                       -- that lost sharing can be recovered
-                      genPeeks :: [(String,UntypedExpression)]}
-newtype Gen x = Gen {fromGen :: State GState x} deriving (Monad, MonadState GState, Functor, Applicative)
+                      -- genPeeks :: [(String,UntypedExpression)]
+                     }
+data Gen a where
+  GPVariable :: forall (shape :: Shape) t. (KnownTyp t,KnownShape shape) => Bool -> String -> T shape t -> Gen (T shape t) 
+  GPPlaceholder :: forall s t. SShape s -> STyp t -> String -> Gen (T s t)
+  GPModify :: (KnownShape s,KnownTyp t) => T s t -> T s t -> Gen (T s t)
+  GPReturn :: a -> Gen a
+  GPState :: (GState -> (a,GState)) -> Gen a
+  GPBind :: Gen a -> (a -> Gen b) -> Gen b
+
+instance MonadState GState Gen where
+  state = GPState
+
+instance Monad Gen where
+  (>>=) = GPBind
+  return = GPReturn
+
+instance Applicative Gen where
+  (<*>) = ap
+  pure = return
+
+instance Functor Gen where
+  fmap f = (pure f <*>)
+
+
+-- | Name of a placeholder of a given shape and type.
+data HolderName (st :: (Shape,Typ)) = HolderName String
+
+
+newVar :: Gen String
+newVar = do
+  n <- newId
+  return ("var" <> show n)
+
+-- newId :: Gen Integer
+newId :: MonadState GState m => m Integer
+newId = do
+  n <- gets nextVar
+  modify $ \GState{..} -> GState {nextVar=nextVar+1,..}
+  return n
 
 --------------------------
 -- Tensors

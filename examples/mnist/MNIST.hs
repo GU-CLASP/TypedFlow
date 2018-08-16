@@ -9,6 +9,7 @@
 module MNIST where
 
 import TypedFlow
+import TypedFlow.Python.Top
 import TypedFlow.Python
 
 (#>) :: forall b c a. (a -> b) -> (b -> c) -> a -> c

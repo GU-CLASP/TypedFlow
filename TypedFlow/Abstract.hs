@@ -101,9 +101,6 @@ instance KnownTyp ty => Batched (HTV ty) where
 broadcastGen  :: KnownNat n => Batched f => All KnownShape r => Unique -> Bool -> Proxy n -> f r -> f (Ap (FMap (Cons n)) r)
 broadcastGen u varyNoise n = batchify n (broadcast u varyNoise n)
 
-testSatEqual :: forall n m. Sat KnownNat n -> Sat KnownNat m -> Maybe (n :~: m)
-testSatEqual Sat Sat = testEqual (Proxy @n) (Proxy @m)
-
 
 -- | Turns a tensor of indices in a container into a tensor of indices
 -- in a container of higher rank. The added indexed dimension
@@ -185,7 +182,7 @@ protoBroadcast u varyNoise n@(Sat) rec finished ty s tensor
   Where cond x y -> Where (rec s cond) (rec s x) (rec s y)
   T _ -> error "panic: broadcast constant should be finished!"
   Unbroadcast p@Sat u' x
-    | u == u' -> case testSatEqual p n of
+    | u == u' -> case testEq p n of
         Nothing -> UnOp (Simple1Op "panic.unbroadcast" [integer (natVal n)
                                                        ,integer (natVal p)])
                          Unit (p :* s) (n :* s) x

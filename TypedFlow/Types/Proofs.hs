@@ -36,8 +36,38 @@ import TypedFlow.Types hiding (T)
 import Data.Type.Equality
 import Unsafe.Coerce
 
-testEqual :: KnownNat m => KnownNat n => Proxy m -> Proxy n -> Maybe (m :~: n)
-testEqual m n = if natVal m == natVal n then Just (unsafeCoerce Refl) else Nothing
+class SingEq s where
+  testEq :: forall a b. s a -> s b -> Maybe (a :~: b)
+
+instance SingEq (Sat KnownNat) where
+  testEq :: forall n m. Sat KnownNat n -> Sat KnownNat m -> Maybe (n :~: m)
+  testEq Sat Sat = testNatEqual (Proxy @n) (Proxy @m)
+
+testNatEqual :: KnownNat m => KnownNat n => Proxy m -> Proxy n -> Maybe (m :~: n)
+testNatEqual m n = if natVal m == natVal n then Just (unsafeCoerce Refl) else Nothing
+
+instance SingEq f => SingEq (NP f) where
+  testEq Unit Unit = Just Refl
+  testEq (x :* xs) (y :* ys) = case (testEq x y, testEq xs ys) of
+    (Just Refl, Just Refl) -> Just Refl
+    _ -> Nothing
+  testEq _ _ = Nothing
+
+instance SingEq SKind where
+  testEq SBool SBool = Just Refl
+  testEq SInt SInt = Just Refl
+  testEq SFloat SFloat = Just Refl
+  testEq _ _ = Nothing
+
+instance SingEq SNBits where
+  testEq SB32 SB32 = Just Refl
+  testEq SB64 SB64 = Just Refl
+  testEq _ _ = Nothing
+
+instance SingEq STyp where
+  testEq (STyp k b Refl) (STyp k' b' Refl) = case (testEq k k', testEq b b') of
+    (Just Refl, Just Refl) -> Just Refl
+    _ -> Nothing
 
 productS :: forall s. SShape s -> Sat KnownNat (Product s)
 productS s = knownSShape s $ knownProduct @s $ Sat

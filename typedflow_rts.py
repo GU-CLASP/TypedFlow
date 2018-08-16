@@ -194,11 +194,11 @@ def StopWhenValidationGetsWorse(patience = 1):
         return False
     return callback
 
-def StopWhenAccurate(error_rate = .01):
+def StopWhenAccurate(phase="val",error_rate = .01):
     '''Return a callback which stops training if error rate drops below 1%'''
     def callback(values):
         nonlocal error_rate
-        return values["val"]["error_rate"] < error_rate
+        return values[phase]["error_rate"] < error_rate
     return callback
 
 def Every(n,f):

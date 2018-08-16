@@ -42,14 +42,14 @@ module TypedFlow.TF (
   parameter,
   parameterDefault,
   ParamWithDefault(..),
-  getParameters,
+  -- getParameters,
   -- ** Persistent variables
   persistent,
   modifyPersistent,
   -- ** Placeholders and outputs
   placeholder,
   peekAt,
-  peekAtMany,
+  -- peekAtMany,
   -- * Operations
   -- ** Constants
   zeros,
@@ -70,8 +70,8 @@ module TypedFlow.TF (
   argmax0, argmax1,
   softmax0, softmax1,
   -- ** Gradients
-  grad,
-  clipByGlobalNorm,
+  -- grad,
+  -- clipByGlobalNorm,
   clipByValue,
   -- ** Indexing
   last0, nth0, nth0', lookupT, gather,
@@ -122,13 +122,12 @@ module TypedFlow.TF (
   ) where
 
 import Prelude hiding (RealFrac(..))
-import Text.PrettyPrint.Compact hiding (Last, All,Product,Sum)
 import GHC.TypeLits
 import Data.Proxy
 import TypedFlow.Types
 import TypedFlow.Types.Proofs
-import TypedFlow.Python
 import Control.Monad (when)
+import Control.Monad.State
 import TypedFlow.Abstract
 
 -- | Repeat a flexible-shape constant vector to form a heterogeneous tensor vector.
@@ -147,81 +146,42 @@ repeatHT f = zs (typeSList @ss)
         zs Unit = Unit
         zs (_ :* n) = Uncurry f :* zs n
 
--- TODO: use a different type for persistent?
--- | Declare variable which persists between calls to session.run.
-persistent :: ∀ (shape :: Shape) t. (KnownTyp t,KnownShape shape) => Bool -> String -> T shape t -> Gen (T shape t)
-persistent trainable name initial = do
-  v <- newVar
-  when trainable (newParameter (ParamInfo name (shapeToList @shape) (typVal @t) (T v)))
-  i <- generatePure initial
-  v <-- funcall "tf.Variable" [i, named "name" (string (show (name))), named "trainable" (bool trainable)]
-  let result = T v
-  peekAt name result
-  return result
-
 -- | Declare a parameter to optimize. The shape of parameter should
 -- not depend on dimensions which can change between runs, such as the
 -- batch size.
 parameter' :: ∀ (shape :: Shape) t. (KnownTyp t,KnownShape shape) => String -> T shape t -> Gen (T shape t)
 parameter' = persistent True
 
--- | Name a tensor so that it is made available for session.run.
-peekAt :: (KnownShape s,KnownTyp t) => String -> Tensor s t -> Gen ()
-peekAt p v = peekAtAny p =<< generatePure v
 
-peekAtMany :: String -> HTV t xs -> Gen ()
-peekAtMany p htv = peekAtAny p (list $ htoList $ hmap (\(F (T x)) -> K x) htv)
+newParameter :: MonadState GState m => ParamInfo -> m ()
+newParameter p =   modify $ \GState{..} -> GState{genParams = p:genParams,..}
 
+-- TODO: use a different type for persistent?
+-- | Declare variable which persists between calls to session.run.
+persistent :: ∀ (shape :: Shape) t. (KnownTyp t,KnownShape shape) => Bool -> String -> T shape t -> Gen (T shape t)
+persistent trainable name initial = do
+  result <- GPVariable trainable name initial
+  when trainable (newParameter (ParamInfo name (shapeToList @shape) (typVal @t) result))
+  peekAt name result
+  return result
+
+placeholder :: ∀ (shape :: Shape) t. (KnownTyp t,KnownShape shape) => String -> Gen (T shape t)
+placeholder n = do
+  x <- GPPlaceholder typeSShape typeSTyp n
+  peekAt n x
+  return x
 
 -- | Modify a mutable tensor. Attention: for the assignment to happen,
 -- the resulting tensor must be evaluated!
 modifyPersistent :: (KnownShape s,KnownTyp t) => T s t -> T s t -> Gen (T s t)
-modifyPersistent (ref) (value) = do
-  r <- generatePure ref
-  v <- generatePure value
-  return (T (funcall "tf.assign" [r,v]))
-
--- TODO: get the parameters from the genParams field
--- | Return a list of parameters.
-getParameters :: Gen UntypedExpression
-getParameters = do
-  v <- newVar
-  v <-- text "tf.trainable_variables()"
-  return v
-
--- TODO: get the parameters from the genParams field
+modifyPersistent v x = (GPModify v x)
 
 
--- TODO: gradient wrt. a HTV
--- | Gradient of wrt. given parameters.
-grad :: UntypedExpression -> UntypedExpression -> UntypedExpression
-grad y vars = funcall "tf.gradients" [y, vars]
-
--- -- | Gradient of wrt. given parameters.
--- grad' :: KnownLen xs => T s Float32 -> HHTV xs -> Gen (HHTV xs)
--- grad' (T y) vars = do
---  v <- newVar
---  v <-- funcall "tf.gradients" [y, list (htoList (hmap (\(Uncurry (T x)) -> K x) vars)) ]
---  return (mkArr 0 shapeSList v)
---   where mkArr :: forall xs. Int -> SList xs -> DOC -> HHTV xs
---         mkArr _ LZ _ = Unit
---         mkArr i (LS _ n) v = Uncurry (T (v <> brackets (int i))) :* mkArr (succ i) n v
-
-
--- | Clip a gradient
-clipByGlobalNorm :: Float -> UntypedExpression -> UntypedExpression
-clipByGlobalNorm maxNorm x = funcall "tf.clip_by_global_norm" [x,float maxNorm] <> brackets (int 0)
- -- clip_by_global_norm returns a couple (clipped grads, global_norm)
-
-
--- | Placeholder (to fill)
-placeholder :: ∀t s. (KnownShape s, KnownTyp t) => String -> Gen (T s t)
-placeholder n = do
-  let name = text n
-  name <-- funcall "tf.placeholder" [showTyp @t, named "shape" (showShapeType @s), named "name" (text (show n))]
-  peekAtAny n name
-  return (T name)
-
+-- | Name a tensor so that it is made available for session.run.
+peekAt :: forall s t. (KnownShape s,KnownTyp t) => String -> Tensor s t -> Gen ()
+peekAt name v =  modify $ \GState{..} -> GState{genPeeks = p:genPeeks,..}
+  where p :: ParamInfo
+        p = (ParamInfo name (shapeToList @s) (typVal @t) v)
 
 -- type family AddSpatialDims xs ys where
 --   AddSpatialDims '[x] '[] = '[x]
@@ -309,7 +269,6 @@ parameter s p = do
   x <- p
   travTensor parameter' s x
 
-
 -- flattenHTV :: KnownTyp t => All KnownShape xs => HTV t xs -> Tensor '[Sum (Ap (FMap CProduct) xs)] t
 -- flattenHTV Unit = zeros
 -- flattenHTV (F x :* xs) = concat0 (flattenAll x) (flattenHTV xs)
@@ -331,3 +290,12 @@ parameter s p = do
 --         prodshape (LS xx xs) = product (shapeToList' (shapeSListProxy xx)) : prodshape xs
 
 
+-- -- | Gradient of wrt. given parameters.
+-- grad' :: KnownLen xs => T s Float32 -> HHTV xs -> Gen (HHTV xs)
+-- grad' (T y) vars = do
+--  v <- newVar
+--  v <-- funcall "tf.gradients" [y, list (htoList (hmap (\(Uncurry (T x)) -> K x) vars)) ]
+--  return (mkArr 0 shapeSList v)
+--   where mkArr :: forall xs. Int -> SList xs -> DOC -> HHTV xs
+--         mkArr _ LZ _ = Unit
+--         mkArr i (LS _ n) v = Uncurry (T (v <> brackets (int i))) :* mkArr (succ i) n v

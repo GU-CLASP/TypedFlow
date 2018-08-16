@@ -46,21 +46,23 @@ import Control.Monad.State
 import TypedFlow.Types
 import TypedFlow.Types.Proofs
 import TypedFlow.Memo
-import Text.PrettyPrint.Compact hiding (All,Last,Product,Sum)
+import Text.PrettyPrint.Compact hiding (All,Last,Product,Sum,Options)
+import qualified Text.PrettyPrint.Compact as PP
 import qualified Data.Map as M
 
-generateFile :: String -> Gen () -> IO ()
+
+generateFile :: String -> Python () -> IO ()
 generateFile fname g = do
-  putStrLn ("Parameters (total " ++ show (sum [product paramShape | ParamInfo{..} <- params]) ++ "):")
+  putStrLn ("Parameters (total " ++ show (sum [product (paramShape p) | p <- params]) ++ "):")
   forM_ params printParam
   writeFile fname output
   where (output,params) = generate g
-        printParam ParamInfo{..} = putStrLn (paramName ++ ": " ++ "T " ++ render (showShape' paramShape)  ++ " " ++ showT paramDType)
+        printParam p = putStrLn (paramName p ++ ": " ++ "T " ++ render (showShape' (paramShape p))  ++ " " ++ showT (paramDType p))
 
 named :: String -> DOC -> DOC
 named fname x = text (fname <> "=") <> x
 
-genFun :: forall b. String -> [DOC] -> Gen b -> Gen b
+genFun :: forall b. String -> [DOC] -> Python b -> Python b
 genFun name args body = do
   gen (text "def " <> text name <> tuple args <> text ":")
   withDOC (\b -> text "  " <> b) body
@@ -68,6 +70,9 @@ genFun name args body = do
 
 showTyp :: forall t. KnownTyp t => DOC
 showTyp = text (showT (typVal @t))
+
+showSTyp :: forall t. STyp t -> DOC
+showSTyp t = knownTyp t $ showTyp @t
 
 showShape' ::  [Integer] -> DOC
 showShape' s = list (map (showDim' "None") s)
@@ -100,40 +105,34 @@ showDim = showDim' "None" (natVal (Proxy @ n))
 str :: Show a => a -> DOC
 str = text . show
 
-newId :: Gen Integer
-newId = do
-  n <- gets nextVar
-  modify $ \GState{..} -> GState {nextVar=nextVar+1,..}
-  return n
-  
-newVar :: Gen DOC
-newVar = do
-  n <- newId
-  return (text "var" <> integer n)
-
-gen :: DOC -> Gen ()
+gen :: DOC -> Python ()
 gen s = modify $ \GState{..} -> GState {genText=genText $$ s,..}
 
-setGen :: DOC -> Gen ()
+setGen :: DOC -> Python ()
 setGen d = modify $ \GState{..} -> GState {genText=d,..}
 
-(<--) :: DOC -> UntypedExpression -> Gen ()
+(<--) :: DOC -> UntypedExpression -> Python ()
 x <-- y = gen (x <> text "=" <>  y)
 
 -- | save an intermediate result to a variable and save it to
 -- genAssignTable for future re-use.
-cache :: DOC -> DOC  -> Gen DOC
+cache :: DOC -> DOC  -> Python DOC
 cache shap x = do
-  let x' = renderWith (Options 92 (const id)) x
+  let x' = renderWith (PP.Options 92 (const id)) x
   mcache <- M.lookup x' <$> gets genAssignTable
   case mcache of
     Just y -> return y
     Nothing -> do
-      v <- newVar
+      v <- newPyVar
       gen ("#" <> shap)
       v <-- x
       modify (\g -> g {genAssignTable = M.insert x' v (genAssignTable g)})
       return v
+
+newPyVar :: Python DOC
+newPyVar = do
+  n <- newId
+  return (text ("var" <> show n))
 
 tuple :: [DOC] -> DOC
 tuple = parens . sep . punctuate comma
@@ -151,7 +150,7 @@ funcall' f args = hangWith "" 2 (f <> "(") (as <> ")")
 func :: String -> [DOC] -> [(String,DOC)] -> DOC
 func fname positional namedArgs = funcall fname (positional ++ map (uncurry named) namedArgs )
 
-withDOC :: forall a. (DOC -> DOC) -> Gen a -> Gen a
+withDOC :: forall a. (DOC -> DOC) -> Python a -> Python a
 withDOC f g = do
   before <- gets genText
   setGen mempty
@@ -160,22 +159,15 @@ withDOC f g = do
   setGen (before $$ f after)
   return x
 
-newParameter :: MonadState GState m => ParamInfo -> m ()
-newParameter p =   modify $ \GState{..} -> GState{genParams = p:genParams,..}
 
--- | Name an expression so that it is made available for session.run.
-peekAtAny :: String -> UntypedExpression -> Gen ()
-peekAtAny p v = modify $ \GState{..} -> GState{genPeeks = if p `elem` map fst genPeeks then error ("duplicate name: " ++ p) else (p,v):genPeeks,..}
-
-
--- assign :: ∀s t. (KnownShape s, KnownTyp t) => T s t -> Gen (T s t)
+-- assign :: ∀s t. (KnownShape s, KnownTyp t) => T s t -> Python (T s t)
 -- assign x = do
 --   e <- generatePure x
 --   return (T e)
 
-assignAny :: UntypedExpression -> Gen UntypedExpression
+assignAny :: UntypedExpression -> Python UntypedExpression
 assignAny x = do
-  v <- newVar
+  v <- newPyVar
   v <-- x
   return v
 
@@ -185,19 +177,16 @@ assignAny x = do
 --   let T body = f (T v)
 --   return (text "lambda " <> v <> ": " <> body)
 
-generate :: Gen () -> (String,[ParamInfo])
-generate s = (renderWith (Options 92 (const id)) genText,genParams)
-  where GState{..} =  execState (fromGen s) (GState {nextVar = 0
-                                                    ,genText = mempty
-                                                    ,genParams=[]
-                                                    ,genRegularizers=[]
-                                                    ,genTrainingPlaceholder = T "NO TRAINING PLACEHOLDER!"
-                                                    ,genPureTable = mempty
-                                                    ,genAssignTable = mempty
-                                                    ,genPeeks=[]})
-
--- FIXME: sharing
-
+generate :: Python () -> (String,[ParamInfo])
+generate s = (renderWith (PP.Options 92 (const id)) genText,genParams)
+  where GState{..} =  execState s (GState {nextVar = 0
+                                          ,genText = mempty
+                                          ,genParams=[]
+                                          ,genRegularizers=[]
+                                          ,genTrainingPlaceholder = T "NO TRAINING PLACEHOLDER!"
+                                          ,genPureTable = mempty
+                                          ,genAssignTable = mempty
+                                          ,genPeeks=[]})
 
 permToFun :: Permutation s t -> Integer -> Integer
 permToFun = \case
@@ -215,7 +204,7 @@ permToFun = \case
 listProxyLen :: forall proxy s. KnownLen s => proxy s -> Integer
 listProxyLen _ = listTypeLen @s
 
-generatePure :: forall s t. KnownTyp t => KnownShape s => T s t -> Gen DOC
+generatePure :: forall s t. KnownTyp t => KnownShape s => T s t -> Python DOC
 generatePure x = do
   let sn = makeSn2 x
   mv <- snMapLookup2 sn <$> gets genPureTable
@@ -239,7 +228,7 @@ genDistr d sh s1 = case d of
     funcall' (funcall "tf.orthogonal_initializer" [named "dtype" (showTyp @t)]) [named "shape" (showSShape (sh .+. s1))]
 
 
-generatePure' :: forall s t. KnownTyp t => (forall s' t'. KnownTyp t' => SShape s' -> T s' t' -> Gen DOC) -> SShape s -> T s t -> Gen DOC
+generatePure' :: forall s t. KnownTyp t => (forall s' t'. KnownTyp t' => SShape s' -> T s' t' -> Python DOC) -> SShape s -> T s t -> Python DOC
 generatePure' rec sR = knownSShape sR $ \case
   Unbroadcast{} -> error "broadcasting operation did not complete!"
   DirectBroadcast s0 s1 s2 s3 x -> do
@@ -323,4 +312,73 @@ generatePure' rec sR = knownSShape sR $ \case
 showT :: Typ -> [Char]
 showT (Typ Bool _) = "tf.bool"
 showT (Typ k l) = "tf." ++ map toLower (show k) ++ drop 1 (show l)
+
+type Python a = State GState a
+
+interpGen :: Gen a -> Python a
+interpGen (GPReturn x) = return x
+interpGen (GPBind a b) = do x <- interpGen a
+                            interpGen (b x)
+interpGen (GPVariable trainable name initial) = do
+  i <- generatePure initial
+  v <- newPyVar 
+  v <-- funcall "tf.Variable" [i, named "name" (string (show (name))), named "trainable" (bool trainable)]
+  return (T v)
+
+interpGen (GPPlaceholder s t n) = do
+  let name = text n
+  name <-- funcall "tf.placeholder" [showSTyp t, named "shape" (showSShape s), named "name" (text (show n))]
+  return (T name)
+interpGen (GPModify ref value) = do
+  r <- generatePure ref
+  v <- generatePure value
+  return (T (funcall "tf.assign" [r,v]))
+interpGen (GPState f) = state f
+
+-- TODO: get the parameters from the genParams field
+-- | Return a list of parameters.
+getParameters :: Python UntypedExpression
+getParameters = return ("tf.trainable_variables()")
+
+-- genPrim :: GenPrim a -> Gen a
+-- genPrim (Pure )
+
+{-
+MKVARIABLE:
+
+-- | Placeholder (to fill)
+placeholder :: ∀t s. (KnownShape s, KnownTyp t) => String -> Gen (T s t)
+placeholder n = do
+  let name = text n
+  name <-- funcall "tf.placeholder" [showTyp @t, named "shape" (showShapeType @s), named "name" (text (show n))]
+  peekAtAny n name
+  return (T name)
+
+-- | Name a tensor so that it is made available for session.run.
+peekAt :: (KnownShape s,KnownTyp t) => String -> Tensor s t -> Gen ()
+peekAt p v = peekAtAny p =<< generatePure v
+
+
+-- | Modify a mutable tensor. Attention: for the assignment to happen,
+-- the resulting tensor must be evaluated!
+modifyPersistent :: (KnownShape s,KnownTyp t) => T s t -> T s t -> Gen (T s t)
+modifyPersistent (ref) (value) = do
+  r <- generatePure ref
+  v <- generatePure value
+  return (T (funcall "tf.assign" [r,v]))
+
+
+
+-}
+
+-- | Clip a gradient
+clipByGlobalNorm :: Float -> UntypedExpression -> UntypedExpression
+clipByGlobalNorm maxNorm x = funcall "tf.clip_by_global_norm" [x,float maxNorm] <> brackets (int 0)
+ -- clip_by_global_norm returns a couple (clipped grads, global_norm)
+
+-- | Gradient of wrt. given parameters.
+grad :: UntypedExpression -> UntypedExpression -> UntypedExpression
+grad y vars = funcall "tf.gradients" [y, vars]
+
+
 
