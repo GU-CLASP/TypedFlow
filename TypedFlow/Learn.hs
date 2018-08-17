@@ -138,6 +138,9 @@ instance (KnownTyp t, KnownShape p) => Batched (StateAndOutput t p) where
                  ,modelCorrect = f modelCorrect}
       (batchify n f xs)
 
+-- | Name of a placeholder of a given shape and type.
+data HolderName (st :: (Shape,Typ)) = HolderName String
+
 genBatchedPlaceholders :: All KnownPair shapesAndTypes => Unique -> Sat KnownNat n -> SList' HolderName shapesAndTypes -> Gen (HHTV shapesAndTypes)
 genBatchedPlaceholders _ _ Unit = return Unit
 genBatchedPlaceholders u n@Sat (HolderName name :* names) = do

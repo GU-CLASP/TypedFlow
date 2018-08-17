@@ -44,6 +44,7 @@ import Data.List (genericReplicate)
 import GHC.TypeLits
 import Control.Monad.State
 import TypedFlow.Types
+import TypedFlow.Abstract (newId)
 import TypedFlow.Types.Proofs
 import TypedFlow.Memo
 import Text.PrettyPrint.Compact hiding (All,Last,Product,Sum,Options)

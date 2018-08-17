@@ -593,22 +593,6 @@ instance Functor Gen where
   fmap f = (pure f <*>)
 
 
--- | Name of a placeholder of a given shape and type.
-data HolderName (st :: (Shape,Typ)) = HolderName String
-
-
-newVar :: Gen String
-newVar = do
-  n <- newId
-  return ("var" <> show n)
-
--- newId :: Gen Integer
-newId :: MonadState GState m => m Integer
-newId = do
-  n <- gets nextVar
-  modify $ \GState{..} -> GState {nextVar=nextVar+1,..}
-  return n
-
 --------------------------
 -- Tensors
 

@@ -37,20 +37,21 @@ tensor operations. It is not normally imported directly by users.
 
 module TypedFlow.Abstract where
 
-import System.IO.Unsafe
-import Data.Unique
-import Prelude hiding (RealFrac(..))
-import GHC.TypeLits
-import Data.Proxy
-import TypedFlow.Types hiding (T)
-import Data.Type.Equality
+import Control.Monad.State
+import Data.IntMap (IntMap)
 import Data.Kind (Type,)
-import TypedFlow.Types (T(..))
-import TypedFlow.Types.Proofs
+import Data.Proxy
+import Data.Type.Equality
+import Data.Unique
+import GHC.TypeLits
+import Prelude hiding (RealFrac(..))
+import System.IO.Unsafe
 import Text.PrettyPrint.Compact hiding (All,Last,Product,Sum)
 import TypedFlow.Memo
+import TypedFlow.Types (T(..))
+import TypedFlow.Types hiding (T)
+import TypedFlow.Types.Proofs
 import qualified Data.IntMap as IM
-import Data.IntMap (IntMap)
 
 
 broadcast :: forall n s t proxy. KnownTyp t => KnownShape s => KnownNat n
@@ -758,6 +759,18 @@ oneHot0 = UnOp (Axis1Op OneHot 0) Unit s
 -- | One hot vector along axis 1
 oneHot1 :: forall numClasses w s m t. KnownBits w =>KnownShape s => KnownNat numClasses => KnownNat m => KnownBits t => Tensor (m ': s) ('Typ 'Int w) -> Tensor (m ': numClasses ': s) (Flt t)
 oneHot1 = mapT oneHot0
+
+newVar :: Gen String
+newVar = do
+  n <- newId
+  return ("var" <> show n)
+
+-- newId :: Gen Integer
+newId :: MonadState GState m => m Integer
+newId = do
+  n <- gets nextVar
+  modify $ \GState{..} -> GState {nextVar=nextVar+1,..}
+  return n
 
 -- | Generate a random tensor whose distribution is given. A new noise
 -- is sampled for each element in a batch.
