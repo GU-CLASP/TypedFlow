@@ -180,23 +180,11 @@ withDOC f g = do
   setGen (before $$ f after)
   return x
 
-
--- assign :: ∀s t. (KnownShape s, KnownTyp t) => T s t -> Python (T s t)
--- assign x = do
---   e <- generatePure x
---   return (T e)
-
 assignAny :: UntypedExpression -> Python UntypedExpression
 assignAny x = do
   v <- newPyVar @'[] @Float32
   v <-- x
   return (pyVarRepr v)
-
--- lambda :: (T s t -> T s' t') -> Gen UntypedExpression
--- lambda f = do
---   v <- newVar
---   let T body = f (T v)
---   return (text "lambda " <> v <> ": " <> body)
 
 generate :: Python () -> (String,[VarInfo])
 generate s = (renderWith (PP.Options 92 (const id)) genText, genParams)
@@ -216,7 +204,6 @@ permToFun = \case
   PermSkip p -> \case
     0 -> 0
     x -> permToFun p (x-1) + 1
-
 
 listProxyLen :: forall proxy s. KnownLen s => proxy s -> Integer
 listProxyLen _ = listTypeLen @s
@@ -386,37 +373,6 @@ interpGen (GPState f) = lift (state f)
 -- | Return a list of parameters.
 getParameters :: Python UntypedExpression
 getParameters = return ("tf.trainable_variables()")
-
--- genPrim :: GenPrim a -> Gen a
--- genPrim (Pure )
-
-{-
-MKVARIABLE:
-
--- | Placeholder (to fill)
-placeholder :: ∀t s. (KnownShape s, KnownTyp t) => String -> Gen (T s t)
-placeholder n = do
-  let name = text n
-  name <-- funcall "tf.placeholder" [showTyp @t, named "shape" (showShapeType @s), named "name" (text (show n))]
-  peekAtAny n name
-  return (T name)
-
--- | Name a tensor so that it is made available for session.run.
-peekAt :: (KnownShape s,KnownTyp t) => String -> Tensor s t -> Gen ()
-peekAt p v = peekAtAny p =<< generatePure v
-
-
--- | Modify a mutable tensor. Attention: for the assignment to happen,
--- the resulting tensor must be evaluated!
-modifyPersistent :: (KnownShape s,KnownTyp t) => T s t -> T s t -> Gen (T s t)
-modifyPersistent (ref) (value) = do
-  r <- generatePure ref
-  v <- generatePure value
-  return (T (funcall "tf.assign" [r,v]))
-
-
-
--}
 
 -- | Clip a gradient
 clipByGlobalNorm :: Float -> UntypedExpression -> UntypedExpression
