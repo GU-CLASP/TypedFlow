@@ -303,7 +303,7 @@ reduceAll op x = knownProduct @s $
    op axis0 (reshapeTo ((:*) (productS (typeSShape @s)) Unit) x)
 
 -- | Mean value of the input tensor.
-reduceMeanAll, reduceSumAll, reduceMaxAll, reduceMinAll :: ∀ (s :: Shape) t. KnownTyp t => KnownShape s => Tensor s t -> Tensor '[] t
+reduceMeanAll, reduceSumAll, reduceMaxAll, reduceMinAll :: ∀ (s :: Shape) t. KnownNumeric t => KnownShape s => Tensor s t -> Tensor '[] t
 reduceMaxAll = reduceAll reduceMax
 reduceMeanAll = reduceAll reduceMean
 reduceSumAll = reduceAll reduceSum
@@ -322,12 +322,12 @@ sShapeDropSucc AxZero (_ :* s) = s
 sShapeDropSucc (AxSucc n) (_ :* xs) = sShapeDropSucc n xs
 
 -- | Internal. Use 'reduceSum', etc. instead.
-reduce :: ∀ n s t. KnownTyp t => (KnownShape s) => ReduceOp -> Axis n s -> T s t -> T (Take n s ++ Drop ('Succ n) s) t
-reduce op n x = UnOp (Axis1Op (Reduce op) (axisInt n)) Unit (typeSShape @s)  (sShapeTake' n s .+. sShapeDropSucc n s) x
+reduce :: ∀ n s t. KnownNumeric t => (KnownShape s) => ReduceOp -> Axis n s -> T s t -> T (Take n s ++ Drop ('Succ n) s) t
+reduce op n x = UnOp (Axis1Op (ReduceOp op) (axisInt n)) Unit (typeSShape @s)  (sShapeTake' n s .+. sShapeDropSucc n s) x
   where s = typeSShape @s
 
 -- | Reduce along a given dimension
-reduceSum, reduceMean, reduceMax, reduceMin :: ∀n s t. (KnownTyp t,KnownShape s) => Axis n s -> T s t -> T (Take n s ++ Drop ('Succ n) s) t
+reduceSum, reduceMean, reduceMax, reduceMin :: ∀n s t. (KnownNumeric t,KnownShape s) => Axis n s -> T s t -> T (Take n s ++ Drop ('Succ n) s) t
 reduceSum = reduce Sum
 reduceMean = reduce Mean
 reduceMax = reduce Max
@@ -335,7 +335,7 @@ reduceMin = reduce Min
 
 
 -- | Sum along the first dimension
-reduceSum0 :: ∀ s' n t. KnownNat n => KnownTyp t => KnownShape s' => Tensor (n ': s') t -> Tensor s' t
+reduceSum0 :: ∀ s' n t. KnownNat n => KnownNumeric t => KnownShape s' => Tensor (n ': s') t -> Tensor s' t
 reduceSum0 = reduceSum axis0
 
 
@@ -359,25 +359,25 @@ instance (KnownBits b, KnownShape s) => Fractional (T s ('Typ 'Float b)) where
 
 instance (KnownBits b, KnownShape s) => Floating (T s ('Typ 'Float b)) where
   pi = knownFloating @b $ constant pi
-  exp = unOp Exp
-  log = unOp Log
-  sin = unOp Sin
-  cos = unOp Cos
-  asin = unOp Asin
-  acos = unOp Acos
-  sinh = unOp Sinh
-  cosh = unOp Cosh
-  asinh = unOp Asinh
-  acosh = unOp Acosh
-  tanh = unOp Tanh
-  atan = unOp Atan
-  atanh = unOp Atanh
-  sqrt = unOp Sqrt
+  exp = unFlOp Exp
+  log = unFlOp Log
+  sin = unFlOp Sin
+  cos = unFlOp Cos
+  asin = unFlOp Asin
+  acos = unFlOp Acos
+  sinh = unFlOp Sinh
+  cosh = unFlOp Cosh
+  asinh = unFlOp Asinh
+  acosh = unFlOp Acosh
+  tanh = unFlOp Tanh
+  atan = unFlOp Atan
+  atanh = unFlOp Atanh
+  sqrt = unFlOp Sqrt
 
 -- | Pretend that the argument is a constant for the purposes of
 -- gradient computation
 stopGradient :: ∀ s t. KnownTyp t => KnownShape s => Tensor s t -> Tensor s t
-stopGradient = unOp StopGradient
+stopGradient = UnOp StopGradient Unit (typeSShape @s) (typeSShape @s)
 
 -- | Divide tensors, broacasting along shape @s@
 (⊘) :: forall s t. KnownBits t => KnownShape s => T s ('Typ 'Float t) -> T s ('Typ 'Float t) -> T s ('Typ 'Float t)
@@ -409,22 +409,25 @@ infixl 6 ⊕,⊝
 matmul :: forall m n o t. KnownNumeric t => KnownNat m => KnownNat o => KnownNat n => KnownTyp t => T '[n,o] t -> T '[o,m] t -> T '[n,m] t
 matmul = MatMul Unit Sat Sat Sat
 
-unOp :: forall s t. KnownShape s => KnownTyp t => Simple1Op -> T s t -> T s t
-unOp op = UnOp (Simple1Op op) Unit (typeSShape @s) (typeSShape @s)
+unOp :: forall s t. KnownShape s => KnownNumeric t => Num1Op -> T s t -> T s t
+unOp op = UnOp (Num1Op op) Unit (typeSShape @s) (typeSShape @s)
+
+unFlOp :: forall s t. KnownBits t => KnownShape s => Float1Op -> T s (Flt t) -> T s (Flt t)
+unFlOp op = UnOp (Float1Op op) Unit (typeSShape @s) (typeSShape @s)
 
 binOp :: forall s t u. KnownShape s => KnownTyp t => String -> T s t -> T s t -> T s u
 binOp op = BinOp (Simple2Op op Nothing) Unit (typeSShape @s) (typeSShape @s) (typeSShape @s)
 
 sigmoid, relu, square, round, floor, hardSigmoid
    :: ∀ s t. (KnownShape s, KnownBits t) => Tensor s ('Typ 'Float t) -> Tensor s ('Typ 'Float t)
-sigmoid = unOp Sigmoid
-hardSigmoid = unOp HardSigmoid
+sigmoid = unFlOp Sigmoid
+hardSigmoid = unFlOp HardSigmoid
 square = unOp Square
-relu = unOp Relu
+relu = unFlOp Relu
 
 -- Unfortunately RealFrac is utterly broken; so we have to do this:
-round = unOp Round
-floor = unOp Floor
+round = unFlOp Round
+floor = unFlOp Floor
 
 -- | Take a slice at dimension n from i to j.
 slice :: forall i j s t n. KnownTyp t => KnownShape s => KnownNat j => KnownNat i => (i <= j, j <= At n s, KnownLen s) =>
@@ -724,7 +727,7 @@ argmax1 = argmaxInternal (natSat @n) (natSat @m :* Unit) (typeSShape @s)
 
 -- | Cast the element type.
 cast :: forall u s t. KnownTyp t => KnownShape s => KnownTyp u => T s t -> T s u
-cast = UnOp (Simple1Op Cast) Unit (typeSShape @s) (typeSShape @s)
+cast = UnOp Cast Unit (typeSShape @s) (typeSShape @s)
 
 -- | (dense) softmax cross entropy with logits.
 softmaxCrossEntropyWithLogits :: forall numClasses.
@@ -793,7 +796,7 @@ noise d = do
 
 -- | Clip a tensor
 clipByValue :: forall s t. KnownShape s => KnownBits t => Float -> Float -> T s (Flt t) -> T s (Flt t)
-clipByValue lo hi = UnOp (Simple1Op (ClipByValue lo hi)) Unit typeSShape typeSShape
+clipByValue lo hi = UnOp (Float1Op (ClipByValue lo hi)) Unit typeSShape typeSShape
 
 -- | (where_ c x y)[i] = if c[i] then x[i] else y[i]
 where_ :: T s TFBool -> T s t -> T s t -> T s t

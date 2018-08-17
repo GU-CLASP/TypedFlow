@@ -619,7 +619,7 @@ data T (s :: Shape) (t :: Typ) where
            Distribution s1 t ->
            T (s0 ++ s1) t
   BinOp :: (KnownTyp t, KnownTyp u) => BinOp -> SShape s0 -> SShape s1 -> SShape s2 -> SShape s3 -> T (s0 ++ s1) t -> T (s0 ++ s2) u -> T (s0 ++ s3) v
-  UnOp :: KnownTyp t => UnOp (HaskType t) (HaskType u) -> SShape s0 -> SShape s1 -> SShape s2 -> T (s0 ++ s1) t -> T (s0 ++ s2) u
+  UnOp :: KnownTyp t => UnOp t u -> SShape s0 -> SShape s1 -> SShape s2 -> T (s0 ++ s1) t -> T (s0 ++ s2) u
   Unbroadcast :: Sat KnownNat n -> Unique -> T (n ': s) t -> T s t
   DirectBroadcast :: SShape s0 -> NP proxy' s1 -> SShape s2 -> NP proxy' s3 -> T (s0 ++ s2) t -> T (s0 ++ (s1 ++ (s2 ++ s3))) t
   ReshapeFrom :: Product s ~ Product s0 => SShape s0 -> T s0 t -> T s t
@@ -668,20 +668,21 @@ data PoolingType = MaxPool | AvgPool deriving Show
 type Tensor shape = T shape
 
 data ReduceOp = Mean | Max | Min | Sum
-data Axis1Op = ArgMax | OneHot | SoftMax | Reduce ReduceOp
-data Simple1Op
-  = Cast
-  | ClipByValue Float Float
+data Axis1Op t u where
+  ArgMax :: Axis1Op t ('Typ 'Int b)
+  OneHot :: KnownNumeric t => Axis1Op ('Typ 'Int b) t
+  SoftMax :: Axis1Op (Flt w) (Flt w)
+  ReduceOp :: KnownNumeric t => ReduceOp -> Axis1Op t t
+data Float1Op
+  = ClipByValue Float Float
   | Tanh
   | Sin
   | Exp
   | Sigmoid
   | HardSigmoid
   | Relu
-  | Square
   | Floor
   | Round
-  | StopGradient
   | Cos
   | Log
   | Asin
@@ -693,11 +694,17 @@ data Simple1Op
   | Atan
   | Atanh
   | Sqrt
-  | Negate
-  | Abs
-  | Sign
   deriving Show
-data UnOp t u = Simple1Op Simple1Op | SliceOp Integer Integer | Axis1Op Axis1Op Integer | IndexOp {indexOpAxis :: Integer, indexOpIndex :: Integer}
+data Num1Op = Square | Negate | Abs | Sign
+  deriving Show
+data UnOp (t :: Typ) (u :: Typ) where
+  StopGradient :: UnOp t t
+  Cast :: UnOp t u
+  Num1Op :: KnownNumeric t => Num1Op -> UnOp t t
+  Float1Op :: Float1Op -> UnOp (Flt w) (Flt w)
+  SliceOp :: Integer -> Integer -> UnOp t t
+  IndexOp :: {indexOpAxis :: Integer, indexOpIndex :: Integer} -> UnOp t t
+  Axis1Op :: Axis1Op t u -> Integer -> UnOp t u
              -- deriving Show
 data BinOp = Simple2Op String (Maybe (String,String)) | Axis2Op String Integer deriving Show
 

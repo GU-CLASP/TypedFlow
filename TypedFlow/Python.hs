@@ -190,7 +190,6 @@ generate :: Python () -> (String,[VarInfo])
 generate s = (renderWith (PP.Options 92 (const id)) genText, genParams)
   where (PyState{..},GState{..}) = runState (execStateT s initPyState) initialGstate
         initPyState = PyState {genPureTable = mempty
-                              ,genVariables = mempty
                               ,genAssignTable = mempty
                               ,genText = mempty}
 
@@ -257,12 +256,14 @@ generatePure' rec sR = knownSShape sR $ \case
   UnOp operation s0 s1 _s2 x -> do
    recx <- rec (s0 .+. s1) x
    return $ case operation of
+    Cast -> funcall "tf.cast" [recx,showTyp @t]
+    StopGradient -> funcall "tf.stop_gradient" [recx]
     Axis1Op op' n ->
        let (op,args) = case op' of
                          OneHot -> ("tf.one_hot",[("dtype",showTyp @t)])
                          ArgMax -> ("tf.argmax",[("output_type",showTyp @t)])
                          SoftMax -> ("tf.nn.softmax",[])
-                         Reduce r -> ("tf.reduce_" ++ rop, [])
+                         ReduceOp r -> ("tf.reduce_" ++ rop, [])
                             where rop = case r of
                                            Max -> "max"
                                            Min -> "min"
@@ -270,14 +271,15 @@ generatePure' rec sR = knownSShape sR $ \case
                                            Mean -> "mean"
            axisName = if op == "tf.nn.softmax" then "dim" else "axis"  -- use dim before TF 1.5
        in func op [recx] ((axisName,integer (sListLength s0 + n)):args)
-    Simple1Op op' -> funcall op (recx:args)
+    Float1Op op' -> funcall op (recx:args)
        where (op,args) = case op' of
-                Cast -> ("tf.cast",[showTyp @t])
                 HardSigmoid -> ("tf.keras.backend.hard_sigmoid",[])
                 Relu -> ("tf.nn.relu",[])
-                Negate -> ("tf.negative",[])
-                StopGradient -> ("tf.stop_gradient",[])
                 ClipByValue lo hi -> ("tf.clip_by_value",[float lo,float hi])
+                _ -> ("tf." ++ map toLower (show op'), [])
+    Num1Op op' -> funcall op (recx:args)
+       where (op,args) = case op' of
+                Negate -> ("tf.negative",[])
                 _ -> ("tf." ++ map toLower (show op'), [])
     SliceOp lo hi -> recx <> list (replicate (fromIntegral (sListLength s0)) (text ":") ++ [integer lo <> text ".." <> integer hi])
     IndexOp axis ix -> recx <> list (replicate (fromIntegral (axis + sListLength s0)) (text ":") ++ [integer ix])
@@ -427,7 +429,6 @@ pretty = case kindVal @(TypKind t) of
     SB64 -> double
 
 data PyState = PyState {genText :: DOC
-                       ,genVariables :: IntMap VarInfo
                        ,genPureTable :: SSNMap2 Shape Typ T DOC
                        -- ^ Table mapping pointers to their
                        -- interpretations, so that sharing in the data
@@ -439,9 +440,5 @@ data PyState = PyState {genText :: DOC
                        }
 
 type UntypedExpression = DOC
-
-instance Show DOC where
-  show = renderWith (PP.Options 92 (const id))
-
 type DOC = Doc ()
 

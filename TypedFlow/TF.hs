@@ -251,7 +251,7 @@ m ∙ v = squeeze0 (matmul (expandDim0 v) m)
 infixl 7 ∙
 
 -- | Dot product between two vectors.
-(·) :: ∀ n t. (KnownTyp t, KnownNat n) =>
+(·) :: ∀ n t. (KnownNumeric t, KnownNat n) =>
   Tensor '[n] t -> Tensor '[n] t -> Tensor '[] t
 x · y = reduceSum0 (x ⊙ y)
 infixl 7 ·
