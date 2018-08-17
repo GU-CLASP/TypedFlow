@@ -34,9 +34,6 @@ import GHC.TypeLits
 import Data.Proxy
 import Control.Monad.State
 import Data.Kind (Constraint)
-import TypedFlow.Memo
-import qualified Data.Map as M
-import qualified Data.IntMap as IM
 import Data.IntMap (IntMap)
 import Data.Unique
 import qualified Data.Int as Hask
@@ -53,8 +50,6 @@ proxySat _ = Sat
 
 natSat :: forall n. KnownNat n => Sat KnownNat n
 natSat = Sat
-
-type DOC = Doc ()
 
 -- type i < j = CmpNat i j ~ 'LT
 type i < j = (i+1) <= j
@@ -438,25 +433,6 @@ knownNum k = case kindVal @(TypKind t) of
     SB32 -> k
     SB64 -> k
 
-prettyKnown :: forall t. KnownTyp t => HaskType t -> DOC
-prettyKnown = case kindVal @(TypKind t) of
-  SInt -> case bitsVal @(TypBits t) of
-    SB32 -> int . fromIntegral
-    SB64 -> int . fromIntegral
-  SBool -> bool
-  SFloat -> case bitsVal @(TypBits t) of
-    SB32 -> float
-    SB64 -> double
-
-class Pretty t where
-  pretty :: t -> DOC
-
-instance Pretty Bool where pretty = bool
-instance Pretty Float where pretty = float
-instance Pretty Double where pretty = double
-instance Pretty Hask.Int64 where pretty = int . fromIntegral
-instance Pretty Hask.Int32 where pretty = int . fromIntegral
-
 class KnownKind t where kindVal :: SKind t
 instance KnownKind 'Bool where kindVal = SBool
 instance KnownKind 'Float where kindVal = SFloat
@@ -580,22 +556,19 @@ data ParamInfo = forall s t.
              (STyp t)
              (Tensor s t)
 data GState = GState {nextVar :: Integer, -- ^ next free variable
-                      genText :: DOC,
                       genVariables :: IntMap ParamInfo,
                       genParams :: [ParamInfo], -- ^ optimizable parameters
                       genPeeks :: [ParamInfo], -- ^ variables available after running the model (outputs)
                       genRegularizers :: [Scalar Float32], -- ^ accumulated regularizers
-                      genTrainingPlaceholder :: Scalar TFBool, -- ^ flag which is true when training
-                      genPureTable :: SSNMap2 Shape Typ T DOC,
-                      -- ^ Table mapping pointers to their
-                      -- interpretations, so that sharing in the data
-                      -- structures can be exploited when generating
-                      genAssignTable :: M.Map String DOC
-                      -- ^ Table mapping expressions to variables, so
-                      -- that lost sharing can be recovered
-                      -- genPeeks :: [(String,UntypedExpression)]
+                      genTrainingPlaceholder :: Scalar TFBool -- ^ flag which is true when training
                      }
-
+initialGstate :: GState
+initialGstate = (GState {nextVar = 0
+                        ,genVariables = mempty
+                        ,genParams=[]
+                        ,genRegularizers=[]
+                        ,genTrainingPlaceholder = error "NO TRAINING PLACEHOLDER!"
+                        ,genPeeks=[]})
 
 data Gen a where
   GPVariable :: forall (shape :: Shape) t. (KnownTyp t,KnownShape shape) => Bool -> String -> T shape t -> Gen (T shape t) 
@@ -638,11 +611,6 @@ newId = do
 
 --------------------------
 -- Tensors
-
-type UntypedExpression = DOC
-
-instance Show DOC where
-  show = renderWith (Options 92 (const id))
 
 -- | An indexing tensor in the format expected by GatherND
 type IndexTensor indexShape containerShape w = T (indexShape ++ '[Length containerShape]) ('Typ 'Int w)

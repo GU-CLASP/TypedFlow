@@ -51,6 +51,7 @@ import qualified Text.PrettyPrint.Compact as PP
 import qualified Data.Map as M
 import qualified Data.IntMap as IM
 import TypedFlow.Learn
+import qualified Data.Int as Hask
 
 paramShape' :: ParamInfo -> [Integer]
 paramShape' (ParamInfo _ s _ _) = shapeToList' s
@@ -119,10 +120,10 @@ str :: Show a => a -> DOC
 str = text . show
 
 gen :: DOC -> Python ()
-gen s = modify $ \GState{..} -> GState {genText=genText $$ s,..}
+gen s = modify $ \PyState{..} -> PyState {genText=genText $$ s,..}
 
 setGen :: DOC -> Python ()
-setGen d = modify $ \GState{..} -> GState {genText=d,..}
+setGen d = modify $ \PyState{..} -> PyState {genText=d,..}
 
 (<--) :: Ref s t -> UntypedExpression -> Python ()
 x <-- y = gen (pyVarRepr x <> text "=" <>  y)
@@ -139,7 +140,7 @@ cache x = do
       v <- newPyVar @s @t
       gen ("#" <> (showShapeType @s))
       v <-- x
-      modify (\g -> g {genAssignTable = M.insert x' (pyVarRepr v) (genAssignTable g)})
+      modify $ (\g -> g {genAssignTable = M.insert x' (pyVarRepr v) (genAssignTable g)})
       return (pyVarRepr v)
 
 newPyVar' :: forall s t. SShape s -> STyp t -> Python (Ref s t)
@@ -147,8 +148,8 @@ newPyVar' s t = knownSShape s $ knownTyp t $ newPyVar @s @t
 
 newPyVar :: forall s t. KnownShape s => KnownTyp t => Python (Ref s t)
 newPyVar = do
-  n <- newId
-  modify (\g -> g {genVariables = IM.insert (fromIntegral n) (ParamInfo ("var" <> show n) (typeSShape @s) (typeSTyp @t) (error "newPyVar: no tensor")) (genVariables g)})
+  n <- lift newId
+  lift $ modify (\g -> g {genVariables = IM.insert (fromIntegral n) (ParamInfo ("var" <> show n) (typeSShape @s) (typeSTyp @t) (error "newPyVar: no tensor")) (genVariables g)})
   return $ Ref (fromIntegral n) typeSShape typeSTyp
 
 pyVarRepr :: Ref s t -> DOC
@@ -198,16 +199,11 @@ assignAny x = do
 --   return (text "lambda " <> v <> ": " <> body)
 
 generate :: Python () -> (String,[ParamInfo])
-generate s = (renderWith (PP.Options 92 (const id)) genText,genParams)
-  where GState{..} =  execState s (GState {nextVar = 0
-                                          ,genVariables = mempty
-                                          ,genText = mempty
-                                          ,genParams=[]
-                                          ,genRegularizers=[]
-                                          ,genTrainingPlaceholder = error "NO TRAINING PLACEHOLDER!"
-                                          ,genPureTable = mempty
-                                          ,genAssignTable = mempty
-                                          ,genPeeks=[]})
+generate s = (renderWith (PP.Options 92 (const id)) genText, genParams)
+  where (PyState{..},GState{..}) = runState (execStateT s initPyState) initialGstate
+        initPyState = PyState {genPureTable = mempty
+                              ,genAssignTable = mempty
+                              ,genText = mempty}
 
 permToFun :: Permutation s t -> Integer -> Integer
 permToFun = \case
@@ -363,7 +359,7 @@ showT :: Typ -> [Char]
 showT (Typ Bool _) = "tf.bool"
 showT (Typ k l) = "tf." ++ map toLower (show k) ++ drop 1 (show l)
 
-type Python a = State GState a
+type Python a = StateT PyState (State GState) a
 
 interpGen :: Gen a -> Python a
 interpGen (GPReturn x) = return x
@@ -384,7 +380,7 @@ interpGen (GPModify ref value) = do
   v <- generatePure value
   res <-- (funcall "tf.assign" [r,v])
   return (T (Variable res))
-interpGen (GPState f) = state f
+interpGen (GPState f) = lift (state f)
 
 -- TODO: get the parameters from the genParams field
 -- | Return a list of parameters.
@@ -473,7 +469,7 @@ compileAlreadyBatched Options{..} model = do
     trainStep <- assignAny $ case maxGradientNorm of
       Nothing -> funcall "optimizer.minimize" [loss]
       Just clip -> funcall "optimizer.apply_gradients" [funcall "zip" [clipByGlobalNorm clip (grad loss params),params]]
-    peeks <- mapM paramToPeek =<< gets genPeeks
+    peeks <- mapM paramToPeek =<< lift (gets genPeeks)
     updates' <- untypedExprs updates
     let peeks2 = [("optimizer", (text "optimizer"))
                  ,("batch_size", (showDim @ bs))
@@ -491,4 +487,42 @@ paramToPeek (ParamInfo name s t x) = do
 untypedExprs :: All KnownShape xs => KnownTyp t =>  HTV t xs -> Python [DOC]
 untypedExprs Unit = return []
 untypedExprs (F x :* xs) = (:) <$> generatePure x <*> untypedExprs xs
+
+prettyKnown :: forall t. KnownTyp t => HaskType t -> DOC
+prettyKnown = case kindVal @(TypKind t) of
+  SInt -> case bitsVal @(TypBits t) of
+    SB32 -> int . fromIntegral
+    SB64 -> int . fromIntegral
+  SBool -> bool
+  SFloat -> case bitsVal @(TypBits t) of
+    SB32 -> float
+    SB64 -> double
+
+class Pretty t where
+  pretty :: t -> DOC
+
+instance Pretty Bool where pretty = bool
+instance Pretty Float where pretty = float
+instance Pretty Double where pretty = double
+instance Pretty Hask.Int64 where pretty = int . fromIntegral
+instance Pretty Hask.Int32 where pretty = int . fromIntegral
+
+
+data PyState = PyState {genText :: DOC
+                       ,genPureTable :: SSNMap2 Shape Typ T DOC
+                       -- ^ Table mapping pointers to their
+                       -- interpretations, so that sharing in the data
+                       -- structures can be exploited when generating
+                       ,genAssignTable :: M.Map String DOC
+                       -- ^ Table mapping expressions to variables, so
+                       -- that lost sharing can be recovered
+                       -- genPeeks :: [(String,UntypedExpression)]
+                       }
+
+type UntypedExpression = DOC
+
+instance Show DOC where
+  show = renderWith (PP.Options 92 (const id))
+
+type DOC = Doc ()
 
