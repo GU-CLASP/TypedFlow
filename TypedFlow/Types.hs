@@ -33,7 +33,6 @@ import GHC.TypeLits
 import Data.Proxy
 import Control.Monad.State
 import Data.Kind (Constraint)
-import Data.IntMap (IntMap)
 import Data.Unique
 import qualified Data.Int as Hask
 import Data.Type.Equality
@@ -556,7 +555,6 @@ data VarInfo = forall s t.
              (STyp t)
              (Tensor s t)
 data GState = GState {nextVar :: Integer, -- ^ next free variable
-                      genVariables :: IntMap VarInfo,
                       genParams :: [VarInfo], -- ^ optimizable parameters
                       genPeeks :: [VarInfo], -- ^ variables available after running the model (outputs)
                       genRegularizers :: [Scalar Float32], -- ^ accumulated regularizers
@@ -564,7 +562,6 @@ data GState = GState {nextVar :: Integer, -- ^ next free variable
                      }
 initialGstate :: GState
 initialGstate = (GState {nextVar = 0
-                        ,genVariables = mempty
                         ,genParams=[]
                         ,genRegularizers=[]
                         ,genTrainingPlaceholder = error "NO TRAINING PLACEHOLDER!"

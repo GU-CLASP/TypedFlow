@@ -38,6 +38,7 @@ Stability   : experimental
 
 module TypedFlow.Python where
 
+import Data.IntMap (IntMap)
 import Data.Char (toLower)
 import Data.Proxy
 import Data.List (genericReplicate)
@@ -50,7 +51,6 @@ import TypedFlow.Memo
 import Text.PrettyPrint.Compact hiding (All,Last,Product,Sum,Options)
 import qualified Text.PrettyPrint.Compact as PP
 import qualified Data.Map as M
-import qualified Data.IntMap as IM
 import TypedFlow.Learn
 
 paramShape' :: VarInfo -> [Integer]
@@ -149,7 +149,6 @@ newPyVar' s t = knownSShape s $ knownTyp t $ newPyVar @s @t
 newPyVar :: forall s t. KnownShape s => KnownTyp t => Python (Ref s t)
 newPyVar = do
   n <- lift newId
-  lift $ modify (\g -> g {genVariables = IM.insert (fromIntegral n) (VarInfo ("var" <> show n) (typeSShape @s) (typeSTyp @t) (error "newPyVar: no tensor")) (genVariables g)})
   return $ Ref (fromIntegral n) typeSShape typeSTyp
 
 pyVarRepr :: Ref s t -> DOC
@@ -190,6 +189,7 @@ generate :: Python () -> (String,[VarInfo])
 generate s = (renderWith (PP.Options 92 (const id)) genText, genParams)
   where (PyState{..},GState{..}) = runState (execStateT s initPyState) initialGstate
         initPyState = PyState {genPureTable = mempty
+                              ,genVariables = mempty
                               ,genAssignTable = mempty
                               ,genText = mempty}
 
@@ -455,6 +455,7 @@ pretty = case kindVal @(TypKind t) of
     SB64 -> double
 
 data PyState = PyState {genText :: DOC
+                       ,genVariables :: IntMap VarInfo
                        ,genPureTable :: SSNMap2 Shape Typ T DOC
                        -- ^ Table mapping pointers to their
                        -- interpretations, so that sharing in the data
