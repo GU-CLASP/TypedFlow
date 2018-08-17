@@ -29,7 +29,6 @@
 
 module TypedFlow.Types where
 
-import Text.PrettyPrint.Compact hiding (All,Last,Product,Sum)
 import GHC.TypeLits
 import Data.Proxy
 import Control.Monad.State
@@ -38,6 +37,7 @@ import Data.IntMap (IntMap)
 import Data.Unique
 import qualified Data.Int as Hask
 import Data.Type.Equality
+import Data.Monoid hiding (Sum,Product,Last,All)
 
 data Sat (a :: k -> Constraint) (b::k) where
   Sat :: forall b a. a b => Sat a b
