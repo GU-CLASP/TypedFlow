@@ -52,7 +52,6 @@ import qualified Text.PrettyPrint.Compact as PP
 import qualified Data.Map as M
 import qualified Data.IntMap as IM
 import TypedFlow.Learn
-import qualified Data.Int as Hask
 
 paramShape' :: VarInfo -> [Integer]
 paramShape' (VarInfo _ s _ _) = shapeToList' s
@@ -263,7 +262,7 @@ generatePure' rec sR = knownSShape sR $ \case
     return $ (genDistr x s0 s1) <+> (text "# " <> integer noiseId)
   T op -> return $ case op of
     Variable v -> pyVarRepr v
-    (Constant c) -> funcall "tf.constant" [prettyKnown @t c, named "shape" (showSShape sR), named "dtype" (showTyp @t)]
+    (Constant c) -> funcall "tf.constant" [pretty @t c, named "shape" (showSShape sR), named "dtype" (showTyp @t)]
     Eye -> case sR of
       n :* _ -> funcall "tf.eye" [showDimS n,
                                   named "num_columns" (showDimS n),
@@ -489,8 +488,8 @@ untypedExprs :: All KnownShape xs => KnownTyp t =>  HTV t xs -> Python [DOC]
 untypedExprs Unit = return []
 untypedExprs (F x :* xs) = (:) <$> generatePure x <*> untypedExprs xs
 
-prettyKnown :: forall t. KnownTyp t => HaskType t -> DOC
-prettyKnown = case kindVal @(TypKind t) of
+pretty :: forall t. KnownTyp t => HaskType t -> DOC
+pretty = case kindVal @(TypKind t) of
   SInt -> case bitsVal @(TypBits t) of
     SB32 -> int . fromIntegral
     SB64 -> int . fromIntegral
@@ -498,16 +497,6 @@ prettyKnown = case kindVal @(TypKind t) of
   SFloat -> case bitsVal @(TypBits t) of
     SB32 -> float
     SB64 -> double
-
-class Pretty t where
-  pretty :: t -> DOC
-
-instance Pretty Bool where pretty = bool
-instance Pretty Float where pretty = float
-instance Pretty Double where pretty = double
-instance Pretty Hask.Int64 where pretty = int . fromIntegral
-instance Pretty Hask.Int32 where pretty = int . fromIntegral
-
 
 data PyState = PyState {genText :: DOC
                        ,genPureTable :: SSNMap2 Shape Typ T DOC
