@@ -78,6 +78,17 @@ snMapInsert2 :: Some2 k1 k2 f -> v -> SSNMap2 k1 k2 f v -> SSNMap2 k1 k2 f v
 snMapInsert2 (Some2 sn) res = I.insertWith (++) (hashStableName sn) [(Some2 sn,res)]
 
 
+type SSNMap2' k1 k2 (f :: k1 -> k2 -> Type) v = I.IntMap [(Some2 k1 k2 f,v k1 k2)]
+
+
+snMapLookup2' :: Some2 k1 k2 f -> SSNMap2' k1 k2 f v -> Maybe (v k1 k2)
+snMapLookup2' (Some2 sn) m = do
+  x <- I.lookup (hashStableName sn) m
+  lookup (Some2 sn) x
+
+snMapInsert2' :: Some2 k1 k2 f -> v k1 k2 -> SSNMap2' k1 k2 f v -> SSNMap2' k1 k2 f v
+snMapInsert2' (Some2 sn) res = I.insertWith (++) (hashStableName sn) [(Some2 sn,res)]
+
 
 -- | The type of a memo table for functions of a.
 type Memo a = forall r. (a -> r) -> (a -> r)
