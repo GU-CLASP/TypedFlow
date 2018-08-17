@@ -565,7 +565,7 @@ initialGstate = (GState {nextVar = 0
 
 data Gen a where
   GPVariable :: forall (shape :: Shape) t. (KnownTyp t,KnownShape shape) => Bool -> String -> T shape t -> Gen (Ref shape t) 
-  GPPlaceholder :: forall s t. SShape s -> STyp t -> String -> Gen (T s t)
+  GPPlaceholder :: forall s t. SShape s -> STyp t -> String -> Gen (Ref s t)
   GPModify :: (KnownShape s,KnownTyp t) => T s t -> T s t -> Gen (T s t)
   GPReturn :: a -> Gen a
   GPState :: (GState -> (a,GState)) -> Gen a

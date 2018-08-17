@@ -168,8 +168,8 @@ persistent trainable name initial = do
 placeholder :: ∀ (shape :: Shape) t. (KnownTyp t,KnownShape shape) => String -> Gen (T shape t)
 placeholder n = do
   x <- GPPlaceholder typeSShape typeSTyp n
-  peekAt n x
-  return x
+  peekAt n (T (Variable x))
+  return (T (Variable x))
 
 -- | Modify a mutable tensor. Attention: for the assignment to happen,
 -- the resulting tensor must be evaluated!
