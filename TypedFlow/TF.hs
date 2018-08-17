@@ -160,7 +160,7 @@ newParameter p =   modify $ \GState{..} -> GState{genParams = p:genParams,..}
 -- | Declare variable which persists between calls to session.run.
 persistent :: ∀ (shape :: Shape) t. (KnownTyp t,KnownShape shape) => Bool -> String -> T shape t -> Gen (T shape t)
 persistent trainable name initial = do
-  result <- GPVariable trainable name initial
+  result <- T . Variable <$> GPVariable trainable name initial
   when trainable (newParameter (VarInfo name (typeSShape @shape) (typeSTyp @t) result))
   peekAt name result
   return result

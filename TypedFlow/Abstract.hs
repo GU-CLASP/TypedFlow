@@ -38,7 +38,6 @@ tensor operations. It is not normally imported directly by users.
 module TypedFlow.Abstract where
 
 import Control.Monad.State
-import Data.IntMap (IntMap)
 import Data.Kind (Type,)
 import Data.Proxy
 import Data.Type.Equality
@@ -51,7 +50,6 @@ import TypedFlow.Memo
 import TypedFlow.Types (T(..))
 import TypedFlow.Types hiding (T)
 import TypedFlow.Types.Proofs
-import qualified Data.IntMap as IM
 
 
 broadcast :: forall n s t proxy. KnownTyp t => KnownShape s => KnownNat n
@@ -835,9 +833,3 @@ maxPool1D x = squeeze0 (Pool (natSat @1) (typeSShape @'[window]) MaxPool (natSat
 
 
 
-findVar :: IntMap VarInfo -> Ref s t -> Maybe (String, T s t)
-findVar m (Ref i s0 t0) = case IM.lookup i m of
-     Nothing -> Nothing
-     Just (VarInfo nm s t x) -> case (testEq s0 s, testEq t0 t) of
-                                    (Just Refl, Just Refl) -> Just (nm,x)
-                                    _ -> Nothing

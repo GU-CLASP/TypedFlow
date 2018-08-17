@@ -549,11 +549,7 @@ type None = 514229 --  fibonnaci prime.
 --------------------------------
 -- Generation Effects
 
-data VarInfo = forall s t.  
-  VarInfo  String
-             (SShape s)
-             (STyp t)
-             (Tensor s t)
+data VarInfo = forall s t. VarInfo String (SShape s) (STyp t) (Tensor s t)
 data GState = GState {nextVar :: Integer, -- ^ next free variable
                       genParams :: [VarInfo], -- ^ optimizable parameters
                       genPeeks :: [VarInfo], -- ^ variables available after running the model (outputs)
@@ -568,7 +564,7 @@ initialGstate = (GState {nextVar = 0
                         ,genPeeks=[]})
 
 data Gen a where
-  GPVariable :: forall (shape :: Shape) t. (KnownTyp t,KnownShape shape) => Bool -> String -> T shape t -> Gen (T shape t) 
+  GPVariable :: forall (shape :: Shape) t. (KnownTyp t,KnownShape shape) => Bool -> String -> T shape t -> Gen (Ref shape t) 
   GPPlaceholder :: forall s t. SShape s -> STyp t -> String -> Gen (T s t)
   GPModify :: (KnownShape s,KnownTyp t) => T s t -> T s t -> Gen (T s t)
   GPReturn :: a -> Gen a

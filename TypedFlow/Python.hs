@@ -337,7 +337,7 @@ interpGen (GPVariable trainable name initial) = do
   i <- generatePure initial
   v <- newPyVar
   v <-- funcall "tf.Variable" [i, named "name" (string (show (name))), named "trainable" (bool trainable)]
-  return (T (Variable v))
+  return v
 interpGen (GPPlaceholder s t n) = do
   name <- newPyVar' s t
   name <-- funcall "tf.placeholder" [showSTyp t, named "shape" (showSShape s), named "name" (text (show n))]
