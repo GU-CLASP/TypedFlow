@@ -156,6 +156,15 @@ knownCons Sat = Sat
 stateless :: KnownLen s => (inputs -> ModelOutput t p s) -> inputs -> HTV t '[] -> StateAndOutput t p '[ s ]
 stateless f x Unit = StateAndOutput typeSList (f x) Unit
 
+simpleModel :: forall sx tx sy ty sy_ ty_ p. KnownLen sy_ => (Tensor sx tx -> Tensor sy ty -> ModelOutput  ty_ p sy_) ->
+            (HHTV '[ '(sx, tx), '(sy, ty)] -> HTV ty_ '[] -> (StateAndOutput ty_ p (sy_ ': '[])))
+simpleModel f = stateless f'
+  where f' :: HHTV '[ '(sx,tx), '(sy,ty)] -> ModelOutput ty_ p sy_
+        f' (Uncurry x :* Uncurry y :* Unit) = f x y
+
+xyHolderNames :: SList' HolderName '[ '(sx, tx), '(sy, ty)] 
+xyHolderNames = (HolderName "x" :* HolderName "y" :* Unit)
+
 -- | @updateStates xs ys@ assigns to the tensor (variables!) xs the values ys.
 updateStates :: forall xs ty. KnownTyp ty => All KnownShape xs => HTV ty xs -> HTV ty xs -> Gen (HTV ty xs)
 updateStates Unit Unit = pure Unit

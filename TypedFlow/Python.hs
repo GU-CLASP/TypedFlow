@@ -36,7 +36,7 @@ Stability   : experimental
 {-# LANGUAGE UnicodeSyntax #-}
 {-# OPTIONS_GHC -fplugin GHC.TypeLits.KnownNat.Solver #-}
 
-module TypedFlow.Python where
+module TypedFlow.Python (compile, compileGen, generateFile) where
 
 import Data.IntMap (IntMap)
 import Data.Char (toLower)
@@ -45,7 +45,7 @@ import Data.List (genericReplicate)
 import GHC.TypeLits
 import Control.Monad.State
 import TypedFlow.Types
-import TypedFlow.Abstract (newId)
+import TypedFlow.Abstract (newId, permToFun)
 import TypedFlow.Types.Proofs
 import TypedFlow.Memo
 import Text.PrettyPrint.Compact hiding (All,Last,Product,Sum,Options)
@@ -85,6 +85,10 @@ showTyp = text (showT (typVal @t))
 showSTyp :: forall t. STyp t -> DOC
 showSTyp t = knownTyp t $ showTyp @t
 
+showT :: Typ -> [Char]
+showT (Typ Bool _) = "tf.bool"
+showT (Typ k l) = "tf." ++ map toLower (show k) ++ drop 1 (show l)
+
 showShape' ::  [Integer] -> DOC
 showShape' s = list (map (showDim' "None") s)
 
@@ -115,9 +119,6 @@ showDim = showDim' "None" (natVal (Proxy @ n))
 
 showDimS :: forall n. Sat KnownNat n -> DOC
 showDimS Sat = showDim @n
-
-str :: Show a => a -> DOC
-str = text . show
 
 gen :: DOC -> Python ()
 gen s = modify $ \PyState{..} -> PyState {genText=genText $$ s,..}
@@ -193,21 +194,6 @@ generate s = (renderWith (PP.Options 92 (const id)) genText, genParams)
                               ,genAssignTable = mempty
                               ,genText = mempty}
 
-permToFun :: Permutation s t -> Integer -> Integer
-permToFun = \case
-  PermId -> \x -> x
-  PermTrans a b -> permToFun b . permToFun a
-  PermSwap -> \case
-    0 -> 1
-    1 -> 0
-    x -> x
-  PermSkip p -> \case
-    0 -> 0
-    x -> permToFun p (x-1) + 1
-
-listProxyLen :: forall proxy s. KnownLen s => proxy s -> Integer
-listProxyLen _ = listTypeLen @s
-
 generatePure :: forall s t. KnownTyp t => KnownShape s => T s t -> Python DOC
 generatePure x = do
   let sn = makeSn2 x
@@ -230,7 +216,6 @@ genDistr d sh s1 = case d of
                                 ,named "dtype" (showTyp @t)]
   OrthogonalD ->
     funcall' (funcall "tf.orthogonal_initializer" [named "dtype" (showTyp @t)]) [named "shape" (showSShape (sh .+. s1))]
-
 
 generatePure' :: forall s t. KnownTyp t => (forall s' t'. KnownTyp t' => SShape s' -> T s' t' -> Python DOC) -> SShape s -> T s t -> Python DOC
 generatePure' rec sR = knownSShape sR $ \case
@@ -339,12 +324,6 @@ generatePure' rec sR = knownSShape sR $ \case
                   [rx, showSShape window, typ', text (show ("SAME" :: String))]
                   [("strides", showSShape window)])
    where typ' = text $ (show $ case typ of MaxPool -> "MAX"; AvgPool -> "AVG" :: String)
- -- where rec :: forall s' t'. KnownTyp t' => SShape s' -> T s' t' -> DOC
- --       rec = generatePure' 
-
-showT :: Typ -> [Char]
-showT (Typ Bool _) = "tf.bool"
-showT (Typ k l) = "tf." ++ map toLower (show k) ++ drop 1 (show l)
 
 type Python a = StateT PyState (State GState) a
 
@@ -383,20 +362,14 @@ clipByGlobalNorm maxNorm x = funcall "tf.clip_by_global_norm" [x,float maxNorm] 
 grad :: UntypedExpression -> UntypedExpression -> UntypedExpression
 grad y vars = funcall "tf.gradients" [y, vars]
 
-
 -- | Batchify and compile a model with simple input to output mapping.
 compile :: forall batchSize sx tx sy ty sy_ ty_ p.
            (KnownNat batchSize, KnownShape sx, KnownTyp tx, KnownShape sy, KnownTyp ty, KnownShape sy_, KnownTyp ty_, KnownShape p) =>
            Options -> Gen (Tensor sx tx -> Tensor sy ty -> ModelOutput  ty_ p sy_)
-           -- Model input tIn output tOut
         -> Python ()
-compile options fGen = do
-  compileGen @batchSize options (HolderName "x" :* HolderName "y" :* Unit) $ do
-    f <- fGen
-    let f' :: HHTV '[ '(sx,tx), '(sy,ty)] -> ModelOutput ty_ p sy_ 
-        f' (Uncurry x :* Uncurry y :* Unit) = f x y
-    return (stateless f')
+compile options fGen = compileGen @batchSize options xyHolderNames (simpleModel <$> fGen)
 
+-- | Batchify and compile a model with generic  input to output mapping and states
 compileGen :: forall batchSize shapesAndTypes sy_ ty_ p stateShapes.
            (KnownNat batchSize, All KnownPair shapesAndTypes, KnownLen stateShapes,
             All KnownShape stateShapes, KnownShape sy_, KnownTyp ty_, KnownShape p)
@@ -409,8 +382,7 @@ compileGen options names fGen =
   in knownAll batchedShapesKnown $
      compileAlreadyBatched @batchSize options (precompile @batchSize (batchModel names fGen))
 
--- | Generic model preparation, with non-standard parameters ("x", "y"
---  must be provided as placeholders manually).
+-- | Generic model compilation (do not use unless you know what you're doing)
 compileAlreadyBatched :: forall bs ty stateShapes. KnownNat bs
            => KnownTyp ty
            => All KnownShape stateShapes

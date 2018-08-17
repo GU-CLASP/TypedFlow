@@ -239,6 +239,18 @@ inversePerm (PermSkip x) = PermSkip (inversePerm x)
 inversePerm PermSwap = PermSwap
 inversePerm (PermTrans x y) = PermTrans (inversePerm y) (inversePerm x)
 
+permToFun :: Permutation s t -> Integer -> Integer
+permToFun = \case
+  PermId -> \x -> x
+  PermTrans a b -> permToFun b . permToFun a
+  PermSwap -> \case
+    0 -> 1
+    1 -> 0
+    x -> x
+  PermSkip p -> \case
+    0 -> 0
+    x -> permToFun p (x-1) + 1
+
 atShape :: SList s -> T s t -> T s t
 atShape _ x = x
 
