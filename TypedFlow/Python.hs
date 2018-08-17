@@ -53,14 +53,14 @@ import qualified Data.IntMap as IM
 import TypedFlow.Learn
 import qualified Data.Int as Hask
 
-paramShape' :: ParamInfo -> [Integer]
-paramShape' (ParamInfo _ s _ _) = shapeToList' s
+paramShape' :: VarInfo -> [Integer]
+paramShape' (VarInfo _ s _ _) = shapeToList' s
 
-paramDType ::  ParamInfo -> Typ
-paramDType (ParamInfo _ _ t _) = sTypTyp t
+paramDType ::  VarInfo -> Typ
+paramDType (VarInfo _ _ t _) = sTypTyp t
 
-paramName :: ParamInfo -> String
-paramName (ParamInfo nm _ _ _) = nm
+paramName :: VarInfo -> String
+paramName (VarInfo nm _ _ _) = nm
 
 generateFile :: String -> Python () -> IO ()
 generateFile fname g = do
@@ -149,7 +149,7 @@ newPyVar' s t = knownSShape s $ knownTyp t $ newPyVar @s @t
 newPyVar :: forall s t. KnownShape s => KnownTyp t => Python (Ref s t)
 newPyVar = do
   n <- lift newId
-  lift $ modify (\g -> g {genVariables = IM.insert (fromIntegral n) (ParamInfo ("var" <> show n) (typeSShape @s) (typeSTyp @t) (error "newPyVar: no tensor")) (genVariables g)})
+  lift $ modify (\g -> g {genVariables = IM.insert (fromIntegral n) (VarInfo ("var" <> show n) (typeSShape @s) (typeSTyp @t) (error "newPyVar: no tensor")) (genVariables g)})
   return $ Ref (fromIntegral n) typeSShape typeSTyp
 
 pyVarRepr :: Ref s t -> DOC
@@ -198,7 +198,7 @@ assignAny x = do
 --   let T body = f (T v)
 --   return (text "lambda " <> v <> ": " <> body)
 
-generate :: Python () -> (String,[ParamInfo])
+generate :: Python () -> (String,[VarInfo])
 generate s = (renderWith (PP.Options 92 (const id)) genText, genParams)
   where (PyState{..},GState{..}) = runState (execStateT s initPyState) initialGstate
         initPyState = PyState {genPureTable = mempty
@@ -479,8 +479,8 @@ compileAlreadyBatched Options{..} model = do
                  ]
     gen (text "return " <> dict (peeks ++peeks2))
 
-paramToPeek :: ParamInfo -> Python (String,UntypedExpression)
-paramToPeek (ParamInfo name s t x) = do
+paramToPeek :: VarInfo -> Python (String,UntypedExpression)
+paramToPeek (VarInfo name s t x) = do
   x' <- knownSShape s $ knownTyp t $ generatePure x
   return (name,x')
 

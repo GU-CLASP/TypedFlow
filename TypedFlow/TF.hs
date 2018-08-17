@@ -153,7 +153,7 @@ parameter' :: ∀ (shape :: Shape) t. (KnownTyp t,KnownShape shape) => String ->
 parameter' = persistent True
 
 
-newParameter :: MonadState GState m => ParamInfo -> m ()
+newParameter :: MonadState GState m => VarInfo -> m ()
 newParameter p =   modify $ \GState{..} -> GState{genParams = p:genParams,..}
 
 -- TODO: use a different type for persistent?
@@ -161,7 +161,7 @@ newParameter p =   modify $ \GState{..} -> GState{genParams = p:genParams,..}
 persistent :: ∀ (shape :: Shape) t. (KnownTyp t,KnownShape shape) => Bool -> String -> T shape t -> Gen (T shape t)
 persistent trainable name initial = do
   result <- GPVariable trainable name initial
-  when trainable (newParameter (ParamInfo name (typeSShape @shape) (typeSTyp @t) result))
+  when trainable (newParameter (VarInfo name (typeSShape @shape) (typeSTyp @t) result))
   peekAt name result
   return result
 
@@ -180,8 +180,8 @@ modifyPersistent v x = (GPModify v x)
 -- | Name a tensor so that it is made available for session.run.
 peekAt :: forall s t. (KnownShape s,KnownTyp t) => String -> Tensor s t -> Gen ()
 peekAt name v =  modify $ \GState{..} -> GState{genPeeks = p:genPeeks,..}
-  where p :: ParamInfo
-        p = (ParamInfo name (typeSShape @s) (typeSTyp @t) v)
+  where p :: VarInfo
+        p = (VarInfo name (typeSShape @s) (typeSTyp @t) v)
 
 -- type family AddSpatialDims xs ys where
 --   AddSpatialDims '[x] '[] = '[x]

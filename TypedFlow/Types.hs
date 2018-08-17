@@ -550,15 +550,15 @@ type None = 514229 --  fibonnaci prime.
 --------------------------------
 -- Generation Effects
 
-data ParamInfo = forall s t.  
-  ParamInfo  String
+data VarInfo = forall s t.  
+  VarInfo  String
              (SShape s)
              (STyp t)
              (Tensor s t)
 data GState = GState {nextVar :: Integer, -- ^ next free variable
-                      genVariables :: IntMap ParamInfo,
-                      genParams :: [ParamInfo], -- ^ optimizable parameters
-                      genPeeks :: [ParamInfo], -- ^ variables available after running the model (outputs)
+                      genVariables :: IntMap VarInfo,
+                      genParams :: [VarInfo], -- ^ optimizable parameters
+                      genPeeks :: [VarInfo], -- ^ variables available after running the model (outputs)
                       genRegularizers :: [Scalar Float32], -- ^ accumulated regularizers
                       genTrainingPlaceholder :: Scalar TFBool -- ^ flag which is true when training
                      }

@@ -807,9 +807,9 @@ maxPool1D x = squeeze0 (Pool (natSat @1) (typeSShape @'[window]) MaxPool (natSat
 
 
 
-findVar :: IntMap ParamInfo -> Ref s t -> Maybe (String, T s t)
+findVar :: IntMap VarInfo -> Ref s t -> Maybe (String, T s t)
 findVar m (Ref i s0 t0) = case IM.lookup i m of
      Nothing -> Nothing
-     Just (ParamInfo nm s t x) -> case (testEq s0 s, testEq t0 t) of
+     Just (VarInfo nm s t x) -> case (testEq s0 s, testEq t0 t) of
                                     (Just Refl, Just Refl) -> Just (nm,x)
                                     _ -> Nothing
