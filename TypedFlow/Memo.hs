@@ -11,6 +11,7 @@ import qualified Data.Map.Strict as M
 import System.Mem.StableName
 import Data.IORef
 import System.IO.Unsafe
+import Unsafe.Coerce
 import Data.Kind (Type)
 type SNMap k v = I.IntMap [(StableName k,v)]
 
@@ -77,17 +78,23 @@ snMapLookup2 (Some2 sn) m = do
 snMapInsert2 :: Some2 k1 k2 f -> v -> SSNMap2 k1 k2 f v -> SSNMap2 k1 k2 f v
 snMapInsert2 (Some2 sn) res = I.insertWith (++) (hashStableName sn) [(Some2 sn,res)]
 
+data KV k1 k2 (f :: k1 -> k2 -> Type) (v :: k1 -> k2 -> Type)  where
+  KV :: forall k1 k2 f v a b. StableName (f a b) -> v a b -> KV k1 k2 f v
 
-type SSNMap2' k1 k2 (f :: k1 -> k2 -> Type) v = I.IntMap [(Some2 k1 k2 f,v k1 k2)]
+type SNMap22 k1 k2 (f :: k1 -> k2 -> Type) (v :: k1 -> k2 -> Type) = I.IntMap [KV k1 k2 f v]
 
-
-snMapLookup2' :: Some2 k1 k2 f -> SSNMap2' k1 k2 f v -> Maybe (v k1 k2)
-snMapLookup2' (Some2 sn) m = do
+snMap22Lookup :: StableName (f a b) -> SNMap22 k1 k2 f v -> Maybe (v a b)
+snMap22Lookup sn  m = do
   x <- I.lookup (hashStableName sn) m
-  lookup (Some2 sn) x
+  lkKV sn x
 
-snMapInsert2' :: Some2 k1 k2 f -> v k1 k2 -> SSNMap2' k1 k2 f v -> SSNMap2' k1 k2 f v
-snMapInsert2' (Some2 sn) res = I.insertWith (++) (hashStableName sn) [(Some2 sn,res)]
+lkKV :: StableName (f a b) -> [KV k1 k2 f v] -> Maybe (v a b)
+lkKV _ [] = Nothing
+lkKV sn (KV sn' v:kvs) | eqStableName sn sn' = Just (unsafeCoerce v) -- sn == sn' -> a == a' and b == b' 
+                       | otherwise = lkKV sn kvs
+
+snMap22Insert :: KV k1 k2 f v -> SNMap22 k1 k2 f v -> SNMap22 k1 k2 f v
+snMap22Insert (KV sn res) = I.insertWith (++) (hashStableName sn) [KV sn res]
 
 
 -- | The type of a memo table for functions of a.
