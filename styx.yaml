@@ -7,4 +7,6 @@ nix-deps:
     - hscolour
 
 nixpkgs:
-  url: https://github.com/NixOS/nixpkgs-channels/archive/nixos-18.03.tar.gz
+  commit: 573f52451a823ee086b9b70f3e554ca54ca5ca62
+  sha256: 1hv8pzhd8vybjws1d5jx3a6l0i543lcmkrnr4ghsilmsyv9jqzik
+  # url: https://github.com/NixOS/nixpkgs-channels/archive/nixos-18.03.tar.gz
