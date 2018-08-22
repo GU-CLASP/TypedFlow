@@ -44,7 +44,7 @@ import GHC.TypeLits
 import Control.Monad.State
 import TypedFlow.Types
 import TypedFlow.Types.Proofs
-import TypedFlow.Abstract (newId, permToFun)
+import TypedFlow.Abstract (newId, permToFun, unopInputShape)
 import TypedFlow.Memo
 import System.Mem.StableName
 import System.IO.Unsafe
@@ -63,6 +63,7 @@ import Data.IntMap (IntMap)
 type BackendShape = BackendTensor ('Typ 'Int 'B32)
 type BackendTensor t = Backend.Tensor Backend.Build (HaskType t)
 type BackendVariable t = Backend.Tensor Backend.Ref (HaskType t)
+type BackendTensorType t = Backend.TensorType (HaskType t)
 
 shapeFromType :: ∀ (s :: Shape). KnownShape s => BackendShape
 shapeFromType = shapeVector (typeSShape @s)
@@ -157,8 +158,10 @@ backendTensor (STyp SInt SB32 Refl) k = k
 backendTensor' :: forall t k proxy. KnownTyp t => proxy t -> (Backend.TensorType (HaskType t) => k) -> k
 backendTensor' _ = backendTensor (typeSTyp @t)
 
-runUnOp :: UnOp s1 t s2 u -> BackendTensor t -> BackendTensor u
-runUnOp _ = error "todo"
+runUnOp :: forall s s1 t s2 u. KnownTyp t => SShape s -> UnOp s1 t s2 u -> BT (s++s1) t -> BT (s++s2) u
+runUnOp _ op (BT x) = backendTensor (typeSTyp @t) $ case op of
+  Diag _ -> BT $ TensorFlow.GenOps.Core.batchMatrixDiag x
+
 
 interpretPure :: forall s t. KnownTyp t => KnownShape s => T s t -> BM (BT s t)
 interpretPure x = do
@@ -171,10 +174,15 @@ interpretPure x = do
       lift $ modify (\g -> g {genPureTable = (snMap22Insert (KV sn e)) (genPureTable g)})
       return e
 
-interpNilOp :: Backend.TensorType (HaskType t) => NilOp s t -> BM (BT s t)
+interpNilOp :: forall s t. Backend.TensorType (HaskType t) => NilOp s t -> BM (BT s t)
 interpNilOp = \case
   Constant c -> return $ BT $ Backend.scalar c
-  Range _ -> _
+  Range n@Sat -> knownNumeric @t $ return $
+    let start,limit,delta :: HaskType t
+        start = 0
+        limit = fromIntegral $ natVal n
+        delta = 1
+    in BT $ Backend.range (Backend.scalar start) (Backend.scalar limit) (Backend.scalar delta)
   Variable (Ref r sr tr) -> do
      tbl <- lift (gets genVars)
      case IM.lookup r tbl of
@@ -205,9 +213,9 @@ interpretPure' rec sR = knownSShape sR $ backendTensor (typeSTyp @t) $ \case
   --                    rx = rec typeSShape x
   --                    ry = rec typeSShape y
   --                in Backend.select rc rx ry
-  -- UnOp operation s0 s1 _s2 x ->
-  --   let recx = rec (s0 .+. s1) x
-  --   in runUnOp operation recx
+  UnOp operation s0 x -> do
+    recx <- rec (s0 .+. unopInputShape operation) x
+    return (runUnOp s0 operation recx)
  --   return $ case operation of
  --    Axis1Op op args n -> func op [recx] ((axisName,integer (sListLength s0 + n)):args)
  --      where axisName = if op == "tf.nn.softmax" then "dim" else "axis" -- use dim before TF 1.5
