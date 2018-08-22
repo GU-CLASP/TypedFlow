@@ -52,7 +52,7 @@ import System.IO.Unsafe
 import qualified Data.Int as Backend
 
 import qualified TensorFlow.Core        as Backend
-import qualified TensorFlow.GenOps.Core
+import qualified TensorFlow.GenOps.Core as BackCore
 import qualified TensorFlow.Minimize    as Backend
 import qualified TensorFlow.Ops         as Backend
 -- import qualified TensorFlow.Variable    as Backend
@@ -148,6 +148,11 @@ knownNumeric k = case kindVal @(TypKind t) of
     SB32 -> k
     SB64 -> error "missing in tensorflow: int64 is not supported in matmul T_T"
 
+knownFloatingB :: forall t k. (KnownTyp t, TypKind t ~ 'Float) => (Backend.OneOf '[Float, Double] (HaskType t) => k) -> k
+knownFloatingB k = case bitsVal @(TypBits t) of
+    SB32 -> k
+    SB64 -> k
+
 backendTensor :: STyp t ->  (Backend.TensorType (HaskType t) => k) -> k
 backendTensor (STyp SFloat SB32 Refl) k = k
 backendTensor (STyp SInt SB64 Refl) k = k
@@ -158,9 +163,37 @@ backendTensor (STyp SInt SB32 Refl) k = k
 backendTensor' :: forall t k proxy. KnownTyp t => proxy t -> (Backend.TensorType (HaskType t) => k) -> k
 backendTensor' _ = backendTensor (typeSTyp @t)
 
-runUnOp :: forall s s1 t s2 u. KnownTyp t => SShape s -> UnOp s1 t s2 u -> BT (s++s1) t -> BT (s++s2) u
+runUnOp :: forall s s1 t s2 u. KnownTyp u => KnownTyp t => BackendTensorType u => SShape s -> UnOp s1 t s2 u -> BT (s++s1) t -> BT (s++s2) u
 runUnOp _ op (BT x) = backendTensor (typeSTyp @t) $ case op of
-  Diag _ -> BT $ TensorFlow.GenOps.Core.batchMatrixDiag x
+  -- SliceOp _ _ _ _ -> _
+  -- IndexOp _ _ _ -> _
+  -- Axis1Op _ -> _
+  StopGradient -> BT $ BackCore.stopGradient x
+  Cast -> BT $ Backend.cast x
+  (Num1Op numop) -> knownNumeric @t $ case numop of
+    Abs -> BT (Backend.abs x)
+  Float1Op flop -> knownFloatingB @t $ knownFloating @(TypBits u) $ knownFloatingB @u $ case flop of
+     Tanh -> BT (BackCore.tanh x)
+     Sin -> BT (BackCore.sin x)
+     Exp -> BT (BackCore.exp x)
+     Sigmoid -> BT (BackCore.sigmoid x)
+     Relu -> BT (BackCore.relu x)
+     Floor -> BT (BackCore.floor x)
+     Round -> BT (BackCore.round x)
+     Cos -> BT (BackCore.cos x)
+     Log -> BT (BackCore.log x)
+     Asin -> BT (BackCore.asin x)
+     Acos -> BT (BackCore.acos x)
+     Sinh -> BT (BackCore.sinh x)
+     Cosh -> BT (BackCore.cosh x)
+     Asinh -> BT (BackCore.asinh x)
+     Acosh -> BT (BackCore.acosh x)
+     Atan -> BT (BackCore.atan x)
+     Atanh -> BT (BackCore.atanh x)
+     Sqrt -> BT (BackCore.sqrt x)
+     HardSigmoid -> error "Haskell: no hard sigmoid defined yet"
+     ClipByValue lo hi -> BT $ BackCore.clipByValue x (Backend.scalar $ realToFrac lo) (Backend.scalar $ realToFrac hi)
+  Diag _ -> BT $ BackCore.batchMatrixDiag x
 
 
 interpretPure :: forall s t. KnownTyp t => KnownShape s => T s t -> BM (BT s t)
@@ -196,7 +229,7 @@ interpretPure' rec sR = knownSShape sR $ backendTensor (typeSTyp @t) $ \case
   Unbroadcast{} -> error "broadcasting operation did not complete!"
   DirectBroadcast s0 s1 s2 s3 x -> do
     BT recx <- rec (s0 .+. s2) x
-    return $ BT $ TensorFlow.GenOps.Core.broadcastTo recx (shapeFromList
+    return $ BT $ BackCore.broadcastTo recx (shapeFromList
                                         (concat [shapeToList' s0, genericReplicate (sListLength s1) 1
                                                 ,shapeToList' s2, genericReplicate (sListLength s3) 1 ]))
    --  Noise noiseId s0 s1 x -> do
