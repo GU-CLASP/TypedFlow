@@ -45,7 +45,7 @@ import Data.List (genericReplicate)
 import GHC.TypeLits
 import Control.Monad.State
 import TypedFlow.Types
-import TypedFlow.Abstract (newId, permToFun)
+import TypedFlow.Abstract (newId, permToFun,unopInputShape)
 import TypedFlow.Types.Proofs
 import TypedFlow.Memo
 import Text.PrettyPrint.Compact hiding (All,Last,Product,Sum,Options)
@@ -242,35 +242,29 @@ generatePure' rec sR = knownSShape sR $ \case
     (Range n@Sat) -> (func "tf.range" [] [("start",integer 0),
                                ("limit",integer (natVal n)),
                                ("dtype",showTyp @t)])
-  If c x y -> do
-    rc <- rec typeSShape c
-    rx <- rec typeSShape x
-    ry <- rec typeSShape y
-    return (func "tf.cond" [rc] [("true_fn", lambda0 rx) ,("false_fn", lambda0 ry) ,("strict","True")])
-    where lambda0 z = text "lambda: " <> z
   Where c x y -> do
     rc <- rec typeSShape c
     rx <- rec typeSShape x
     ry <- rec typeSShape y
     return (funcall "tf.where" [rc, rx, ry])
-  UnOp operation s0 s1 _s2 x -> do
-   recx <- rec (s0 .+. s1) x
+  UnOp operation s0  x -> do
+   recx <- rec (s0 .+. unopInputShape operation) x
    return $ case operation of
     Cast -> funcall "tf.cast" [recx,showTyp @t]
     StopGradient -> funcall "tf.stop_gradient" [recx]
-    Axis1Op op' n ->
+    Axis1Op op' ->
        let (op,args) = case op' of
-                         OneHot -> ("tf.one_hot",[("dtype",showTyp @t)])
-                         ArgMax -> ("tf.argmax",[("output_type",showTyp @t)])
-                         SoftMax -> ("tf.nn.softmax",[])
-                         ReduceOp r -> ("tf.reduce_" ++ rop, [])
+                         OneHot{} -> ("tf.one_hot",[("dtype",showTyp @t)])
+                         ArgMax{} -> ("tf.argmax",[("output_type",showTyp @t)])
+                         SoftMax{} -> ("tf.nn.softmax",[])
+                         ReduceOp _ _ r -> ("tf.reduce_" ++ rop, [])
                             where rop = case r of
                                            Max -> "max"
                                            Min -> "min"
                                            Sum -> "sum"
                                            Mean -> "mean"
            axisName = if op == "tf.nn.softmax" then "dim" else "axis"  -- use dim before TF 1.5
-       in func op [recx] ((axisName,integer (sListLength s0 + n)):args)
+       in func op [recx] ((axisName,integer (sListLength s0)):args)
     Float1Op op' -> funcall op (recx:args)
        where (op,args) = case op' of
                 HardSigmoid -> ("tf.keras.backend.hard_sigmoid",[])
@@ -281,8 +275,8 @@ generatePure' rec sR = knownSShape sR $ \case
        where (op,args) = case op' of
                 Negate -> ("tf.negative",[])
                 _ -> ("tf." ++ map toLower (show op'), [])
-    SliceOp lo hi -> recx <> list (replicate (fromIntegral (sListLength s0)) (text ":") ++ [integer lo <> text ".." <> integer hi])
-    IndexOp axis ix -> recx <> list (replicate (fromIntegral (axis + sListLength s0)) (text ":") ++ [integer ix])
+    SliceOp _ _ lo hi -> recx <> list (replicate (fromIntegral (sListLength s0)) (text ":") ++ [integer lo <> text ".." <> integer hi])
+    IndexOp _ _ ix -> recx <> list (replicate (fromIntegral (sListLength s0)) (text ":") ++ [integer ix])
   MatMul s0 a b c x y  -> do
     recx <- rec (s0 .+. (:*) a ((:*) b Unit)) x
     recy <- rec (s0 .+. (:*) b ((:*) c Unit)) y

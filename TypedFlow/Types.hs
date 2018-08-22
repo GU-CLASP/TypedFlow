@@ -114,6 +114,10 @@ infixr 5 :*
 (*:) :: forall x xs f. NP f xs -> f x -> NP f (xs ++ '[x])
 xs *: x = appSList xs (x :* Unit)
 
+hlookup :: Axis n xs -> NP f xs -> f (At n xs)
+hlookup AxZero  (x :* _) = x
+hlookup (AxSucc n) (_ :* xs) = hlookup n xs
+
 newtype I a = I a
 newtype K a x = K a
 type HList = NP I
@@ -615,7 +619,7 @@ data T (s :: Shape) (t :: Typ) where
            Distribution s1 t ->
            T (s0 ++ s1) t
   BinOp :: (KnownTyp t, KnownTyp u) => BinOp -> SShape s0 -> SShape s1 -> SShape s2 -> SShape s3 -> T (s0 ++ s1) t -> T (s0 ++ s2) u -> T (s0 ++ s3) v
-  UnOp :: KnownTyp t => UnOp t u -> SShape s0 -> SShape s1 -> SShape s2 -> T (s0 ++ s1) t -> T (s0 ++ s2) u
+  UnOp :: KnownTyp t => UnOp s1 t s2 u -> SShape s0 -> T (s0 ++ s1) t -> T (s0 ++ s2) u
   Unbroadcast :: Sat KnownNat n -> Unique -> T (n ': s) t -> T s t
   DirectBroadcast :: SShape s0 -> NP proxy' s1 -> SShape s2 -> NP proxy' s3 -> T (s0 ++ s2) t -> T (s0 ++ (s1 ++ (s2 ++ s3))) t
   ReshapeFrom :: Product s ~ Product s0 => SShape s0 -> T s0 t -> T s t
@@ -628,7 +632,6 @@ data T (s :: Shape) (t :: Typ) where
 
   MatMul :: forall s m n o t. KnownNumeric t => SShape s -> Sat KnownNat n -> Sat KnownNat  o -> Sat KnownNat m -> T (s ++ '[n,o]) t -> T (s ++ [o,m]) t -> T (s ++ [n,m]) t
   Where :: T s TFBool  -> T s t -> T s t -> T s t
-  If :: Scalar TFBool -> T s t -> T s t -> T s t
   Convolution :: Sat KnownNat bs -> Sat KnownNat inChannels -> Sat KnownNat outChannels -> SShape filterSpatialShape -> SShape s
             -> T (bs ': s ++ '[inChannels]) t -- input tensor (batched)
             -> T (filterSpatialShape ++ '[inChannels,outChannels]) t -- filters
@@ -664,11 +667,12 @@ data PoolingType = MaxPool | AvgPool deriving Show
 type Tensor shape = T shape
 
 data ReduceOp = Mean | Max | Min | Sum
-data Axis1Op t u where
-  ArgMax :: Axis1Op t ('Typ 'Int b)
-  OneHot :: KnownNumeric t => Axis1Op ('Typ 'Int b) t
-  SoftMax :: Axis1Op (Flt w) (Flt w)
-  ReduceOp :: KnownNumeric t => ReduceOp -> Axis1Op t t
+data Axis1Op s1 t s2 u where
+  ArgMax :: KnownNumeric t => Sat KnownNat n -> SShape s -> Axis1Op (n ': s) t s ('Typ 'Int b)
+  OneHot :: KnownNumeric t => SShape s -> Axis1Op s ('Typ 'Int b) (n ': s) t
+  SoftMax :: Sat KnownNat n -> SShape s -> Axis1Op (n ': s) (Flt w) (n ': s) (Flt w)
+  ReduceOp :: KnownNumeric t => Sat KnownNat n -> SShape s -> ReduceOp -> Axis1Op (n ': s) t s t
+
 data Float1Op
   = ClipByValue Float Float
   | Tanh
@@ -693,14 +697,14 @@ data Float1Op
   deriving Show
 data Num1Op = Square | Negate | Abs | Sign
   deriving Show
-data UnOp (t :: Typ) (u :: Typ) where
-  StopGradient :: UnOp t t
-  Cast :: UnOp t u
-  Num1Op :: KnownNumeric t => Num1Op -> UnOp t t
-  Float1Op :: Float1Op -> UnOp (Flt w) (Flt w)
-  SliceOp :: Integer -> Integer -> UnOp t t
-  IndexOp :: {indexOpAxis :: Integer, indexOpIndex :: Integer} -> UnOp t t
-  Axis1Op :: Axis1Op t u -> Integer -> UnOp t u
+data UnOp (s1 :: Shape) (t :: Typ) (s2 :: Shape) (u :: Typ) where
+  StopGradient :: UnOp '[] t '[] t
+  Cast :: UnOp '[] t '[] u
+  Num1Op :: KnownNumeric t => Num1Op -> UnOp '[] t '[] t
+  Float1Op :: Float1Op -> UnOp '[] (Flt w) '[] (Flt w)
+  SliceOp :: forall m n s t. Sat KnownNat n -> SShape s -> Integer -> Integer -> UnOp (n ': s) t (m ': s) t
+  IndexOp :: {indexN :: Sat KnownNat n, indexShape :: SShape s, indexOpIndex :: Integer} -> UnOp (n ': s) t s t
+  Axis1Op :: Axis1Op s1 t s2 u -> UnOp s1 t s2 u
              -- deriving Show
 data BinOp = Simple2Op String (Maybe (String,String)) | Axis2Op String Integer deriving Show
 

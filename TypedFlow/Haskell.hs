@@ -83,70 +83,7 @@ showShapeLen = fromIntegral (listTypeLen @ s)
 convertNone :: Num a => Integer -> a
 convertNone n = (if n == 514229 then (-1) else fromIntegral n)
 
--- newVar :: Gen DOC
--- newVar = do
---   n <- newId
---   return (text "var" <> integer n)
-
--- gen :: DOC -> Gen ()
--- gen s = modify $ \GState{..} -> GState {genText=genText $$ s,..}
-
--- setGen :: DOC -> Gen ()
--- setGen d = modify $ \GState{..} -> GState {genText=d,..}
-
--- (<--) :: DOC -> UntypedExpression -> Gen ()
--- x <-- y = gen (x <> text "=" <>  y)
-
--- -- | save an intermediate result to a variable and save it to
--- -- genAssignTable for future re-use.
--- cache :: DOC -> DOC  -> Gen DOC
--- cache shap x = do
---   let x' = renderWith (Options 92 (const id)) x
---   mcache <- M.lookup x' <$> gets genAssignTable
---   case mcache of
---     Just y -> return y
---     Nothing -> do
---       v <- newVar
---       gen ("#" <> shap)
---       v <-- x
---       modify (\g -> g {genAssignTable = M.insert x' v (genAssignTable g)})
---       return v
-
--- newParameter :: MonadState GState m => ParamInfo -> m ()
--- newParameter p =   modify $ \GState{..} -> GState{genParams = p:genParams,..}
-
-
 -- runWithFeeds
-
--- assign :: ∀s t. (KnownShape s, KnownTyp t) => T s t -> Gen (T s t)
--- assign x = do
---   e <- generatePure x
---   return (T e)
-
--- assignAny :: UntypedExpression -> Gen UntypedExpression
--- assignAny x = do
---   v <- newVar
---   v <-- x
---   return v
-
--- lambda :: (T s t -> T s' t') -> Gen UntypedExpression
--- lambda f = do
---   v <- newVar
---   let T body = f (T v)
---   return (text "lambda " <> v <> ": " <> body)
-
--- generate :: Gen () -> (String,[ParamInfo])
--- generate s = (renderWith (Options 92 (const id)) genText,genParams)
---   where GState{..} =  execState (fromGen s) (GState {nextVar = 0
---                                                     ,genText = mempty
---                                                     ,genParams=[]
---                                                     ,genRegularizers=[]
---                                                     ,genTrainingPlaceholder = T "NO TRAINING PLACEHOLDER!"
---                                                     ,genPureTable = mempty
---                                                     ,genAssignTable = mempty
---                                                     ,genPeeks=[]})
-
--- FIXME: sharing
 
 data BT (s :: Shape) (t :: Typ) where
   BT :: forall s t v. (Backend.Tensor v (HaskType t)) -> BT s t
@@ -158,14 +95,6 @@ data HState = HState {genVars :: IntMap Var
 type BM a = Backend.BuildT (StateT HState (State GState)) a
 
 data Var = forall s t v. Var (SShape s) (STyp t) (Backend.Tensor v (HaskType t))
-
-
--- findVar :: IntMap Var -> Ref s t -> Maybe (BackendVariable t)
--- findVar m (Ref i s0 t0) = case IM.lookup i m of
---   Nothing -> Nothing
---   Just (Var s t x) -> case (testEq s0 s, testEq t0 t) of
---     (Just Refl, Just Refl) -> Just x
---     _ -> Nothing
 
 initializedVariable :: forall s a. KnownShape s => KnownTyp a => T s a -> BM (Ref s a)
 initializedVariable initVal = do
@@ -193,21 +122,8 @@ interpGen (GPState f) = lift (lift (state f))
 interpGen (GPBind a b) = do x <- interpGen a
                             interpGen (b x)
 
-
 listProxyLen :: forall proxy s. KnownLen s => proxy s -> Integer
 listProxyLen _ = listTypeLen @s
-
--- generatePure :: forall s t. KnownTyp t => KnownShape s => T s t -> Gen DOC
--- generatePure x = do
---   let sn = makeSn2 x
---   mv <- snMapLookup2 sn <$> gets genPureTable
---   case mv of
---     Just v -> return v
---     Nothing -> do
---       e <- generatePure' (\s x' -> knownSShape s $ generatePure x') typeSShape x
---       v <- cache (showShapeType @s) e
---       modify (\g -> g {genPureTable = (snMapInsert2 sn v) (genPureTable g)})
---       return v
 
 -- genDistr :: forall s s0 t. KnownTyp t => Distribution s t -> SShape s0 -> SShape s -> DOC
 -- genDistr d sh s1 = case d of
@@ -241,7 +157,7 @@ backendTensor (STyp SInt SB32 Refl) k = k
 backendTensor' :: forall t k proxy. KnownTyp t => proxy t -> (Backend.TensorType (HaskType t) => k) -> k
 backendTensor' _ = backendTensor (typeSTyp @t)
 
-runUnOp :: UnOp t u -> BackendTensor t -> BackendTensor u
+runUnOp :: UnOp s1 t s2 u -> BackendTensor t -> BackendTensor u
 runUnOp _ = error "todo"
 
 interpretPure :: forall s t. KnownTyp t => KnownShape s => T s t -> BM (BT s t)

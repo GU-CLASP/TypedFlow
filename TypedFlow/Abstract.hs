@@ -69,11 +69,10 @@ protoFinished u varyNoise rec = \case
   DirectBroadcast _ _ _ _ x -> rec x
   GatherND _ _ _ x y -> rec x && rec y
   Noise _ _ _ _ -> not varyNoise
-  If cond x y ->  rec cond && rec x && rec y
   Where cond x y -> rec cond && rec x && rec y
   T _ -> True
   Unbroadcast _p u' _x -> u /= u'
-  UnOp _op _ _ _ x -> rec x
+  UnOp _op _ x -> rec x
   MatMul _ _ _ _ x y -> rec x && rec y
   BinOp _op _ _ _ _ x y -> rec x && rec y
   Gather _is _s0 _m _s1 x ix -> rec x && rec ix
@@ -149,6 +148,18 @@ broadcastIndexMany n ((:*) m@Sat cs) is x =
 --  Product (filterSpatialShape ++ '[inChannels, outChannels * n])
 -- Product ((filterSpatialShape ++ '[inChannels, outChannels]) ++ '[n])
 
+unopInputShape :: UnOp s t s' t' -> SShape s
+unopInputShape Cast = Unit
+unopInputShape (IndexOp n s _) = n :* s
+unopInputShape (Axis1Op o) = case o of
+  ArgMax n s -> n :* s
+  OneHot s -> s
+  SoftMax n s -> n :* s
+  ReduceOp n s _ -> n :* s
+unopInputShape StopGradient = Unit
+unopInputShape (Num1Op _) = Unit
+unopInputShape (Float1Op _) = Unit
+unopInputShape (SliceOp n s _ _) = n :* s
 
 protoBroadcast :: forall n s t.
   Unique -> Bool
@@ -176,15 +187,11 @@ protoBroadcast u varyNoise n@(Sat) rec finished ty s tensor
     prodAssocS n bs (productS (outSpatial *: numChans)) $
     reshapeFrom (satMul n bs :* outSpatial *: numChans) $
     Pool (satMul n bs) window pt numChans outSpatial (reshapeAuto (rec typeSShape x))
-  If cond x y
-    | finished cond -> If cond (rec s x) (rec s y)
-    | otherwise ->  error "broadcast if condition not implemented"
   Where cond x y -> Where (rec s cond) (rec s x) (rec s y)
   T _ -> error "panic: broadcast constant should be finished!"
   Unbroadcast p@Sat u' x
     | u == u' -> case testEq p n of
-        Nothing -> UnOp (error "panic.unbroadcast")
-                         Unit (p :* s) (n :* s) x
+        Nothing -> UnOp (error "panic.unbroadcast") Unit x
         Just Refl -> x
     | otherwise -> knownSShape s $ Unbroadcast p u' (transpose01 (rec (p :* s) x))
   MatMul Unit a@Sat b@Sat c@Sat x y
@@ -193,7 +200,7 @@ protoBroadcast u varyNoise n@(Sat) rec finished ty s tensor
      | finished y -> inflate2 (MatMul Unit (satMul n a) b c (flatten2 (rec (a :* b :* Unit) x)) y)
   MatMul s0 a b c x y -> MatMul (n :* s0) a b c (rec (s0 .+. a :* b :* Unit) x) (rec (s0 .+. b :* c :* Unit) y)
   BinOp op s0 s1 s2 s3 x y -> BinOp op (n :* s0) s1 s2 s3 (rec (s0 .+. s1) x) (rec (s0 .+. s2) y)
-  UnOp op s0 s1 s2 x -> UnOp op (n :* s0) s1 s2 (rec (s0 .+. s1) x)
+  UnOp op s0 x -> UnOp op (n :* s0) (rec (s0 .+. unopInputShape op) x)
   Gather is Unit m s1 x ix
     -- this optimisation is important to get efficient embeddings
     | finished x -> Gather (n :* is) Unit m s1 x (rec is ix)
@@ -321,8 +328,9 @@ sShapeDropSucc (AxSucc n) (_ :* xs) = sShapeDropSucc n xs
 
 -- | Internal. Use 'reduceSum', etc. instead.
 reduce :: ∀ n s t. KnownNumeric t => (KnownShape s) => ReduceOp -> Axis n s -> T s t -> T (Take n s ++ Drop ('Succ n) s) t
-reduce op n x = UnOp (Axis1Op (ReduceOp op) (axisInt n)) Unit (typeSShape @s)  (sShapeTake' n s .+. sShapeDropSucc n s) x
-  where s = typeSShape @s
+reduce op n x = case axisSplitApp' n of
+  Refl -> UnOp (Axis1Op (ReduceOp (hlookup n s) (sShapeDropSucc n s) op)) (sShapeTake' n s) x
+ where s = typeSShape @s
 
 -- | Reduce along a given dimension
 reduceSum, reduceMean, reduceMax, reduceMin :: ∀n s t. (KnownNumeric t,KnownShape s) => Axis n s -> T s t -> T (Take n s ++ Drop ('Succ n) s) t
@@ -375,7 +383,7 @@ instance (KnownBits b, KnownShape s) => Floating (T s ('Typ 'Float b)) where
 -- | Pretend that the argument is a constant for the purposes of
 -- gradient computation
 stopGradient :: ∀ s t. KnownTyp t => KnownShape s => Tensor s t -> Tensor s t
-stopGradient = UnOp StopGradient Unit (typeSShape @s) (typeSShape @s)
+stopGradient = appRUnit @s $ UnOp StopGradient (typeSShape @s)
 
 -- | Divide tensors, broacasting along shape @s@
 (⊘) :: forall s t. KnownBits t => KnownShape s => T s ('Typ 'Float t) -> T s ('Typ 'Float t) -> T s ('Typ 'Float t)
@@ -408,10 +416,10 @@ matmul :: forall m n o t. KnownNumeric t => KnownNat m => KnownNat o => KnownNat
 matmul = MatMul Unit Sat Sat Sat
 
 unOp :: forall s t. KnownShape s => KnownNumeric t => Num1Op -> T s t -> T s t
-unOp op = UnOp (Num1Op op) Unit (typeSShape @s) (typeSShape @s)
+unOp op = appRUnit @s $ UnOp (Num1Op op)  (typeSShape @s)
 
 unFlOp :: forall s t. KnownBits t => KnownShape s => Float1Op -> T s (Flt t) -> T s (Flt t)
-unFlOp op = UnOp (Float1Op op) Unit (typeSShape @s) (typeSShape @s)
+unFlOp op = appRUnit @s $ UnOp (Float1Op op) (typeSShape @s)
 
 binOp :: forall s t u. KnownShape s => KnownTyp t => String -> T s t -> T s t -> T s u
 binOp op = BinOp (Simple2Op op Nothing) Unit (typeSShape @s) (typeSShape @s) (typeSShape @s)
@@ -430,10 +438,9 @@ floor = unFlOp Floor
 -- | Take a slice at dimension n from i to j.
 slice :: forall i j s t n. KnownTyp t => KnownShape s => KnownNat j => KnownNat i => (i <= j, j <= At n s, KnownLen s) =>
          Axis n s -> Tensor s t -> Tensor (Take n s ++ ((j-i) ': Drop ('Succ n) s)) t
-slice n = UnOp (SliceOp (natVal (Proxy @i)) (natVal (Proxy @j))) Unit (typeSShape @s)
-             (sShapeTake' n s .+. (:*) (natSat @(j-i)) (sShapeDropSucc n s))
-             -- (typeSShape @(Take n s ++ ((j-i) ': Drop ('Succ n) s)))
-        where s = typeSShape @s
+slice n = case axisSplitApp' n of
+  Refl -> UnOp (SliceOp @(j-i) (hlookup n s) (sShapeDropSucc n s) (natVal (Proxy @i)) (natVal (Proxy @j))) (sShapeTake' n s)
+ where s = typeSShape @s
 
 
 slice1 :: forall i j m n s t. KnownShape s => KnownNat m => KnownNat n => KnownTyp t => KnownNat j => KnownNat i => (i <= j, j <= m, KnownLen s) =>
@@ -557,7 +564,7 @@ last0 = nth0 (natVal (Proxy @n) - 1)
 
 -- | Access the nth element in a tensor (in the 0th dimension)
 nth0 :: ∀ n s t. KnownTyp t => KnownNat n => KnownShape s => Integer -> T (n ': s) t -> Tensor s t
-nth0 i = UnOp (IndexOp 0 i) Unit (typeSShape @(n ': s)) (typeSShape @s)
+nth0 i = UnOp (IndexOp (natSat @n) typeSShape i) Unit
 
 -- | Access the nth element in a tensor (in the 0th dimension), with a static index
 nth0' :: ∀ n m s t. KnownNat m => KnownTyp t => KnownShape s => KnownNat n => KnownLen s => n < m => T (m ': s) t -> Tensor s t
@@ -689,24 +696,32 @@ convolution x filters = knownAppend @s @'[outputChannels] $
              (expandDim0 x)
              filters)
 
-softmaxInternal :: KnownBits w => SShape s0 -> SShape s1 -> T (s0 ++ s1) ('Typ 'Float w) -> T (s0 ++ s1) ('Typ 'Float w)
-softmaxInternal s0 s1 = UnOp (Axis1Op SoftMax (sListLength s0 - 1)) Unit (s0 .+. s1) (s0 .+. s1)
+softmaxInternal :: forall n s0 s1 w. KnownNat n => KnownBits w =>
+                   SShape s0 -> SShape s1 -> T (s0 ++ (n ': s1)) ('Typ 'Float w) -> T (s0 ++ (n ': s1)) ('Typ 'Float w)
+softmaxInternal s0 s1 = UnOp (Axis1Op (SoftMax (natSat @n) s1)) s0
 
 -- | Softmax along the first dimension
 softmax0 :: forall n s w. KnownBits w => KnownNat n => KnownShape s => T (n ': s) ('Typ 'Float w) -> T (n ': s) ('Typ 'Float w)
-softmax0 = softmaxInternal (typeSShape @'[n]) (typeSShape @s)
+softmax0 = softmaxInternal @n Unit (typeSShape @s)
 
 -- | Softmax along the second dimension
 softmax1 :: forall n m s w.  KnownBits w => KnownNat n => KnownNat m => KnownShape s => T (m ': n ': s) ('Typ 'Float w) -> T (m ': n ': s) ('Typ 'Float w)
-softmax1 =  softmaxInternal (typeSShape @'[m,n]) (typeSShape @s)
+softmax1 =  softmaxInternal @n (typeSShape @'[m]) (typeSShape @s)
 
-argmaxInternal :: forall n s0 s1 t u. KnownNumeric t => KnownBits u => Sat KnownNat n -> SShape s0 -> SShape s1 -> T (s0 ++ (n ': s1)) t -> T (s0 ++ s1) ('Typ 'Int u)
-argmaxInternal n s0 s1 = UnOp (Axis1Op ArgMax (sListLength s0)) Unit (s0 .+. (:*) n s1) (s0 .+. s1)
+argmaxInternal :: forall n s0 s1 t u. KnownNat n => KnownNumeric t => KnownBits u => Sat KnownNat n -> SShape s0 -> SShape s1 -> T (s0 ++ (n ': s1)) t -> T (s0 ++ s1) ('Typ 'Int u)
+argmaxInternal _n s0 s1 = UnOp (Axis1Op (ArgMax (natSat @n) s1)) s0
 
 axisSplitApp :: Axis n s -> (Take n s ++ Drop n s) :~: s
 axisSplitApp AxZero = Refl
 axisSplitApp (AxSucc n) = case axisSplitApp n of
   Refl -> Refl
+
+
+axisSplitApp' :: Axis n s -> (Take n s ++ (At n s ': Drop ('Succ n) s)) :~: s
+axisSplitApp' AxZero = Refl
+axisSplitApp' (AxSucc n) = case axisSplitApp' n of
+  Refl -> Refl
+
 
 -- | Argmax along axis @n@
 argmax :: forall m n u s t. (KnownShape s, KnownBits u, KnownNat m, KnownNumeric t) => Axis n s -> Tensor (Take n s ++ (m ': Drop n s)) t -> Tensor s ('Typ 'Int u)
@@ -725,7 +740,7 @@ argmax1 = argmaxInternal (natSat @n) (natSat @m :* Unit) (typeSShape @s)
 
 -- | Cast the element type.
 cast :: forall u s t. KnownTyp t => KnownShape s => KnownTyp u => T s t -> T s u
-cast = UnOp Cast Unit (typeSShape @s) (typeSShape @s)
+cast = appRUnit @s $ UnOp Cast (typeSShape @s)
 
 -- | (dense) softmax cross entropy with logits.
 softmaxCrossEntropyWithLogits :: forall numClasses.
@@ -765,9 +780,7 @@ sparseSoftmaxCrossEntropyWithLogits  =
 oneHot0 :: forall numClasses w s t. KnownNat numClasses => KnownBits t => KnownBits w =>
   (KnownShape s) =>
   Tensor s ('Typ 'Int w) -> Tensor (numClasses ': s) (Flt t)
-oneHot0 = UnOp (Axis1Op OneHot 0) Unit s
-                 (natSat @numClasses :* s)
-  where s = typeSShape @s
+oneHot0 = UnOp (Axis1Op (OneHot (typeSShape @s))) Unit
 
 -- | One hot vector along axis 1
 oneHot1 :: forall numClasses w s m t. KnownBits w =>KnownShape s => KnownNat numClasses => KnownNat m => KnownBits t => Tensor (m ': s) ('Typ 'Int w) -> Tensor (m ': numClasses ': s) (Flt t)
@@ -794,7 +807,7 @@ noise d = do
 
 -- | Clip a tensor
 clipByValue :: forall s t. KnownShape s => KnownBits t => Float -> Float -> T s (Flt t) -> T s (Flt t)
-clipByValue lo hi = UnOp (Float1Op (ClipByValue lo hi)) Unit typeSShape typeSShape
+clipByValue lo hi = appRUnit @s $ UnOp (Float1Op (ClipByValue lo hi)) (typeSShape @s)
 
 -- | (where_ c x y)[i] = if c[i] then x[i] else y[i]
 where_ :: T s TFBool -> T s t -> T s t -> T s t
@@ -802,8 +815,8 @@ where_ = Where
 
 
 -- | Selection of a tensor (note: this is a strict operation)
-if_ :: Scalar TFBool -> T s t -> T s t -> T s t
-if_ = If
+if_ :: forall s t. KnownShape s => Scalar TFBool -> T s t -> T s t -> T s t
+if_ x = appRUnit @s $ where_ (broadcastTT @s x)
 
 -- | @(gather x ix)[k] = x[ix[k]]@. See https://www.tensorflow.org/api_docs/python/tf/gather
 gather :: forall n indexShape s t. KnownShape s => KnownNat n => KnownShape indexShape => T (n ': s) t -> T indexShape Int32 -> T (indexShape ++ s) t
