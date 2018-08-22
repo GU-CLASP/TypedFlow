@@ -150,7 +150,6 @@ broadcastIndexMany n ((:*) m@Sat cs) is x =
 unopInputShape :: UnOp s t s' t' -> SShape s
 unopInputShape (Diag n) = n :* Unit
 unopInputShape Cast = Unit
-unopInputShape (IndexOp n s _) = n :* s
 unopInputShape (Axis1Op o) = case o of
   ArgMax n s -> n :* s
   OneHot s -> s
@@ -567,7 +566,7 @@ last0 = nth0 (natVal (Proxy @n) - 1)
 
 -- | Access the nth element in a tensor (in the 0th dimension)
 nth0 :: ∀ n s t. KnownTyp t => KnownNat n => KnownShape s => Integer -> T (n ': s) t -> Tensor s t
-nth0 i = UnOp (IndexOp (natSat @n) typeSShape i) Unit
+nth0 i x = reshapeAuto @s @(1 ': s) (UnOp (SliceOp (natSat @n) typeSShape i (i+1)) Unit x)
 
 -- | Access the nth element in a tensor (in the 0th dimension), with a static index
 nth0' :: ∀ n m s t. KnownNat m => KnownTyp t => KnownShape s => KnownNat n => KnownLen s => n < m => T (m ': s) t -> Tensor s t
