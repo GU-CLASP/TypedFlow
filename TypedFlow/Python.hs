@@ -234,11 +234,6 @@ generatePure' rec sR = knownSShape sR $ \case
   T op -> return $ case op of
     Variable v -> pyVarRepr v
     (Constant c) -> funcall "tf.constant" [pretty @t c, named "shape" (showSShape sR), named "dtype" (showTyp @t)]
-    Eye -> case sR of
-      n :* _ -> funcall "tf.eye" [showDimS n,
-                                  named "num_columns" (showDimS n),
-                                  named "batch_shape" (showShapeType @'[]),
-                                  named "dtype" (showTyp @t)]
     (Range n@Sat) -> (func "tf.range" [] [("start",integer 0),
                                ("limit",integer (natVal n)),
                                ("dtype",showTyp @t)])
@@ -250,6 +245,7 @@ generatePure' rec sR = knownSShape sR $ \case
   UnOp operation s0  x -> do
    recx <- rec (s0 .+. unopInputShape operation) x
    return $ case operation of
+    Diag _ -> funcall "tf.matrix_diag" [recx]
     Cast -> funcall "tf.cast" [recx,showTyp @t]
     StopGradient -> funcall "tf.stop_gradient" [recx]
     Axis1Op op' ->

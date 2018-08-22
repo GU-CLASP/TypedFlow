@@ -609,8 +609,7 @@ data Ref s t = Ref Int (SShape s) (STyp t)
 data NilOp s t where
   Variable :: Ref s t -> NilOp s t
   Constant :: HaskType t -> NilOp '[] t
-  Eye :: KnownNumeric t => NilOp '[n,n] t
-  Range :: Sat KnownNat n -> NilOp '[n] ('Typ 'Int w)
+  Range :: KnownBits w => Sat KnownNat n -> NilOp '[n] ('Typ 'Int w)
 
 data T (s :: Shape) (t :: Typ) where
   T :: NilOp s t -> T s t
@@ -698,6 +697,7 @@ data Float1Op
 data Num1Op = Square | Negate | Abs | Sign
   deriving Show
 data UnOp (s1 :: Shape) (t :: Typ) (s2 :: Shape) (u :: Typ) where
+  Diag :: Sat KnownNat n -> UnOp '[n] t '[n,n] t
   StopGradient :: UnOp '[] t '[] t
   Cast :: UnOp '[] t '[] u
   Num1Op :: KnownNumeric t => Num1Op -> UnOp '[] t '[] t

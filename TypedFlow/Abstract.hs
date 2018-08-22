@@ -45,7 +45,6 @@ import Data.Unique
 import GHC.TypeLits
 import Prelude hiding (RealFrac(..))
 import System.IO.Unsafe
-import Text.PrettyPrint.Compact hiding (All,Last,Product,Sum)
 import TypedFlow.Memo
 import TypedFlow.Types (T(..))
 import TypedFlow.Types hiding (T)
@@ -149,6 +148,7 @@ broadcastIndexMany n ((:*) m@Sat cs) is x =
 -- Product ((filterSpatialShape ++ '[inChannels, outChannels]) ++ '[n])
 
 unopInputShape :: UnOp s t s' t' -> SShape s
+unopInputShape (Diag n) = n :* Unit
 unopInputShape Cast = Unit
 unopInputShape (IndexOp n s _) = n :* s
 unopInputShape (Axis1Op o) = case o of
@@ -287,9 +287,12 @@ defaultT = case typeSTyp @t of
 ones :: ∀ t (shape :: Shape). KnownShape shape => KnownNumeric t => (T shape t)
 ones = knownNum @t $ constant 1
 
--- | Identity matrix in dimensions m,n (extended with zeros if m ≠ n), and repeated on shape s.
+-- | Identity matrix in dimensions n,n
 eye :: ∀ n t. KnownNat n => KnownNumeric t => (T '[n,n] t)
-eye = T Eye
+eye = diag 1
+
+diag :: ∀ n t. KnownTyp t => KnownNat n => T '[n] t ->  T '[n,n] t
+diag = UnOp (Diag Sat) Unit
 
 -- | range[i] = i
 range :: forall n w. KnownNat n => KnownBits w => T '[n] ('Typ 'Int w)
