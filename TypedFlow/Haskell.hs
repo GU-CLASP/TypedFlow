@@ -163,14 +163,20 @@ backendTensor (STyp SInt SB32 Refl) k = k
 backendTensor' :: forall t k proxy. KnownTyp t => proxy t -> (Backend.TensorType (HaskType t) => k) -> k
 backendTensor' _ = backendTensor (typeSTyp @t)
 
+
 runUnOp :: forall s s1 t s2 u. KnownTyp u => KnownTyp t => BackendTensorType u => SShape s -> UnOp s1 t s2 u -> BT (s++s1) t -> BT (s++s2) u
-runUnOp _ op (BT x) = backendTensor (typeSTyp @t) $ case op of
-  -- SliceOp _ _ _ _ -> _
+runUnOp sL op (BT x) = backendTensor (typeSTyp @t) $ case op of
+  SliceOp _ sR lo hi -> BT $ BackCore.slice x
+    (shapeFromList (replicate (sListLen  sL) 0 ++ [lo] ++ replicate (sListLen sR) 0))
+    (shapeFromList (shapeToList' sL ++ [hi-lo] ++ (shapeToList' sR)))
   -- IndexOp _ _ _ -> _
   -- Axis1Op _ -> _
   StopGradient -> BT $ BackCore.stopGradient x
   Cast -> BT $ Backend.cast x
   (Num1Op numop) -> knownNumeric @t $ case numop of
+    Square -> BT (Backend.mul x x)
+    Negate -> BT (Backend.neg x)
+    Sign -> BT (Backend.sign x)
     Abs -> BT (Backend.abs x)
   Float1Op flop -> knownFloatingB @t $ knownFloating @(TypBits u) $ knownFloatingB @u $ case flop of
      Tanh -> BT (BackCore.tanh x)
