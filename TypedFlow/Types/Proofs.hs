@@ -35,7 +35,7 @@ import Data.Proxy
 import TypedFlow.Types hiding (T)
 import Data.Type.Equality
 import Unsafe.Coerce
-
+import Data.Kind (Type)
 class SingEq s where
   testEq :: forall a b. s a -> s b -> Maybe (a :~: b)
 
@@ -303,3 +303,35 @@ decideProductEq :: ShapeExpr 1 xs zs -> ShapeExpr 1 ys zs -> Product xs :~: Prod
 decideProductEq l r = case decideProductEq1 l of
                         Refl -> case decideProductEq1 r of
                           Refl -> Refl
+
+
+unsafePositive :: (1 <=? n) :~: 'True
+unsafePositive = unsafeCoerce Refl
+
+sucPred :: ((1 <=? n) ~ 'True) => 1 + (n - 1) :~: n
+sucPred = unsafeCoerce Refl
+
+natRec :: forall (n :: Nat) (p :: Nat -> Type). KnownNat n => p 0 -> (forall (m :: Nat). p m -> p (1+m)) -> p n
+natRec z s = case natVal (Proxy @n) of
+  0 -> unsafeCoerce z
+  _ -> case unsafePositive @n of
+         Refl -> case sucPred @n of
+           Refl -> s @(n-1) (natRec @(n-1) @p z s)
+
+class (x ~ y) => Equal x y
+instance (x ~ y) => Equal x y
+
+data TypedIndex n where
+  TypedIndex :: (n ~ 1) => Integer -> TypedIndex n
+
+deriving instance (Show (TypedIndex n))
+
+data RepRes n where
+  RepRes :: forall xs n. (Length xs ~ n, Sum xs ~ n) => Integer -> SList' TypedIndex xs -> RepRes n
+
+repeatOne :: forall n k. Sat KnownNat n -> (forall xs. (Length xs ~ n, Sum xs ~ n) => SList' TypedIndex xs -> k) -> k
+repeatOne n@Sat k = case natRec @n (RepRes (natVal n-1) Unit) (\(RepRes m xs) -> RepRes (m-1) (TypedIndex m :* xs)) of
+  RepRes _ x -> k x
+
+deriving instance (Show (NP TypedIndex xs))
+
