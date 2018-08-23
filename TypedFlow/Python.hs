@@ -252,7 +252,6 @@ generatePure' rec sR = knownSShape sR $ \case
        let (op,args) = case op' of
                          OneHot{} -> ("tf.one_hot",[("dtype",showTyp @t)])
                          ArgMax{} -> ("tf.argmax",[("output_type",showTyp @t)])
-                         SoftMax{} -> ("tf.nn.softmax",[])
                          ReduceOp _ _ r -> ("tf.reduce_" ++ rop, [])
                             where rop = case r of
                                            Max -> "max"
@@ -272,7 +271,6 @@ generatePure' rec sR = knownSShape sR $ \case
                 Negate -> ("tf.negative",[])
                 _ -> ("tf." ++ map toLower (show op'), [])
     SliceOp _ _ lo hi -> recx <> list (replicate (fromIntegral (sListLength s0)) (text ":") ++ [integer lo <> text ".." <> integer hi])
-    IndexOp _ _ ix -> recx <> list (replicate (fromIntegral (sListLength s0)) (text ":") ++ [integer ix])
   MatMul s0 a b c x y  -> do
     recx <- rec (s0 .+. (:*) a ((:*) b Unit)) x
     recy <- rec (s0 .+. (:*) b ((:*) c Unit)) y
@@ -316,6 +314,9 @@ generatePure' rec sR = knownSShape sR $ \case
                   [rx, showSShape window, typ', text (show ("SAME" :: String))]
                   [("strides", showSShape window)])
    where typ' = text $ (show $ case typ of MaxPool -> "MAX"; AvgPool -> "AVG" :: String)
+  Softmax _ _ x -> do
+     rx <- rec typeSShape x
+     return $ func "tf.nn.softmax" [rx] [("axis","1")]
 
 type Python a = StateT PyState (State GState) a
 

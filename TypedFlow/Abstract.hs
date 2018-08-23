@@ -65,6 +65,7 @@ broadcast u varyNoise n x = result
 
 protoFinished :: Unique -> Bool -> (forall s' t'. T s' t' -> Bool) -> T s t -> Bool
 protoFinished u varyNoise rec = \case
+  Softmax _ _ x -> rec x
   DirectBroadcast _ _ _ _ x -> rec x
   GatherND _ _ _ x y -> rec x && rec y
   Noise _ _ _ _ -> not varyNoise
@@ -153,7 +154,6 @@ unopInputShape Cast = Unit
 unopInputShape (Axis1Op o) = case o of
   ArgMax n s -> n :* s
   OneHot s -> s
-  SoftMax n s -> n :* s
   ReduceOp n s _ -> n :* s
 unopInputShape StopGradient = Unit
 unopInputShape (Num1Op _) = Unit
@@ -172,6 +172,7 @@ protoBroadcast :: forall n s t.
 protoBroadcast u varyNoise n@(Sat) rec finished ty s tensor
   | finished tensor = simpleBC
   | otherwise = knownTyp ty $ case tensor of
+  Softmax bs@Sat m@Sat x -> prodAssocS n bs m $ reshapeAuto (Softmax (satMul n bs) m ((reshapeAuto (rec (typeSShape) x))))
   DirectBroadcast s0 s1 s2 s3 x -> DirectBroadcast (n :* s0) s1 s2 s3 (rec (s0 .+. s2) x)
   GatherND cs es is x ix
     | finished x -> GatherND cs es (n :* is) x (rec (is *: sListLenAsNat cs) ix)
@@ -698,17 +699,17 @@ convolution x filters = knownAppend @s @'[outputChannels] $
              (expandDim0 x)
              filters)
 
-softmaxInternal :: forall n s0 s1 w. KnownNat n => KnownBits w =>
-                   SShape s0 -> SShape s1 -> T (s0 ++ (n ': s1)) ('Typ 'Float w) -> T (s0 ++ (n ': s1)) ('Typ 'Float w)
-softmaxInternal s0 s1 = UnOp (Axis1Op (SoftMax (natSat @n) s1)) s0
 
 -- | Softmax along the first dimension
-softmax0 :: forall n s w. KnownBits w => KnownNat n => KnownShape s => T (n ': s) ('Typ 'Float w) -> T (n ': s) ('Typ 'Float w)
-softmax0 = softmaxInternal @n Unit (typeSShape @s)
+softmaxInternal :: forall bs n w. KnownNat bs => KnownBits w => KnownNat n => T '[bs,n] ('Typ 'Float w) -> T '[bs,n] ('Typ 'Float w)
+softmaxInternal = Softmax (natSat @bs) (natSat @n)
+
+softmax0 :: forall n w.  KnownBits w => KnownNat n => T '[n] ('Typ 'Float w) -> T '[n] ('Typ 'Float w)
+softmax0 = reshape . softmaxInternal . reshape @[1,n]
 
 -- | Softmax along the second dimension
-softmax1 :: forall n m s w.  KnownBits w => KnownNat n => KnownNat m => KnownShape s => T (m ': n ': s) ('Typ 'Float w) -> T (m ': n ': s) ('Typ 'Float w)
-softmax1 =  softmaxInternal @n (typeSShape @'[m]) (typeSShape @s)
+softmax1 :: forall n m w.  KnownBits w => KnownNat n => KnownNat m => T '[m,n] ('Typ 'Float w) -> T '[m,n] ('Typ 'Float w)
+softmax1 = mapT softmax0
 
 argmaxInternal :: forall n s0 s1 t u. KnownNat n => KnownNumeric t => KnownBits u => Sat KnownNat n -> SShape s0 -> SShape s1 -> T (s0 ++ (n ': s1)) t -> T (s0 ++ s1) ('Typ 'Int u)
 argmaxInternal _n s0 s1 = UnOp (Axis1Op (ArgMax (natSat @n) s1)) s0

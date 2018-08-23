@@ -641,6 +641,8 @@ data T (s :: Shape) (t :: Typ) where
           Sat KnownNat bs -> SShape window -> PoolingType -> Sat KnownNat numChannels -> SShape outSpatial
             -> T (bs ': ZipWithMulShapes window outSpatial ++ '[numChannels]) t
             -> T (bs ': outSpatial ++ '[numChannels]) t
+  Softmax :: Sat KnownNat bs -> Sat KnownNat n -> T '[bs,n] (Flt w) -> T '[bs,n] (Flt w)
+    -- yes, softmax is shape-fixed: https://www.tensorflow.org/api_docs/cc/class/tensorflow/ops/softmax
 
 instance Show Unique where
   show _ = "<Unique>"
@@ -671,7 +673,6 @@ data ReduceOp = Mean | Max | Min | Sum
 data Axis1Op s1 t s2 u where
   ArgMax :: KnownNumeric t => Sat KnownNat n -> SShape s -> Axis1Op (n ': s) t s ('Typ 'Int b)
   OneHot :: KnownNumeric t => SShape s -> Axis1Op s ('Typ 'Int b) (n ': s) t
-  SoftMax :: Sat KnownNat n -> SShape s -> Axis1Op (n ': s) (Flt w) (n ': s) (Flt w)
   ReduceOp :: KnownNumeric t => Sat KnownNat n -> SShape s -> ReduceOp -> Axis1Op (n ': s) t s t
 
 data Float1Op
