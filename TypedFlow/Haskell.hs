@@ -153,6 +153,11 @@ knownFloatingB k = case bitsVal @(TypBits t) of
     SB32 -> k
     SB64 -> k
 
+knownInt :: forall t k. (KnownTyp t, TypKind t ~ 'Int) => (Backend.OneOf '[Backend.Int32, Backend.Int64] (HaskType t) => k) -> k
+knownInt k = case bitsVal @(TypBits t) of
+    SB32 -> k
+    SB64 -> k
+
 backendTensor :: STyp t ->  (Backend.TensorType (HaskType t) => k) -> k
 backendTensor (STyp SFloat SB32 Refl) k = k
 backendTensor (STyp SInt SB64 Refl) k = k
@@ -169,8 +174,15 @@ runUnOp sL op (BT x) = backendTensor (typeSTyp @t) $ case op of
   SliceOp _ sR lo hi -> BT $ BackCore.slice x
     (shapeFromList (replicate (sListLen  sL) 0 ++ [lo] ++ replicate (sListLen sR) 0))
     (shapeFromList (shapeToList' sL ++ [hi-lo] ++ (shapeToList' sR)))
-  -- IndexOp _ _ _ -> _
-  -- Axis1Op _ -> _
+  Axis1Op aop -> case aop of
+    (ArgMax _ _) -> knownNumeric @t $ knownInt @u $ BT $ BackCore.argMax x (Backend.scalar (fromIntegral (sListLen sL) :: Backend.Int32))
+    (OneHot _) -> _
+    ReduceOp _ _sR rop -> knownNumeric @t $ case rop of
+      Max -> BT $ BackCore.max x redindices
+      Min -> BT $ BackCore.min x redindices
+      Sum -> BT $ Backend.sum x redindices
+      Mean -> BT $ Backend.mean x redindices
+     where redindices = (Backend.vector [fromIntegral (sListLen sL) :: Backend.Int32 ])
   StopGradient -> BT $ BackCore.stopGradient x
   Cast -> BT $ Backend.cast x
   (Num1Op numop) -> knownNumeric @t $ case numop of
