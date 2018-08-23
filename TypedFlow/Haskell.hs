@@ -175,8 +175,8 @@ runUnOp sL op (BT x) = backendTensor (typeSTyp @t) $ case op of
     (shapeFromList (replicate (sListLen  sL) 0 ++ [lo] ++ replicate (sListLen sR) 0))
     (shapeFromList (shapeToList' sL ++ [hi-lo] ++ (shapeToList' sR)))
   Axis1Op aop -> case aop of
-    (ArgMax _ _) -> knownNumeric @t $ knownInt @u $ BT $ BackCore.argMax x (Backend.scalar (fromIntegral (sListLen sL) :: Backend.Int32))
-    (OneHot _) -> _
+    (ArgMax _ _) -> knownNumeric @t $ knownInt @u $ BT $ BackCore.argMax x (Backend.scalar sLLen)
+    (OneHot _) -> knownNumeric @u $ knownInt @t $  BT $ Backend.oneHot x (Backend.scalar sLLen) (Backend.scalar 1) (Backend.scalar 0)
     ReduceOp _ _sR rop -> knownNumeric @t $ case rop of
       Max -> BT $ BackCore.max x redindices
       Min -> BT $ BackCore.min x redindices
@@ -212,7 +212,7 @@ runUnOp sL op (BT x) = backendTensor (typeSTyp @t) $ case op of
      HardSigmoid -> error "Haskell: no hard sigmoid defined yet"
      ClipByValue lo hi -> BT $ BackCore.clipByValue x (Backend.scalar $ realToFrac lo) (Backend.scalar $ realToFrac hi)
   Diag _ -> BT $ BackCore.batchMatrixDiag x
-
+ where sLLen = fromIntegral (sListLen sL) :: Backend.Int32
 
 interpretPure :: forall s t. KnownTyp t => KnownShape s => T s t -> BM (BT s t)
 interpretPure x = do
@@ -253,29 +253,18 @@ interpretPure' rec sR = knownSShape sR $ backendTensor (typeSTyp @t) $ \case
    --  Noise noiseId s0 s1 x -> do
    --    return $ (genDistr x s0 s1) <+> (text "# " <> integer noiseId)
   T op -> interpNilOp op
-  -- T x _ -> x $ Backend.Shape $ map fromIntegral $ shapeToList' sR
-   --  If c x y -> do
-   --    rc <- rec typeSShape c
-   --    rx <- rec typeSShape x
-   --    ry <- rec typeSShape y
-   --    return (func "tf.cond" [rc] [("true_fn", lambda0 rx) ,("false_fn", lambda0 ry) ,("strict","True")])
-   --    where lambda0 z = text "lambda: " <> z
-  -- Where c x y -> let rc = rec typeSShape c
-  --                    rx = rec typeSShape x
-  --                    ry = rec typeSShape y
-  --                in Backend.select rc rx ry
+  Where c x y -> do
+    BT rc <- rec typeSShape c
+    BT rx <- rec typeSShape x
+    BT ry <- rec typeSShape y
+    return $ BT $ BackCore.select rc rx ry
   UnOp operation s0 x -> do
     recx <- rec (s0 .+. unopInputShape operation) x
     return (runUnOp s0 operation recx)
- --   return $ case operation of
- --    Axis1Op op args n -> func op [recx] ((axisName,integer (sListLength s0 + n)):args)
- --      where axisName = if op == "tf.nn.softmax" then "dim" else "axis" -- use dim before TF 1.5
- --    Simple1Op op args -> funcall op (recx:args)
- --    SliceOp lo hi -> recx <> list (replicate (fromIntegral (sListLength s0)) (text ":") ++ [integer lo <> text ".." <> integer hi])
- --    IndexOp axis ix -> recx <> list (replicate (fromIntegral (axis + sListLength s0)) (text ":") ++ [integer ix])
-  -- MatMul s0 a b c x y  -> let recx = rec (s0 .+. (:*) a ((:*) b Unit)) x
-  --                             recy = rec (s0 .+. (:*) b ((:*) c Unit)) y
-  --                         in knownNumeric @t $ Backend.matMul recx recy
+  MatMul s0 a b c x y  -> do
+    BT recx <- rec (s0 .+. a :* b :* Unit) x
+    BT recy <- rec (s0 .+. b :* c :* Unit) y
+    return $ knownNumeric @t $ BT $ BackCore.batchMatMul recx recy
  --  BinOp operation s0 s1 s2 _s3 x y -> do
  --   recx <- rec (s0 .+. s1) x
  --   recy <- rec (s0 .+. s2) y
@@ -283,13 +272,15 @@ interpretPure' rec sR = knownSShape sR $ backendTensor (typeSTyp @t) $ \case
  --     Axis2Op op n -> funcall op  [list [recx,recy], named "axis" (integer (sListLength s0 + n))]
  --     Simple2Op op Nothing -> funcall op [recx, recy]
  --     Simple2Op op (Just (nx,ny)) -> func op [] [(nx,recx), (ny,recy)]
- --  ReshapeFrom s t -> do
- --    rt <- rec s t
- --    return (funcall "tf.reshape" [rt, showShapeMinus sR])
+  ReshapeFrom s t -> do
+    BT rt <- rec s t
+    return $ BT $ BackCore.reshape rt (shapeVector sR)
  --  Stack s0 _m s1 (V xs) -> do
  --    rxs <- mapM (rec (s0 .+. s1)) xs
  --    return (funcall "tf.stack" [list rxs, text "axis=" <> integer (sListLength s0)])
-  -- Transpose s p x -> Backend.transpose (rec s x) (permToTensor s p)
+  Transpose s p x -> do
+    BT rx <- rec s x
+    return $ BT $ Backend.transpose rx (permToTensor s p)
  --  Gather indexShape s0 m s1 x ix -> do
  --    rx <- rec (s0 .+. ((:*) m s1)) x
  --    rix <- rec indexShape ix
