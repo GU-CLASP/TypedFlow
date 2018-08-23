@@ -91,16 +91,6 @@ type family Reverse' xs ys where
 type family Reverse xs where
   Reverse xs = Reverse' xs '[]
 
-newtype V (n::Nat) a = V [a]
-  deriving (Functor, Foldable, Traversable, Show)
-
-lastV :: V (1+n) a -> a
-lastV (V xs) = last xs
-
-instance KnownNat n => Applicative (V n) where
-  pure = V . replicate (fromIntegral (natVal (Proxy @n)))
-  V fs <*> V xs = V (zipWith ($) fs xs)
-
 -- From: https://www.cs.ox.ac.uk/projects/utgp/school/andres.pdf
 data NP f (xs :: [k]) where
   Unit :: NP f '[]
@@ -226,7 +216,7 @@ happ Unit xs = xs
 happ (x :* xs) ys = x :* (happ xs ys)
 appSList = happ
 
-data Both f g x = Both (f x) (g x)
+data Both f g x = Both {frst :: f x, scnd :: g x}
 
 bothFromPair :: (f x, g x) -> Both f g x
 bothFromPair (x,y) = (Both x y)
@@ -613,6 +603,8 @@ data NilOp s t where
   Constant :: HaskType t -> NilOp '[] t
   Range :: KnownBits w => Sat KnownNat n -> NilOp '[n] ('Typ 'Int w)
 
+data Catable s1 s2 t n = Catable (Sat KnownNat n) (T (s1 ++ (n ': s2)) t)
+
 data T (s :: Shape) (t :: Typ) where
   T :: NilOp s t -> T s t
   Noise :: Integer -> -- this is the unique noise identifier, preventing two different noises to ever be re-shared.
@@ -625,7 +617,7 @@ data T (s :: Shape) (t :: Typ) where
   DirectBroadcast :: SShape s0 -> NP proxy' s1 -> SShape s2 -> NP proxy' s3 -> T (s0 ++ s2) t -> T (s0 ++ (s1 ++ (s2 ++ s3))) t
   ReshapeFrom :: Product s ~ Product s0 => SShape s0 -> T s0 t -> T s t
   Transpose :: SShape s0 -> Permutation s0 s -> T s0 t -> T s t
-  Stack :: SShape s0 -> Sat KnownNat m -> SShape s1 -> V m (T (s0 ++ s1) t) -> T (s0 ++ (m ': s1)) t
+  Concat :: SShape s0 -> SShape s1 -> NP (Catable s0 s1 t) ns -> T (s0 ++ (Sum ns ': s1)) t
   Gather :: KnownTyp ('Typ 'Int w) => SShape indexShape -> SShape s0 -> Sat KnownNat m -> SShape s1
     -> T (s0 ++ (m ': s1)) t -> T indexShape ('Typ 'Int w) -> T (s0 ++ indexShape ++ s1) t
   GatherND :: KnownTyp ('Typ 'Int w) => SShape containerShape -> SShape elementShape -> SShape indexShape

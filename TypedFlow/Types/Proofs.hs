@@ -126,6 +126,9 @@ succPos :: forall n k. ((0 < (1+n)) => k) -> k
 succPos k = case succPos' @n  of
   Refl -> k
 
+succPosProx2 :: forall n k proxy a. proxy n a -> ((0 < (1+n)) => k) -> k
+succPosProx2 _ = succPos @n
+
 
 prodHomo' ::  forall x y. Product (x ++ y) :~: Product x * Product y
 prodHomo' = unsafeCoerce Refl
@@ -318,20 +321,22 @@ natRec z s = case natVal (Proxy @n) of
          Refl -> case sucPred @n of
            Refl -> s @(n-1) (natRec @(n-1) @p z s)
 
-class (x ~ y) => Equal x y
-instance (x ~ y) => Equal x y
 
-data TypedIndex n where
-  TypedIndex :: (n ~ 1) => Integer -> TypedIndex n
+data CountRes n where
+  CountRes :: Integer -> V n Integer -> CountRes n
 
-deriving instance (Show (TypedIndex n))
+vcount :: forall n. KnownNat n => V n Integer
+vcount = case natRec @n (CountRes (natVal (Proxy @n)-1) VUnit) (\(CountRes m xs) -> CountRes (m-1) (m :** xs)) of
+  CountRes _ x -> x
 
-data RepRes n where
-  RepRes :: forall xs n. (Length xs ~ n, Sum xs ~ n) => Integer -> SList' TypedIndex xs -> RepRes n
+data V n a where
+  VUnit :: V 0 a
+  (:**) :: a -> V n a -> V (1+n) a
+infixr 5 :**
 
-repeatOne :: forall n k. Sat KnownNat n -> (forall xs. (Length xs ~ n, Sum xs ~ n) => SList' TypedIndex xs -> k) -> k
-repeatOne n@Sat k = case natRec @n (RepRes (natVal n-1) Unit) (\(RepRes m xs) -> RepRes (m-1) (TypedIndex m :* xs)) of
-  RepRes _ x -> k x
+deriving instance (Functor (V n))
 
-deriving instance (Show (NP TypedIndex xs))
-
+instance KnownNat n => Applicative (V n) where
+  pure x = fmap (const x) (vcount @n)
+  VUnit <*> VUnit = VUnit
+  (f :** fs) <*> (a :** as) = succPosProx2 fs  (f a :** (fs <*> unsafeCoerce as))

@@ -76,7 +76,6 @@ newtype Component t states a = C {runC :: HTV (Flt t) states -> (HTV (Flt t) sta
 instance Functor (Component t states) where
   fmap = mapC
 
-
 mapC :: (a -> b) -> Component t s a -> Component t s b
 mapC f c = C $ \s ->
   let (s',x) = runC c s
@@ -223,37 +222,37 @@ iterateCellBackward c x = C $ \s -> chainBackward (\(t,y) -> runC (c y) t) (s,x)
 
 -- | RNN helper
 chainForward :: ∀ state a b n. ((state , a) -> (state , b)) → (state , V n a) -> (state , V n b)
-chainForward _ (s0 , V []) = (s0 , V [])
-chainForward f (s0 , V (x:xs)) = 
+chainForward _ (s0 , VUnit) = (s0 , VUnit)
+chainForward f (s0 , x :** xs) = 
   let (s1,x') = f (s0 , x)
-      (sFin,V xs') = chainForward f (s1 , V xs)
-  in  (sFin,V (x':xs'))
+      (sFin,xs') = chainForward f (s1 , xs)
+  in  (sFin,(x':**xs'))
 
 -- | RNN helper
 chainBackward :: ∀ state a b n. ((state , a) -> (state , b)) → (state , V n a) -> (state , V n b)
-chainBackward _ (s0 , V []) = (s0 , V [])
-chainBackward f (s0 , V (x:xs)) =
-  let (s1,V xs') = chainBackward f (s0,V xs)
+chainBackward _ (s0 , VUnit) = (s0 , VUnit)
+chainBackward f (s0 , (x:**xs)) =
+  let (s1,xs') = chainBackward f (s0,xs)
       (sFin, x') = f (s1,x)
-  in (sFin,V (x':xs'))
+  in (sFin,(x':**xs'))
 
 
 -- | RNN helper
 chainForwardWithState :: ∀ state a b n. ((state , a) -> (state , b)) → (state , V n a) -> (V n b, V n state)
-chainForwardWithState _ (_s0 , V []) = (V [], V [])
-chainForwardWithState f (s0 , V (x:xs)) =
+chainForwardWithState _ (_s0 , VUnit) = (VUnit, VUnit)
+chainForwardWithState f (s0 , (x:**xs)) =
   let (s1,x') = f (s0 , x)
-      (V xs',V ss) = chainForwardWithState f (s1 , V xs)
-  in (V (x':xs'), V (s1:ss) )
+      (xs',ss) = chainForwardWithState f (s1 , xs)
+  in ((x':**xs'), (s1:**ss) )
 
 -- -- | RNN helper
 -- chainBackwardWithState ::
 --   ∀ state a b n. ((state , a) -> (state , b)) → (state , V n a) -> (state , V n b, V n state)
--- chainBackwardWithState _ (s0 , V []) = return (s0 , V [], V [])
--- chainBackwardWithState f (s0 , V (x:xs)) = do
---   (s1,V xs',V ss') <- chainBackwardWithState f (s0,V xs)
+-- chainBackwardWithState _ (s0 , VUnit) = return (s0 , VUnit, VUnit)
+-- chainBackwardWithState f (s0 , (x:**xs)) = do
+--   (s1,xs',ss') <- chainBackwardWithState f (s0,xs)
 --   (sFin, x') <- f (s1,x)
---   return (sFin,V (x':xs'),V (sFin:ss'))
+--   return (sFin,(x':**xs'),(sFin:**ss'))
 
 -- | RNN helper
 transposeV :: forall n xs t. All KnownShape xs => KnownNat n =>
@@ -263,9 +262,8 @@ transposeV (_ :* n) xxs  = F ys' :* yys'
   where (ys,yys) = help @(Tail xs) xxs
         ys' = stack0 ys
         yys' = transposeV n yys
-
         help :: forall ys x tt. V n (HTV tt (x ': ys)) -> (V n (T x tt) , V n (HTV tt ys))
-        help (V xs) = (V (map (fromF . hhead) xs),V (map htail xs))
+        help (xs) = ((fmap (fromF . hhead) xs),(fmap htail xs))
 
 -- | @(gatherFinalStates dynLen states)[i] = states[dynLen[i]-1]@
 gatherFinalStates :: KnownShape x => KnownNat n => T '[] Int32 -> T (n ': x) t -> T x t
@@ -292,6 +290,6 @@ iterateWithCull dynLen cell xs = C $ \s0 ->
 --   KnownLen ls => KnownNat n => All KnownLen ls => All (LastEqual bs) ls =>
 --   T '[bs] Int32 -> RnnCell b ls x y -> RNN n b ls x y
 -- rnnBackwardsWithCull dynLen cell (s0, t) = do
---  (us,ss) <- chainBackwardWithState cell (s0,xs)
-  -- let sss = transposeV @n (shapeSList @ls) ss
-  -- return (gathers @n (shapeSList @ls) (n - dynLen) sss,us)
+--   (us,ss) <- chainBackwardWithState cell (s0,xs)
+--   let sss = transposeV @n (shapeSList @ls) ss
+--   return (gathers @n (shapeSList @ls) (n - dynLen) sss,us)

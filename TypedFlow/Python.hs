@@ -52,6 +52,7 @@ import Text.PrettyPrint.Compact hiding (All,Last,Product,Sum,Options)
 import qualified Text.PrettyPrint.Compact as PP
 import qualified Data.Map as M
 import TypedFlow.Learn
+import Data.Foldable (toList)
 
 paramShape' :: VarInfo -> [Integer]
 paramShape' (VarInfo _ s _ _) = shapeToList' s
@@ -285,9 +286,12 @@ generatePure' rec sR = knownSShape sR $ \case
   ReshapeFrom s t -> do
     rt <- rec s t
     return (funcall "tf.reshape" [rt, showShapeMinus sR])
-  Stack s0 _m s1 (V xs) -> do
-    rxs <- mapM (rec (s0 .+. s1)) xs
-    return (funcall "tf.stack" [list rxs, text "axis=" <> integer (sListLength s0)])
+  Concat s0 s1 xs -> do
+    let go :: forall s0 s1 ns. SShape s0 -> SShape s1 -> NP (Catable s0 s1 t) ns -> Python [DOC]
+        go _ _ Unit = return []
+        go s0' s1' (Catable n y :* ys) = (:) <$> rec (s0' .+. n :* s1') y <*> go s0' s1' ys
+    rxs <- go s0 s1 xs
+    return (funcall "tf.concat" [list rxs, text "axis=" <> integer (sListLength s0)])
   Transpose s p x -> do
     rx <- rec s x
     return (func "tf.transpose" [rx] [("perm",list (map (integer . permToFun p) [0.. sListLength s]))])

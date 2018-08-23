@@ -126,7 +126,7 @@ stackRU (StackP w) input = C $ \(VecSing st1) ->
       it :: T '[k,n] (Flt w)
       it = slice0 @0 @k  st1
       stTilda :: T '[3,k+1,n] (Flt w)
-      stTilda = stack0 (V [st1, tl `concat0` zeros, (expandDim0 input) `concat0` it])
+      stTilda = stack0 (st1 :**  (tl `concat0` zeros) :** (expandDim0 input `concat0` it) :** VUnit)
       st :: T '[k+1,n] (Flt w)
       st = inflate2 (flatten12 stTilda ∙ action)
       ct = nth0' @0 st

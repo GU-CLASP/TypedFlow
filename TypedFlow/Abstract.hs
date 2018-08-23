@@ -78,7 +78,7 @@ protoFinished u varyNoise rec = \case
   Gather _is _s0 _m _s1 x ix -> rec x && rec ix
   Transpose _ _t x -> rec x
   ReshapeFrom _s x -> rec x
-  Stack _s0 _m _s1 xs -> all rec xs
+  Concat _s0  _s1 xs -> and $ htoList $ hmap (\(Catable _ x) -> K (rec x)) xs
   Convolution _bs _inChans _outChans _filterShape _s x filters -> rec x && rec filters
   Pool _ _ _ _ _ x  -> rec x
 
@@ -215,7 +215,7 @@ protoBroadcast u varyNoise n@(Sat) rec finished ty s tensor
                    rec s (GatherND (s0 *: m) s1 (s0 .+. is) x (broadcastIndexMany m s0 is (reshapeAuto ix)))
   Transpose s0 t x -> Transpose (n :* s0) (PermSkip t) (rec s0 x)
   ReshapeFrom s0 x -> reshapeFrom (n :* s0) (rec s0 x)
-  Stack s0 m s1 xs -> Stack (n :* s0) m s1 (fmap (rec (s0 .+. s1)) xs)
+  Concat s0 s1 xs -> Concat (n :* s0) s1 (hmap (\(Catable m x) -> (Catable m (rec (s0 .+. m :* s1) x))) xs)
   Convolution bs@(Sat) inChans outChans filterShape s0 x filters
     | finished filters ->
       prodAssocS n bs (productS (s0 *: inChans)) $
@@ -459,17 +459,13 @@ slice0 = slice @i @j axis0
 -- | Concatenate tensors with explicit shapes. Recommended: use @zipWithTT (concat0 ...)@ instead.
 concatT' :: ∀ s0 d1 d2 s1 t. KnownTyp t =>
     SShape s0 -> Sat KnownNat d1 -> Sat KnownNat d2 -> SShape s1 -> T (s0 ++ (d1 ': s1)) t -> T (s0 ++ (d2 ': s1)) t -> T (s0 ++ ((d1+d2) ': s1)) t
-concatT' s0 d1@Sat d2@Sat s1 = BinOp (Axis2Op "tf.concat" 0) s0 ((:*) d1 s1) ((:*) d2 s1) ((:*) (natSat @(d1+d2)) s1)
+concatT' s0 d1@Sat d2@Sat s1 x y = Concat s0 s1 (Catable d1 x :* Catable d2 y :* Unit)
 
 -- MAYBE: drop these combinators and use zipWithT instead?
 -- | Concatenate tensors on dimension @n@. Recommended: use @zipWithTT (concat0 ...)@ instead.
 concatT :: ∀ n d1 d2 s t. KnownNat d2 => KnownNat d1 => KnownShape s => (KnownTyp t, (d1+d2) ~ At n s) =>
     Axis n s -> T (Take n s ++ (d1 ': Drop ('Succ n) s)) t -> T (Take n s ++ (d2 ': Drop ('Succ n) s)) t -> T s t
-concatT n = BinOp (Axis2Op "tf.concat" (axisInt n)) Unit
-  (sShapeTake' n s .+. (:*) d1 (sShapeDropSucc n s))
-  (sShapeTake' n s .+. (:*) d2 (sShapeDropSucc n s))
-  s
-  -- FIXME: Prove Take n s ++ At n s ++ Drop (n+1) s ~ s and use concatT'
+concatT n = case axisSplitApp' n of Refl -> concatT' (sShapeTake' n s) d1 d2 (sShapeDropSucc n s)
   where s = typeSShape @s; d1 = natSat @d1; d2 = natSat @d2
 
 -- | Concatenate tensors on the first dimension
@@ -503,7 +499,7 @@ expandDim0 = expandDim SZero
 expandDim1 :: ∀ n s t. KnownNat n => KnownTyp t => KnownShape s => Tensor (n ': s) t -> Tensor (n ': 1 ': s) t
 expandDim1 = reshapeFrom (typeSShape @(n ': s))
 
-reshape :: ∀ s2 s1 t. KnownShape s1 => KnownTyp t => KnownShape s2 => Product s1 ~ Product s2 => Tensor s1 t -> Tensor s2 t
+reshape :: ∀ s2 s1 t. KnownShape s1 => KnownShape s2 => Product s1 ~ Product s2 => Tensor s1 t -> Tensor s2 t
 reshape = reshapeAuto
 
 
@@ -573,8 +569,20 @@ nth0 i x = reshapeAuto @s @(1 ': s) (UnOp (SliceOp (natSat @n) typeSShape i (i+1
 nth0' :: ∀ n m s t. KnownNat m => KnownTyp t => KnownShape s => KnownNat n => KnownLen s => n < m => T (m ': s) t -> Tensor s t
 nth0' = nth0 (natVal (Proxy @n))
 
+vecToNP :: forall a f n k. (a -> f 1) -> V n a -> (forall xs. Sum xs ~ n => NP f xs -> k) -> k
+vecToNP _f VUnit k = k Unit
+vecToNP f (x :** xs) k = vecToNP f xs $ \xs' -> k (f x :* xs')
+
 stackT :: ∀ s0 s (n::Nat) t. KnownShape s => KnownShape s0 => KnownNat n => (KnownLen s0) => V n (T (s0 ++ s) t) -> Tensor (s0 ++ (n ': s)) t
-stackT = Stack (typeSShape @s0) (natSat @n) (typeSShape @s)
+stackT v = vecToNP @(T (s0++s) t) @(Catable s0 s t)
+             (\x -> (Catable (natSat @1) $ prodHomoS s0 s
+                                          $ prodHomoS s0 (natSat @1 :* s)
+                                          $ knownAppend @s0 @s
+                                          $ knownSShape (s0 .+. natSat @1 :* s)
+                                          $ reshape x))
+             v $ (Concat (typeSShape @s0)  (typeSShape @s)) 
+  where s = typeSShape @s; s0 = typeSShape @s0
+
 
 -- | Concatenate @n@ tensors along the first dimension
 stack0 :: ∀ s (n::Nat) t. KnownNat n => KnownShape s => (KnownLen s) => V n (T s t) -> Tensor (n ': s) t
@@ -589,16 +597,17 @@ stackN :: ∀ s (n::Nat) t. KnownNat n => KnownShape s => V n (T s t) -> Tensor 
 stackN = appRUnit @s $
          stackT @s @'[]
 
+
 -- | Split a tensors into @n@ tensors along the first dimension
 unstack0 :: ∀ s (n::Nat) t. KnownTyp t => KnownNat n => KnownShape s => (KnownLen s) => Tensor (n ': s) t -> V n (T s t)
-unstack0 x = V [nth0 i x | i <- [0..natVal (Proxy @n) - 1]  ]
+unstack0 x = fmap (`nth0` x) (vcount @n)
 
 -- | Stack a tensor vector. (To be used on literal lists of tensors.)
 litStack0 :: KnownShape s => KnownLen xs => TV s t xs -> Tensor (Length xs ': s) t
 litStack0 tv = knownSList tv $ stack0 $ toV tv
   where toV :: TV s t xs -> V (Length xs) (T s t)
-        toV Unit = V []
-        toV (K x :* xs) = V (x : xs') where V xs' = toV xs
+        toV Unit = VUnit
+        toV (K x :* xs) = x :** toV xs
 
 permN :: SList s -> Permutation (n ': s) (s ++ '[n])
 permN Unit = PermId
