@@ -700,7 +700,8 @@ data UnOp (s1 :: Shape) (t :: Typ) (s2 :: Shape) (u :: Typ) where
   SliceOp :: forall m n s t. Sat KnownNat n -> SShape s -> Integer -> Integer -> UnOp (n ': s) t (m ': s) t
   Axis1Op :: Axis1Op s1 t s2 u -> UnOp s1 t s2 u
              -- deriving Show
-data BinOp = Simple2Op String (Maybe (String,String)) | Axis2Op String Integer deriving Show
+
+data BinOp = Simple2Op String (Maybe (String,String)) deriving Show
 
 data Permutation (s :: [k]) (t :: [k]) where
   PermId :: Permutation s t

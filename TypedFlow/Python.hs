@@ -280,7 +280,6 @@ generatePure' rec sR = knownSShape sR $ \case
    recx <- rec (s0 .+. s1) x
    recy <- rec (s0 .+. s2) y
    return $ case operation of
-     Axis2Op op n -> funcall op  [list [recx,recy], named "axis" (integer (sListLength s0 + n))]
      Simple2Op op Nothing -> funcall op [recx, recy]
      Simple2Op op (Just (nx,ny)) -> func op [] [(nx,recx), (ny,recy)]
   ReshapeFrom s t -> do
