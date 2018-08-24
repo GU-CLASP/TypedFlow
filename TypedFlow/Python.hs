@@ -38,7 +38,6 @@ Stability   : experimental
 
 module TypedFlow.Python (compile, compileGen, generateFile) where
 
-import Data.IntMap (IntMap)
 import Data.Char (toLower)
 import Data.Proxy
 import Data.List (genericReplicate)
@@ -52,7 +51,6 @@ import Text.PrettyPrint.Compact hiding (All,Last,Product,Sum,Options)
 import qualified Text.PrettyPrint.Compact as PP
 import qualified Data.Map as M
 import TypedFlow.Learn
-import Data.Foldable (toList)
 
 paramShape' :: VarInfo -> [Integer]
 paramShape' (VarInfo _ s _ _) = shapeToList' s
@@ -276,12 +274,23 @@ generatePure' rec sR = knownSShape sR $ \case
     recx <- rec (s0 .+. (:*) a ((:*) b Unit)) x
     recy <- rec (s0 .+. (:*) b ((:*) c Unit)) y
     return (funcall "tf.matmul" [recx, recy])
-  BinOp operation s0 s1 s2 _s3 x y -> do
+  BinOp operation s0 s1 s2 x y -> do
    recx <- rec (s0 .+. s1) x
    recy <- rec (s0 .+. s2) y
    return $ case operation of
-     Simple2Op op Nothing -> funcall op [recx, recy]
-     Simple2Op op (Just (nx,ny)) -> func op [] [(nx,recx), (ny,recy)]
+     Simple2Op sop  -> let pop = case sop of
+                                   Add -> "tf.add"
+                                   Divide -> "tf.divide"
+                                   Equal -> "tf.equal"
+                                   Subtract -> "tf.subtract"
+                                   Multiply -> "tf.multiply"
+                                   Minimum -> "tf.minimum"
+                                   Maximum -> "tf.maximum"
+                                   LessThan -> "tf.less"
+                       in funcall pop [recx,recy]
+     SigmoidCrossEntropyWithLogits -> func "tf.nn.sigmoid_cross_entropy_with_logits" [] [("labels",recx),("logits",recy)]
+     SparseSoftmaxCrossEntropyWithLogits -> func "tf.nn.sparse_softmax_cross_entropy_with_logits" []  [("labels",recx),("logits",recy)]
+     SoftmaxCrossEntropyWithLogits -> func "tf.nn.softmax_cross_entropy_with_logits" []   [("labels",recx),("logits",recy)] -- FIXME: use _v2 for TF 1.5
   ReshapeFrom s t -> do
     rt <- rec s t
     return (funcall "tf.reshape" [rt, showShapeMinus sR])

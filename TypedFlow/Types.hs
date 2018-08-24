@@ -1,3 +1,4 @@
+{-# LANGUAGE EmptyDataDeriving #-}
 {-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE DataKinds #-}
@@ -611,7 +612,7 @@ data T (s :: Shape) (t :: Typ) where
            SShape s0 -> SShape s1 ->
            Distribution s1 t ->
            T (s0 ++ s1) t
-  BinOp :: (KnownTyp t, KnownTyp u) => BinOp -> SShape s0 -> SShape s1 -> SShape s2 -> SShape s3 -> T (s0 ++ s1) t -> T (s0 ++ s2) u -> T (s0 ++ s3) v
+  BinOp :: (KnownTyp t, KnownTyp u) => BinOp s1 t s2 u s3 v -> SShape s0 -> SShape s1 -> SShape s2 -> T (s0 ++ s1) t -> T (s0 ++ s2) u -> T (s0 ++ s3) v
   UnOp :: KnownTyp t => UnOp s1 t s2 u -> SShape s0 -> T (s0 ++ s1) t -> T (s0 ++ s2) u
   Unbroadcast :: Sat KnownNat n -> Unique -> T (n ': s) t -> T s t
   DirectBroadcast :: SShape s0 -> NP proxy' s1 -> SShape s2 -> NP proxy' s3 -> T (s0 ++ s2) t -> T (s0 ++ (s1 ++ (s2 ++ s3))) t
@@ -701,7 +702,26 @@ data UnOp (s1 :: Shape) (t :: Typ) (s2 :: Shape) (u :: Typ) where
   Axis1Op :: Axis1Op s1 t s2 u -> UnOp s1 t s2 u
              -- deriving Show
 
-data BinOp = Simple2Op String (Maybe (String,String)) deriving Show
+data Simple2Op t u where
+  Divide :: Simple2Op (Flt w) (Flt w)
+  Equal :: Simple2Op t TFBool
+  Subtract :: KnownNumeric t => Simple2Op t t
+  Multiply :: KnownNumeric t => Simple2Op t t
+  Add :: KnownNumeric t => Simple2Op t t
+  Minimum :: KnownNumeric t => Simple2Op t t
+  Maximum :: KnownNumeric t => Simple2Op t t
+  LessThan :: KnownNumeric t => Simple2Op t TFBool
+
+deriving instance Show (Simple2Op t u)
+
+
+data BinOp s1 t1 s2 t2 s3 t3 where
+  Simple2Op :: Simple2Op t u -> BinOp '[] t '[] t '[] u
+  SigmoidCrossEntropyWithLogits :: BinOp '[] (Flt w) '[] (Flt w) '[] (Flt w)
+  SoftmaxCrossEntropyWithLogits :: BinOp '[n] (Flt w) '[n] (Flt w) '[] (Flt w)
+  SparseSoftmaxCrossEntropyWithLogits :: BinOp '[] Int32 '[n] (Flt w) '[] (Flt w)
+
+deriving instance Show (BinOp a b c d e f)
 
 data Permutation (s :: [k]) (t :: [k]) where
   PermId :: Permutation s t
