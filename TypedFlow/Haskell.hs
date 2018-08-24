@@ -55,6 +55,7 @@ import qualified TensorFlow.Core        as Backend
 import qualified TensorFlow.GenOps.Core as BackCore
 import qualified TensorFlow.Minimize    as Backend
 import qualified TensorFlow.Ops         as Backend
+import qualified TensorFlow.NN          as Backend
 -- import qualified TensorFlow.Variable    as Backend
 
 import qualified Data.IntMap as IM
@@ -139,12 +140,15 @@ listProxyLen _ = listTypeLen @s
 
 
 knownNumeric :: forall t k. KnownNumeric t => (KnownTyp t => Num (HaskType t) => Backend.OneOf '[Backend.Int32, Float, Double] (HaskType t) => k) -> k
-knownNumeric k = case kindVal @(TypKind t) of
-  SFloat -> case bitsVal @(TypBits t) of
+knownNumeric = knownNumeric' (typeSTyp @t)
+
+knownNumeric' :: forall t k. KnownNumeric t => STyp t -> (KnownTyp t => Num (HaskType t) => Backend.OneOf '[Backend.Int32, Float, Double] (HaskType t) => k) -> k
+knownNumeric' (STyp tk tb Refl) k = case tk of
+  SFloat -> case tb of
     SB32 -> k
     SB64 -> k
   SBool -> error "TFNumeric bug"
-  SInt -> case bitsVal @(TypBits t) of
+  SInt -> case tb of
     SB32 -> k
     SB64 -> error "missing in tensorflow: int64 is not supported in matmul T_T"
 
@@ -265,12 +269,28 @@ interpretPure' rec sR = knownSShape sR $ backendTensor (typeSTyp @t) $ \case
     BT recx <- rec (s0 .+. a :* b :* Unit) x
     BT recy <- rec (s0 .+. b :* c :* Unit) y
     return $ knownNumeric @t $ BT $ BackCore.batchMatMul recx recy
- --  BinOp operation s0 s1 s2 _s3 x y -> do
- --   recx <- rec (s0 .+. s1) x
- --   recy <- rec (s0 .+. s2) y
- --   return $ case operation of
- --     Simple2Op op Nothing -> funcall op [recx, recy]
- --     Simple2Op op (Just (nx,ny)) -> func op [] [(nx,recx), (ny,recy)]
+  BinOp operation s0 s1 t s2 u x y -> knownSShape s0 $ knownSShape s1 $ knownSShape s2 $ knownProduct' s0 $ do
+   BT recx <- rec (s0 .+. s1) x
+   BT recy <- rec (s0 .+. s2) y
+   let reshx = backendTensor t $ Backend.reshape recx (shapeVector (satProd s0 :* s1))
+       reshy = backendTensor u $ Backend.reshape recy (shapeVector (satProd s0 :* s2))
+   return $ case operation of
+     Simple2Op sop  -> case sop of
+        Add -> knownNumeric @t $ BT $ Backend.add recx recy
+        Divide -> knownNumeric @t $ BT $ BackCore.div recx recy
+        Equal -> backendTensor u $ BT $ Backend.equal recx recy
+        Subtract -> knownNumeric @t $ BT $ Backend.sub recx recy
+        Multiply -> knownNumeric @t $ BT $ Backend.mul recx recy
+        Minimum -> knownNumeric @t $ BT $ BackCore.minimum recx recy
+        Maximum -> knownNumeric @t $ BT $ BackCore.maximum recx recy
+        LessThan ->  knownNumeric' u $ BT $ BackCore.less recx recy
+     -- WTF moment: the arguments do not seem to be in the same order in python as in haskell
+     -- python: https://www.tensorflow.org/api_docs/python/tf/nn/sparse_softmax_cross_entropy_with_logits
+     -- haskell: https://tensorflow.github.io/haskell/haddock/tensorflow-core-ops-0.2.0.0/TensorFlow-GenOps-Core.html#v:sparseSoftmaxCrossEntropyWithLogits
+     SparseSoftmaxCrossEntropyWithLogits -> case t of
+        STyp SInt SB32 Refl -> knownFloatingB @t $ BT $ fst $ BackCore.sparseSoftmaxCrossEntropyWithLogits reshy reshx
+     SoftmaxCrossEntropyWithLogits -> knownFloatingB @t $ BT $ fst $ BackCore.softmaxCrossEntropyWithLogits reshy reshx
+     -- SigmoidCrossEntropyWithLogits -> knownFloatingB @t $ BT $ Backend.sigmoidCrossEntropyWithLogits recy recx -- type is not as general as necessary
   ReshapeFrom s t -> do
     BT rt <- rec s t
     return $ BT $ BackCore.reshape rt (shapeVector sR)

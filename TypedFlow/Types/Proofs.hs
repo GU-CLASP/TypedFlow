@@ -139,7 +139,7 @@ prodHomo k = case prodHomo' @x @y of Refl -> k
 prodHomoS ::  forall x y k px py. px x -> py y -> ((Product (x ++ y) ~ (Product x * Product y)) => k) -> k
 prodHomoS _ _ k = case prodHomo' @x @y of Refl -> k
 
-knownProduct' :: forall s k. All KnownNat s => SList s -> (KnownNat (Product s) => k) -> k
+knownProduct' :: forall s f k. All KnownNat s => NP f s -> (KnownNat (Product s) => k) -> k
 knownProduct' Unit k = k
 knownProduct' ((:*) _ n) k = knownProduct' n k
 

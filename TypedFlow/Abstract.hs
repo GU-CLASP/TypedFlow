@@ -74,7 +74,7 @@ protoFinished u varyNoise rec = \case
   Unbroadcast _p u' _x -> u /= u'
   UnOp _op _ x -> rec x
   MatMul _ _ _ _ x y -> rec x && rec y
-  BinOp _op _ _ _ x y -> rec x && rec y
+  BinOp _op _ _ _ _ _ x y -> rec x && rec y
   Gather _is _s0 _m _s1 x ix -> rec x && rec ix
   Transpose _ _t x -> rec x
   ReshapeFrom _s x -> rec x
@@ -199,7 +199,7 @@ protoBroadcast u varyNoise n@(Sat) rec finished ty s tensor
      -- layers efficiently (at least with TF 1.3). (about 10x performance increase)
      | finished y -> inflate2 (MatMul Unit (satMul n a) b c (flatten2 (rec (a :* b :* Unit) x)) y)
   MatMul s0 a b c x y -> MatMul (n :* s0) a b c (rec (s0 .+. a :* b :* Unit) x) (rec (s0 .+. b :* c :* Unit) y)
-  BinOp op s0 s1 s2 x y -> BinOp op (n :* s0) s1 s2 (rec (s0 .+. s1) x) (rec (s0 .+. s2) y)
+  BinOp op s0 s1 t1 s2 t2 x y -> knownTyp t1 $ knownTyp t2 $ BinOp op (n :* s0) s1 t1 s2 t2 (rec (s0 .+. s1) x) (rec (s0 .+. s2) y)
   UnOp op s0 x -> UnOp op (n :* s0) (rec (s0 .+. unopInputShape op) x)
   Gather is Unit m s1 x ix
     -- this optimisation is important to get efficient embeddings
@@ -395,7 +395,7 @@ stopGradient = appRUnit @s $ UnOp StopGradient (typeSShape @s)
 
 -- | Indexwise equality test.
 equal :: forall s t. (KnownShape s, KnownTyp t) => Tensor s t -> Tensor s t -> Tensor s TFBool
-equal = binOp Equal
+equal = binOp (Equal)
 
 -- | Indexwise operator
 (⊕), (⊝), (⊙)  :: ∀ (s :: Shape) t. (KnownShape s, KnownNumeric t) => Tensor s t -> Tensor s t -> Tensor s t
@@ -408,7 +408,7 @@ maxT = binOp Maximum
 minT = binOp Minimum
 
 lessThan :: ∀ (s :: Shape) t. (KnownShape s, KnownNumeric t) => Tensor s t -> Tensor s t -> Tensor s TFBool
-lessThan = binOp LessThan
+lessThan = binOp (LessThan)
 
 infixl 7 ⊙,⊘
 infixl 6 ⊕,⊝
@@ -425,7 +425,7 @@ unFlOp :: forall s t. KnownBits t => KnownShape s => Float1Op -> T s (Flt t) -> 
 unFlOp op = appRUnit @s $ UnOp (Float1Op op) (typeSShape @s)
 
 binOp :: forall s t u. KnownShape s => KnownTyp t => Simple2Op t u -> T s t -> T s t -> T s u
-binOp op = appRUnit @s $ BinOp (Simple2Op op) (typeSShape @s) Unit Unit
+binOp op = appRUnit @s $ BinOp (Simple2Op op) (typeSShape @s) Unit typeSTyp Unit typeSTyp
 
 sigmoid, relu, square, round, floor, hardSigmoid
    :: ∀ s t. (KnownShape s, KnownBits t) => Tensor s ('Typ 'Float t) -> Tensor s ('Typ 'Float t)
@@ -761,7 +761,7 @@ softmaxCrossEntropyWithLogits :: forall numClasses.
   -> Tensor '[] Float32
 softmaxCrossEntropyWithLogits  =
   BinOp SoftmaxCrossEntropyWithLogits
-  Unit (typeSShape @ '[numClasses]) (typeSShape @ '[numClasses])
+  Unit (typeSShape @ '[numClasses]) typeSTyp (typeSShape @ '[numClasses]) typeSTyp
 
 
 -- | Computes sigmoid cross entropy given logits. Measures the
@@ -776,7 +776,7 @@ sigmoidCrossEntropyWithLogits :: forall s w.
                               -> Tensor s (Flt w)
 sigmoidCrossEntropyWithLogits  =
   appRUnit @s $ BinOp SigmoidCrossEntropyWithLogits 
-    (typeSShape @s)      Unit Unit
+    (typeSShape @s)      Unit typeSTyp Unit typeSTyp
 
 -- | sparse softmax cross entropy with logits.
 sparseSoftmaxCrossEntropyWithLogits :: forall numClasses t.
@@ -785,7 +785,7 @@ sparseSoftmaxCrossEntropyWithLogits :: forall numClasses t.
   -> Tensor '[numClasses] (Flt t) -- ^ predictions for each label
   -> Tensor '[] (Flt t) 
 sparseSoftmaxCrossEntropyWithLogits  =
-  BinOp SparseSoftmaxCrossEntropyWithLogits Unit Unit (typeSShape @ '[numClasses])
+  BinOp SparseSoftmaxCrossEntropyWithLogits Unit Unit typeSTyp (typeSShape @ '[numClasses]) typeSTyp
 
 -- | One hot vector along axis 0
 oneHot0 :: forall numClasses w s t. KnownNat numClasses => KnownBits t => KnownBits w =>

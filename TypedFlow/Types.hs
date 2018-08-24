@@ -335,6 +335,7 @@ type family TypKind (t :: Typ) where TypKind ('Typ k b)  = k
 type family TypBits (t :: Typ) where TypBits ('Typ k b)  = b
 
 type KnownNumeric t = (NumericKind (TypKind t), KnownBits (TypBits t), t ~ 'Typ (TypKind t) (TypBits t))
+type KnownFloating t = (TypKind t ~ 'Float, KnownBits (TypBits t), t ~ 'Typ (TypKind t) (TypBits t))
 
 
 class KnownKind t => NumericKind t where
@@ -612,7 +613,7 @@ data T (s :: Shape) (t :: Typ) where
            SShape s0 -> SShape s1 ->
            Distribution s1 t ->
            T (s0 ++ s1) t
-  BinOp :: (KnownTyp t, KnownTyp u) => BinOp s1 t s2 u s3 v -> SShape s0 -> SShape s1 -> SShape s2 -> T (s0 ++ s1) t -> T (s0 ++ s2) u -> T (s0 ++ s3) v
+  BinOp :: (KnownTyp t,KnownTyp u) => BinOp s1 t s2 u s3 v -> SShape s0 -> SShape s1 -> STyp t -> SShape s2 -> STyp u -> T (s0 ++ s1) t -> T (s0 ++ s2) u -> T (s0 ++ s3) v
   UnOp :: KnownTyp t => UnOp s1 t s2 u -> SShape s0 -> T (s0 ++ s1) t -> T (s0 ++ s2) u
   Unbroadcast :: Sat KnownNat n -> Unique -> T (n ': s) t -> T s t
   DirectBroadcast :: SShape s0 -> NP proxy' s1 -> SShape s2 -> NP proxy' s3 -> T (s0 ++ s2) t -> T (s0 ++ (s1 ++ (s2 ++ s3))) t
@@ -649,6 +650,10 @@ type instance ZipWithMulShapes _ '[] = '[]
 
 satMul :: forall n m. Sat KnownNat n -> Sat KnownNat m -> Sat KnownNat (n*m)
 satMul Sat Sat = Sat
+
+satProd :: SShape s -> Sat KnownNat (Product s)
+satProd Unit = natSat @1
+satProd (x :* xs) = satMul x (satProd xs)
 
 satAdd :: forall n m. Sat KnownNat n -> Sat KnownNat m -> Sat KnownNat (n+m)
 satAdd Sat Sat = Sat
@@ -704,7 +709,7 @@ data UnOp (s1 :: Shape) (t :: Typ) (s2 :: Shape) (u :: Typ) where
 
 data Simple2Op t u where
   Divide :: Simple2Op (Flt w) (Flt w)
-  Equal :: Simple2Op t TFBool
+  Equal :: KnownTyp t => Simple2Op t TFBool
   Subtract :: KnownNumeric t => Simple2Op t t
   Multiply :: KnownNumeric t => Simple2Op t t
   Add :: KnownNumeric t => Simple2Op t t
@@ -712,16 +717,15 @@ data Simple2Op t u where
   Maximum :: KnownNumeric t => Simple2Op t t
   LessThan :: KnownNumeric t => Simple2Op t TFBool
 
-deriving instance Show (Simple2Op t u)
-
+-- deriving instance Show (Simple2Op t u)
 
 data BinOp s1 t1 s2 t2 s3 t3 where
   Simple2Op :: Simple2Op t u -> BinOp '[] t '[] t '[] u
-  SigmoidCrossEntropyWithLogits :: BinOp '[] (Flt w) '[] (Flt w) '[] (Flt w)
-  SoftmaxCrossEntropyWithLogits :: BinOp '[n] (Flt w) '[n] (Flt w) '[] (Flt w)
+  SigmoidCrossEntropyWithLogits :: KnownFloating t => BinOp '[] t '[] t '[] t
+  SoftmaxCrossEntropyWithLogits :: KnownFloating t => BinOp '[n] t '[n] t '[] t
   SparseSoftmaxCrossEntropyWithLogits :: BinOp '[] Int32 '[n] (Flt w) '[] (Flt w)
 
-deriving instance Show (BinOp a b c d e f)
+-- deriving instance Show (BinOp a b c d e f)
 
 data Permutation (s :: [k]) (t :: [k]) where
   PermId :: Permutation s t

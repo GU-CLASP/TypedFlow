@@ -274,7 +274,7 @@ generatePure' rec sR = knownSShape sR $ \case
     recx <- rec (s0 .+. (:*) a ((:*) b Unit)) x
     recy <- rec (s0 .+. (:*) b ((:*) c Unit)) y
     return (funcall "tf.matmul" [recx, recy])
-  BinOp operation s0 s1 s2 x y -> do
+  BinOp operation s0 s1 _ s2 _ x y -> do
    recx <- rec (s0 .+. s1) x
    recy <- rec (s0 .+. s2) y
    return $ case operation of
