@@ -477,7 +477,7 @@ concat1 :: ∀ n ys d1 d2 t. KnownShape ys => KnownNat n => KnownNat d2 => Known
 concat1 = concatT axis1
 
 -- | Add an extra dimension at axis (@n@) of size 1.
-expandDim :: forall n s t. KnownTyp t => KnownShape s => (KnownLen s, PeanoNat n <= Length s) => SPeano n -> Tensor s t -> Tensor (Take n s ++ (1 ': Drop n s)) t
+expandDim :: forall n s t. KnownTyp t => KnownShape s => (PeanoNat n <= Length s) => SPeano n -> Tensor s t -> Tensor (Take n s ++ (1 ': Drop n s)) t
 expandDim n x =
   -- Product (Take n s ++ (1 ': Drop n s))
   prodHomo @(Take n s) @(1' : Drop n s) $
