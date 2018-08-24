@@ -477,14 +477,14 @@ concat1 :: ∀ n ys d1 d2 t. KnownShape ys => KnownNat n => KnownNat d2 => Known
 concat1 = concatT axis1
 
 -- | Add an extra dimension at axis (@n@) of size 1.
-expandDim :: forall n s t. KnownTyp t => KnownShape s => (PeanoNat n <= Length s) => SPeano n -> Tensor s t -> Tensor (Take n s ++ (1 ': Drop n s)) t
-expandDim n x =
+expandDim :: forall n s t. KnownTyp t => KnownShape s => (PeanoNat n <= Length s) => Tensor s t -> Tensor (Take n s ++ (1 ': Drop n s)) t
+expandDim x =
   -- Product (Take n s ++ (1 ': Drop n s))
   prodHomo @(Take n s) @(1' : Drop n s) $
   -- Product (Take n s) * Product (Drop n s)
   prodHomo @(Take n s) @(Drop n s) $
   -- Product (Take n s ++ (1 ': Drop n s))
-  takeDrop @s n $
+  takeDrop @s @n $
   -- Product s
   reshapeFrom (typeSShape @s) x
 
@@ -493,11 +493,11 @@ expandDim n x =
 
 -- | Add an extra dimension at axis (0) of size 1.
 expandDim0 :: ∀ s t. KnownShape s => KnownTyp t => KnownLen s => Tensor s t -> Tensor (1 ': s) t
-expandDim0 = expandDim SZero
+expandDim0 = reshape
 
 -- | Add an extra dimension at axis (1) of size 1.
 expandDim1 :: ∀ n s t. KnownNat n => KnownTyp t => KnownShape s => Tensor (n ': s) t -> Tensor (n ': 1 ': s) t
-expandDim1 = reshapeFrom (typeSShape @(n ': s))
+expandDim1 = reshape
 
 reshape :: ∀ s2 s1 t. KnownShape s1 => KnownShape s2 => Product s1 ~ Product s2 => Tensor s1 t -> Tensor s2 t
 reshape = reshapeAuto

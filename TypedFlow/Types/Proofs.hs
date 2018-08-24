@@ -147,11 +147,11 @@ knownProduct :: forall s k. KnownShape s => (KnownNat (Product s) => k) -> k
 knownProduct = knownProduct' @s typeSList
 
 
-takeDrop' :: forall s n. (PeanoNat n <= Length s) => SPeano n -> (Take n s ++ Drop n s) :~: s
-takeDrop' _ = unsafeCoerce Refl
+takeDrop' :: forall s n. (PeanoNat n <= Length s) => (Take n s ++ Drop n s) :~: s
+takeDrop' = unsafeCoerce Refl
 
-takeDrop :: forall s n k. (PeanoNat n <= Length s) => SPeano n -> ((Take n s ++ Drop n s) ~ s => k) -> k
-takeDrop n k = case takeDrop' @s n of Refl -> k
+takeDrop :: forall s n k. (PeanoNat n <= Length s) => ((Take n s ++ Drop n s) ~ s => k) -> k
+takeDrop k = case takeDrop' @s @n of Refl -> k
 
 lengthHomo' :: forall x y. Length (x ++ y) :~: Length x + Length y
 lengthHomo' = unsafeCoerce Refl
