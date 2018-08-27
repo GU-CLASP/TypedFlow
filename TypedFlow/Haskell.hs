@@ -89,7 +89,7 @@ convertNone n = (if n == 514229 then (-1) else fromIntegral n)
 -- runWithFeeds
 
 data BT (s :: Shape) (t :: Typ) where
-  BT :: forall s t. (Backend.Tensor Backend.Build (HaskType t)) -> BT s t
+  BT :: forall s t. (BackendTensor t) -> BT s t
 
 data HState = HState {genVars :: IntMap Var
                      ,genPureTable :: SNMap22 Shape Typ T BT
@@ -296,9 +296,14 @@ interpretPure' rec sR = knownSShape sR $ backendTensor (typeSTyp @t) $ \case
   ReshapeFrom s t -> do
     BT rt <- rec s t
     return $ BT $ BackCore.reshape rt (shapeVector sR)
- --  Stack s0 _m s1 (V xs) -> do
- --    rxs <- mapM (rec (s0 .+. s1)) xs
- --    return (funcall "tf.stack" [list rxs, text "axis=" <> integer (sListLength s0)])
+  Concat s0 s1 xs -> do
+    let go :: forall s0 s1 ns. SShape s0 -> SShape s1 -> NP (Catable s0 s1 t) ns -> BM [BackendTensor t]
+        go _ _ Unit = return []
+        go s0' s1' (Catable n y :* ys) = do
+          BT y' <- rec (s0' .+. n :* s1') y
+          (y' :) <$> go s0' s1' ys
+    rxs <- go s0 s1 xs
+    return $ BT $ Backend.concat (Backend.scalar (fromIntegral (sListLength s0))) rxs
   Transpose s p x -> do
     BT rx <- rec s x
     return $ BT $ Backend.transpose rx (permToTensor s p)
