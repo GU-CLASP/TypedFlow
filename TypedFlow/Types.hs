@@ -335,7 +335,7 @@ type family TypKind (t :: Typ) where TypKind ('Typ k b)  = k
 type family TypBits (t :: Typ) where TypBits ('Typ k b)  = b
 
 type KnownNumeric t = (NumericKind (TypKind t), KnownBits (TypBits t), t ~ 'Typ (TypKind t) (TypBits t))
-type KnownFloating t = (TypKind t ~ 'Float, KnownBits (TypBits t), t ~ 'Typ (TypKind t) (TypBits t))
+type KnownFloating t = (TypKind t ~ 'Float, KnownBits (TypBits t), t ~ 'Typ 'Float (TypBits t))
 
 
 class KnownKind t => NumericKind t where
@@ -627,7 +627,7 @@ data T (s :: Shape) (t :: Typ) where
 
   MatMul :: forall s m n o t. KnownNumeric t => SShape s -> Sat KnownNat n -> Sat KnownNat  o -> Sat KnownNat m -> T (s ++ '[n,o]) t -> T (s ++ [o,m]) t -> T (s ++ [n,m]) t
   Where :: T s TFBool  -> T s t -> T s t -> T s t
-  Convolution :: Sat KnownNat bs -> Sat KnownNat inChannels -> Sat KnownNat outChannels -> SShape filterSpatialShape -> SShape s
+  Convolution :: KnownFloating t => Sat KnownNat bs -> Sat KnownNat inChannels -> Sat KnownNat outChannels -> SShape filterSpatialShape -> SShape s
             -> T (bs ': s ++ '[inChannels]) t -- input tensor (batched)
             -> T (filterSpatialShape ++ '[inChannels,outChannels]) t -- filters
             -> T (bs ': s ++ '[outChannels]) t
