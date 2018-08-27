@@ -253,9 +253,11 @@ interpretPure' rec sR = knownSShape sR $ backendTensor (typeSTyp @t) $ \case
   Unbroadcast{} -> error "broadcasting operation did not complete!"
   DirectBroadcast s0 s1 s2 s3 x -> do
     BT recx <- rec (s0 .+. s2) x
-    return $ BT $ BackCore.broadcastTo recx (shapeFromList
-                                        (concat [shapeToList' s0, genericReplicate (sListLength s1) 1
-                                                ,shapeToList' s2, genericReplicate (sListLength s3) 1 ]))
+    let expandedShape = shapeFromList
+                          (concat [shapeToList' s0, genericReplicate (sListLength s1) 1
+                                  ,shapeToList' s2, genericReplicate (sListLength s3) 1 ])
+        targetShape = shapeFromList sR
+    return $ BT $ BackCore.broadcastTo (Backend.reshape recx expandedShape) targetShape
    --  Noise noiseId s0 s1 x -> do
    --    return $ (genDistr x s0 s1) <+> (text "# " <> integer noiseId)
   T op -> interpNilOp op
