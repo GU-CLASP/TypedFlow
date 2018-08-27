@@ -57,6 +57,7 @@ import qualified TensorFlow.Minimize    as Backend
 import qualified TensorFlow.Ops         as Backend
 import qualified TensorFlow.NN          as Backend
 -- import qualified TensorFlow.Variable    as Backend
+import qualified TensorFlow.Tensor
 
 import qualified Data.IntMap as IM
 import Data.IntMap (IntMap)
@@ -88,15 +89,16 @@ convertNone n = (if n == 514229 then (-1) else fromIntegral n)
 -- runWithFeeds
 
 data BT (s :: Shape) (t :: Typ) where
-  BT :: forall s t v. (Backend.Tensor v (HaskType t)) -> BT s t
+  BT :: forall s t. (Backend.Tensor Backend.Build (HaskType t)) -> BT s t
 
 data HState = HState {genVars :: IntMap Var
                      ,genPureTable :: SNMap22 Shape Typ T BT
+                     -- alternative: use tensorRefFromName and make this closer to the python backed.
                      }
 
 type BM a = Backend.BuildT (StateT HState (State GState)) a
 
-data Var = forall s t v. Var (SShape s) (STyp t) (Backend.Tensor v (HaskType t))
+data Var = forall s t v. TensorFlow.Tensor.TensorKind v => Var (SShape s) (STyp t) (Backend.Tensor v (HaskType t))
 
 initializedVariable :: forall s a. KnownShape s => KnownTyp a => T s a -> BM (Ref s a)
 initializedVariable initVal = do
@@ -242,7 +244,7 @@ interpNilOp = \case
      tbl <- lift (gets genVars)
      case IM.lookup r tbl of
        Just (Var sx tx x) -> case (testEq sx sr, testEq tx tr) of
-          (Just Refl, Just Refl) -> return (BT x)
+          (Just Refl, Just Refl) -> return (BT (Backend.expr x))
           _ -> error "panic: variable does not have the expected type"
        _ -> error "panic: variable not found" 
 
@@ -308,15 +310,13 @@ interpretPure' rec sR = knownSShape sR $ backendTensor (typeSTyp @t) $ \case
  --    rx <- rec (containerShape .+. elementShape) x
  --    rix <- rec (indexShape *: (sListLenAsNat containerShape)) ix
  --    return (func "tf.gather_nd" [rx, rix] [])
- --  Convolution bs inChans outChans filterShape s0 x filters -> do
- --    recx <- rec ((:*) bs (s0 *: inChans)) x
- --    recFilters <- rec (filterShape .+. ((:*) inChans ((:*) outChans Unit))) filters
- --    return (func "tf.nn.convolution" [recx, recFilters] [("padding",text (show ("SAME"::String))),("data_format", text (show dataFormat))])
- --   where dataFormat = case sListLength filterShape of
- --           1 -> ("NWC" :: String)
- --           2 -> "NHWC"
- --           3 -> "NDHWC"
- --           _ -> error "convolution: more than 3 spatial dimensions are not supported!"
+  Convolution bs inChans outChans filterShape s0 x filters -> do
+    BT recx <- rec (bs :* (s0 *: inChans)) x
+    BT recFilters <- rec (filterShape .+. inChans :* outChans :* Unit) filters
+    case filterShape of
+       _width :* _height :* Unit ->
+          return $ BT $ knownFloatingB @t $ BackCore.conv2D recx recFilters
+       _ -> error "TypedFlow Haskell backend: convolution on an unsupported number of dims"
  --  Pool bs window typ numChans outSpatial x -> do
  --     rx <- rec ((:*) bs (zipWithMulSShapes window outSpatial .+. (:*) numChans Unit)) x
  --     return (func "tf.nn.pool"
