@@ -220,14 +220,10 @@ generatePure' rec sR = knownSShape sR $ \case
   Unbroadcast{} -> error "broadcasting operation did not complete!"
   DirectBroadcast s0 s1 s2 s3 x -> do
    recx <- rec (s0 .+. s2) x
-    -- Nicer implementation upcoming?
-    -- https://github.com/tensorflow/tensorflow/pull/15243
-    -- https://github.com/tensorflow/tensorflow/issues/14509
-    -- TODO: do not do the "add zero" part if the context is a broadcastable operation
    let expanded = func "tf.reshape" [recx,list (map (showDim' "-1")
           (concat [shapeToList' s0, genericReplicate (sListLength s1) 1
                   ,shapeToList' s2, genericReplicate (sListLength s3) 1 ]))] []
-   return (funcall "tf.add" [expanded, func "tf.zeros" [showSShape sR] [("dtype", showTyp @t)]])
+   return (funcall "tf.broadcast_to" [expanded, showSShape sR])
   Noise noiseId s0 s1 x -> do
     return $ (genDistr x s0 s1) <+> (text "# " <> integer noiseId)
   T op -> return $ case op of
@@ -269,7 +265,7 @@ generatePure' rec sR = knownSShape sR $ \case
        where (op,args) = case op' of
                 Negate -> ("tf.negative",[])
                 _ -> ("tf." ++ map toLower (show op'), [])
-    SliceOp _ _ lo hi -> recx <> list (replicate (fromIntegral (sListLength s0)) (text ":") ++ [integer lo <> text ".." <> integer hi])
+    SliceOp _ _ lo hi -> recx <> list (replicate (fromIntegral (sListLength s0)) (text ":") ++ [integer lo <> text ":" <> integer hi])
   MatMul s0 a b c x y  -> do
     recx <- rec (s0 .+. (:*) a ((:*) b Unit)) x
     recy <- rec (s0 .+. (:*) b ((:*) c Unit)) y
