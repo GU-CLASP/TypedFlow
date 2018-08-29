@@ -28,8 +28,8 @@ library
     ghc-typelits-knownnat,
     pretty-compact,
     mtl,
-    containers,
-    tensorflow-opgen, tensorflow, tensorflow-core-ops, tensorflow-ops
+    containers
+    -- ,tensorflow-opgen, tensorflow, tensorflow-core-ops, tensorflow-ops
 
   exposed-modules:
        TypedFlow,
