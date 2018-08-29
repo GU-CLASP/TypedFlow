@@ -1,4 +1,3 @@
-{-# LANGUAGE EmptyDataDeriving #-}
 {-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE DataKinds #-}
@@ -703,7 +702,7 @@ data UnOp (s1 :: Shape) (t :: Typ) (s2 :: Shape) (u :: Typ) where
   Cast :: UnOp '[] t '[] u
   Num1Op :: KnownNumeric t => Num1Op -> UnOp '[] t '[] t
   Float1Op :: Float1Op -> UnOp '[] (Flt w) '[] (Flt w)
-  SliceOp :: forall m n s t. Sat KnownNat n -> SShape s -> Integer -> Integer -> UnOp (n ': s) t (m ': s) t
+  SliceOp :: forall m n s t proxy. proxy m -> Sat KnownNat n -> SShape s -> Integer -> Integer -> UnOp (n ': s) t (m ': s) t
   Axis1Op :: Axis1Op s1 t s2 u -> UnOp s1 t s2 u
              -- deriving Show
 

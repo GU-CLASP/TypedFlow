@@ -49,7 +49,7 @@ import TypedFlow.Memo
 import TypedFlow.Types (T(..))
 import TypedFlow.Types hiding (T)
 import TypedFlow.Types.Proofs
-
+import Data.Monoid((<>))
 
 broadcast :: forall n s t proxy. KnownTyp t => KnownShape s => KnownNat n
   => Unique -> Bool -> proxy n -> T s t -> T (n : s) t
@@ -158,7 +158,7 @@ unopInputShape (Axis1Op o) = case o of
 unopInputShape StopGradient = Unit
 unopInputShape (Num1Op _) = Unit
 unopInputShape (Float1Op _) = Unit
-unopInputShape (SliceOp n s _ _) = n :* s
+unopInputShape (SliceOp _ n s _ _) = n :* s
 
 protoBroadcast :: forall n s t.
   Unique -> Bool
@@ -442,7 +442,8 @@ floor = unFlOp Floor
 slice :: forall i j s t n. KnownTyp t => KnownShape s => KnownNat j => KnownNat i => (i <= j, j <= At n s, KnownLen s) =>
          Axis n s -> Tensor s t -> Tensor (Take n s ++ ((j-i) ': Drop ('Succ n) s)) t
 slice n = case axisSplitApp' n of
-  Refl -> UnOp (SliceOp @(j-i) (hlookup n s) (sShapeDropSucc n s) (natVal (Proxy @i)) (natVal (Proxy @j))) (sShapeTake' n s)
+  Refl -> UnOp (SliceOp (Proxy @(j-i)) (hlookup n s) (sShapeDropSucc n s) (natVal (Proxy @i)) (natVal (Proxy @j)))
+               (sShapeTake' n s)
  where s = typeSShape @s
 
 
@@ -563,7 +564,7 @@ last0 = nth0 (natVal (Proxy @n) - 1)
 
 -- | Access the nth element in a tensor (in the 0th dimension)
 nth0 :: ∀ n s t. KnownTyp t => KnownNat n => KnownShape s => Integer -> T (n ': s) t -> Tensor s t
-nth0 i x = reshapeAuto @s @(1 ': s) (UnOp (SliceOp (natSat @n) typeSShape i (i+1)) Unit x)
+nth0 i x = reshapeAuto @s @(1 ': s) (UnOp (SliceOp (Proxy @1) (natSat @n) typeSShape i (i+1)) Unit x)
 
 -- | Access the nth element in a tensor (in the 0th dimension), with a static index
 nth0' :: ∀ n m s t. KnownNat m => KnownTyp t => KnownShape s => KnownNat n => KnownLen s => n < m => T (m ': s) t -> Tensor s t
@@ -696,7 +697,7 @@ zipWithTT f x y =
 -- | Size-preserving convolution operation.
 convolution :: forall outputChannels filterSpatialShape inChannels s t.
                KnownShape s => KnownNat inChannels => KnownNat outputChannels => KnownShape filterSpatialShape
-            => KnownTyp t
+            => KnownFloating t
             => Length filterSpatialShape <= 3
             => Length s ~ Length filterSpatialShape
             => T (s ++ '[inChannels]) t -- ^ input tensor
