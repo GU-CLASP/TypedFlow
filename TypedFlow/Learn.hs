@@ -93,19 +93,22 @@ categoricalDistribution logits y =
 -- individual time steps with the targetWeights.
 
 timedCategorical :: forall len nCat bits. KnownNat nCat => KnownNat len => KnownBits bits =>
-  Tensor '[len] (Flt bits) -> Tensor '[len,nCat] (Flt bits) -> Tensor '[len] Int32 -> ModelOutput  (Flt bits) '[nCat] '[len]
+  Tensor '[len] (Flt bits) -> Tensor '[len,nCat] (Flt bits) -> Tensor '[len] Int32 -> ModelOutput  (Flt bits) '[len,nCat] '[]
 timedCategorical targetWeights logits y =
   let y_ :: Tensor '[len] Int32
       y_ = argmax1 logits
       modelY = softmax1 logits
+      -- correct prediction for each position
       correctPrediction :: Tensor '[len] TFBool
       correctPrediction = equal y_ y
-      correctPredictionWeighted :: Tensor '[len] (Flt bits)
-      correctPredictionWeighted = cast @(Flt bits) correctPrediction ⊙ targetWeights
-      modelCorrect :: Tensor '[len] Float32
-      modelCorrect = cast (mapT (⊘ reduceSumAll targetWeights) correctPredictionWeighted )
+      -- total number of correct predictions
+      correctPredictionWeighted :: Tensor '[] (Flt bits)
+      correctPredictionWeighted = reduceSumAll (cast @(Flt bits) correctPrediction ⊙ targetWeights)
+      weightSum = reduceSumAll targetWeights
+      modelCorrect :: Tensor '[] Float32
+      modelCorrect = cast (correctPredictionWeighted / weightSum)
       crossEntropies = zipWithT sparseSoftmaxCrossEntropyWithLogits y logits
-      modelLoss = cast @Float32 (crossEntropies ⊙ targetWeights)
+      modelLoss = cast @Float32 (reduceSumAll (crossEntropies ⊙ targetWeights) / weightSum)
   in ModelOutput{..}
 
 -- | Model with @n@ binary outputs.
