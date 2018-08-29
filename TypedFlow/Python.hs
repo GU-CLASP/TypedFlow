@@ -417,6 +417,7 @@ compileAlreadyBatched Options{..} model = do
                  ,("batch_size", (showDim @ bs))
                  ,("params", params)
                  ,("train", trainStep)
+                 ,("loss", loss)
                  ,("update", list updates')
                  ]
     gen (text "return " <> dict (peeks ++peeks2))
