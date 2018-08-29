@@ -832,7 +832,8 @@ where_ = Where
 
 -- | Selection of a tensor (note: this is a strict operation)
 if_ :: forall s t. KnownShape s => Scalar TFBool -> T s t -> T s t -> T s t
-if_ x = appRUnit @s $ where_ (broadcastTT @s x)
+if_ = If -- FIXME: part of the workaround for https://github.com/tensorflow/tensorflow/issues/21901
+-- if_ x = appRUnit @s $ where_ (broadcastTT @s x)
 
 -- | @(gather x ix)[k] = x[ix[k]]@. See https://www.tensorflow.org/api_docs/python/tf/gather
 gather :: forall n indexShape s t. KnownShape s => KnownNat n => KnownShape indexShape => T (n ': s) t -> T indexShape Int32 -> T (indexShape ++ s) t
