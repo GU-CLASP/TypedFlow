@@ -265,7 +265,7 @@ generatePure' rec sR = knownSShape sR $ \case
        where (op,args) = case op' of
                 Negate -> ("tf.negative",[])
                 _ -> ("tf." ++ map toLower (show op'), [])
-    SliceOp _ _ lo hi -> recx <> list (replicate (fromIntegral (sListLength s0)) (text ":") ++ [integer lo <> text ":" <> integer hi])
+    SliceOp _ _ _ lo hi -> recx <> list (replicate (fromIntegral (sListLength s0)) (text ":") ++ [integer lo <> text ":" <> integer hi])
   MatMul s0 a b c x y  -> do
     recx <- rec (s0 .+. (:*) a ((:*) b Unit)) x
     recy <- rec (s0 .+. (:*) b ((:*) c Unit)) y
