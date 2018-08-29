@@ -626,6 +626,7 @@ data T (s :: Shape) (t :: Typ) where
 
   MatMul :: forall s m n o t. KnownNumeric t => SShape s -> Sat KnownNat n -> Sat KnownNat  o -> Sat KnownNat m -> T (s ++ '[n,o]) t -> T (s ++ [o,m]) t -> T (s ++ [n,m]) t
   Where :: T s TFBool  -> T s t -> T s t -> T s t
+  If :: Scalar TFBool -> T s t -> T s t -> T s t
   Convolution :: KnownFloating t => Sat KnownNat bs -> Sat KnownNat inChannels -> Sat KnownNat outChannels -> SShape filterSpatialShape -> SShape s
             -> T (bs ': s ++ '[inChannels]) t -- input tensor (batched)
             -> T (filterSpatialShape ++ '[inChannels,outChannels]) t -- filters

@@ -70,6 +70,7 @@ protoFinished u varyNoise rec = \case
   GatherND _ _ _ x y -> rec x && rec y
   Noise _ _ _ _ -> not varyNoise
   Where cond x y -> rec cond && rec x && rec y
+  If cond x y ->  rec cond && rec x && rec y
   T _ -> True
   Unbroadcast _p u' _x -> u /= u'
   UnOp _op _ x -> rec x
@@ -188,6 +189,9 @@ protoBroadcast u varyNoise n@(Sat) rec finished ty s tensor
     reshapeFrom (satMul n bs :* outSpatial *: numChans) $
     Pool (satMul n bs) window pt numChans outSpatial (reshapeAuto (rec typeSShape x))
   Where cond x y -> Where (rec s cond) (rec s x) (rec s y)
+  If cond x y
+    | finished cond -> If cond (rec s x) (rec s y)
+    | otherwise ->  error "broadcast on 'if' condition not implemented"
   T _ -> error "panic: broadcast constant should be finished!"
   Unbroadcast p@Sat u' x
     | u == u' -> case testEq p n of
