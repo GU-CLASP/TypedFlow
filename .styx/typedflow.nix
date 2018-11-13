@@ -4,7 +4,7 @@
 mkDerivation {
   pname = "typedflow";
   version = "0.9";
-  src = /home/jyp/repo/gu/TypedFlow;
+  src = ../TypedFlow;
   libraryHaskellDepends = [
     base containers ghc-typelits-knownnat mtl pretty-compact
   ];
