@@ -70,18 +70,17 @@ type AttentionFunction t keySize valueSize =
 -- s, and applies a dense layer with parameters θ. The "winning"
 -- element of h (using softmax) is returned.
 uniformAttn :: ∀ valueSize m keySize t. KnownNat valueSize => KnownNat m => KnownBits t
-            => AttentionScoring t keySize valueSize -- ^ scoring function
-            -> T '[] Int32 -- ^ length of the input
-            -> T '[m,valueSize] (Flt t) -- ^ input
-            -> AttentionFunction t keySize valueSize
-uniformAttn score lengths hs_ ht =
-  let   αt :: T '[m] (Flt t)
-        xx = mapT (score ht) hs_
-        αt = softmax0 (mask ⊙ xx)
-        ct :: T '[valueSize] (Flt t)
-        ct = hs_ ∙ αt
-        mask = cast (sequenceMask @m lengths) -- mask according to length
-  in ct
+       => AttentionScoring t keySize valueSize -- ^ scoring function
+       -> T '[] Int32 -- ^ length of the input
+       -> T '[m,valueSize] (Flt t) -- ^ input (what we're attending to)
+       -> AttentionFunction t keySize valueSize
+uniformAttn score len hs key = c
+  where xx,α :: T '[m] (Flt t)
+        xx = mapT (score key) hs
+        α = softmax0 (mask ⊙ xx)
+        c :: T '[valueSize] (Flt t)
+        c = hs ∙ α
+        mask = cast (sequenceMask @m len) -- mask according to length
 
 -- | Add some attention to an RnnCell, and feed the attention vector to
 -- the next iteration in the rnn. (This follows the diagram at
@@ -122,7 +121,7 @@ multiplicativeScoring :: forall valueSize keySize t.
   KnownBits t => KnownNat valueSize => KnownNat keySize
   => T [keySize,valueSize] ('Typ 'Float t) -- ^ weights
   ->  AttentionScoring t keySize valueSize
-multiplicativeScoring w dt hs = ir · hs
+multiplicativeScoring w dt h = ir · h
   where ir :: T '[valueSize] ('Typ 'Float t)
         ir = w ∙ dt
 
