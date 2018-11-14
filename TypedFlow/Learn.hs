@@ -42,10 +42,11 @@ import Prelude hiding (RealFrac(..))
 import GHC.TypeLits
 import Control.Monad.State (modify, gets)
 -- | Triple of values that are always output in a model: prediction, loss and accuracy.
-data ModelOutput t predictionShape s = ModelOutput {modelY :: T (s++predictionShape) t -- ^ prediction (which can contain prediction-shaped info)
-                                                   ,modelLoss :: T s Float32 -- ^ loss associated with the prediction
-                                                   ,modelCorrect :: T s Float32 -- ^ is the above prediction correct?
-                                                   }
+data ModelOutput t predictionShape s =
+  ModelOutput {modelY :: T (s++predictionShape) t -- ^ prediction (which can contain prediction-shaped info)
+              ,modelLoss :: T s Float32 -- ^ loss associated with the prediction
+              ,modelCorrect :: T s Float32 -- ^ is the above prediction correct?
+              }
 
 -- | A standard modelling function: (input value, gold value) ↦ (prediction, accuracy, loss).
 -- input is the shape of the input.
