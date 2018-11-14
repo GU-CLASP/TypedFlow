@@ -135,7 +135,8 @@ mkDropouts d = appEndoTensor <$> mkDropouts' typeSList where
 -- Convolutional layers
 
 data ConvP t outChannels inChannels filterSpatialShape
-  = ConvP (T (filterSpatialShape ++ '[inChannels,outChannels])  ('Typ 'Float t)) (T '[outChannels] ('Typ 'Float t))
+  = ConvP (T (filterSpatialShape ++ '[inChannels,outChannels]) ('Typ 'Float t))
+          (T '[outChannels] ('Typ 'Float t))
 
 instance (KnownNat outChannels,KnownNat inChannels, KnownShape filterSpatialShape, KnownBits t) =>
   ParamWithDefault (ConvP t outChannels inChannels filterSpatialShape) where

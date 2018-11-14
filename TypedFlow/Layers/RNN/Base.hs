@@ -69,7 +69,8 @@ import TypedFlow.Types.Proofs
 -- RNNs cells which do not follow the simple and usual "stacking"
 -- pattern. This is not a simple monad, because the indexing over
 -- states is non-uniform; see 'BindC'.
-newtype Component t states a = C {runC :: HTV (Flt t) states -> (HTV (Flt t) states , a)}
+newtype Component t (states::[Shape]) a
+  = C {runC :: HTV (Flt t) states -> (HTV (Flt t) states , a)}
 -- Note: states are tensors only, because we need to index into them
 -- in the time dimension in iterateWithCull
 

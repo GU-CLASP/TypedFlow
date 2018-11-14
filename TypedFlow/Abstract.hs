@@ -432,7 +432,8 @@ binOp :: forall s t u. KnownShape s => KnownTyp t => Simple2Op t u -> T s t -> T
 binOp op = appRUnit @s $ BinOp (Simple2Op op) (typeSShape @s) Unit typeSTyp Unit typeSTyp
 
 sigmoid, relu, square, round, floor, hardSigmoid
-   :: ∀ s t. (KnownShape s, KnownBits t) => Tensor s ('Typ 'Float t) -> Tensor s ('Typ 'Float t)
+   :: ∀ s t. (KnownShape s, KnownBits t)
+   => Tensor s ('Typ 'Float t) -> Tensor s ('Typ 'Float t)
 sigmoid = unFlOp Sigmoid
 hardSigmoid = unFlOp HardSigmoid
 square = unOp Square
@@ -655,7 +656,8 @@ broadcastTT x = prodHomo @a @s $
                 reshape (broadcastT @(Product a) x)
 
 -- | Map a function along the first dimension of a tensor
-mapT :: forall n s r t u. KnownShape r => KnownNat n => KnownTyp u => KnownLen r => KnownLen s => (T s t -> T r u) ->  T (n ': s) t -> T (n ': r) u
+mapT :: forall n s r t u. KnownShape r => KnownNat n => KnownTyp u => KnownLen r => KnownLen s
+     => (T s t -> T r u) ->  T (n ': s) t -> T (n ': r) u
 mapT f x = broadcast u False (Proxy @n) (f (Unbroadcast (natSat @n) u x))
   where u = unsafePerformIO newUnique
 
@@ -718,11 +720,13 @@ convolution x filters = knownAppend @s @'[outputChannels] $
 softmaxInternal :: forall bs n w. KnownNat bs => KnownBits w => KnownNat n => T '[bs,n] ('Typ 'Float w) -> T '[bs,n] ('Typ 'Float w)
 softmaxInternal = Softmax (natSat @bs) (natSat @n)
 
-softmax0 :: forall n w.  KnownBits w => KnownNat n => T '[n] ('Typ 'Float w) -> T '[n] ('Typ 'Float w)
+softmax0 :: forall n w.  KnownBits w => KnownNat n
+         => T '[n] (' Typ 'Float w) -> T '[n] ('Typ 'Float w)
 softmax0 = reshape . softmaxInternal . reshape @[1,n]
 
 -- | Softmax along the second dimension
-softmax1 :: forall n m w.  KnownBits w => KnownNat n => KnownNat m => T '[m,n] ('Typ 'Float w) -> T '[m,n] ('Typ 'Float w)
+softmax1 :: forall n m w.  KnownBits w => KnownNat n => KnownNat m
+         => T '[m,n] ('Typ 'Float w) -> T '[m,n] ('Typ 'Float w)
 softmax1 = mapT softmax0
 
 argmaxInternal :: forall n s0 s1 t u. KnownNat n => KnownNumeric t => KnownBits u => Sat KnownNat n -> SShape s0 -> SShape s1 -> T (s0 ++ (n ': s1)) t -> T (s0 ++ s1) ('Typ 'Int u)
@@ -850,8 +854,11 @@ lookupT ix xs = gather xs ix
 
 -- | x by y maxpool layer.
 maxPool2D :: forall windowx windowy height width channels t.
-             KnownNat height => KnownNat width => KnownNat channels => (KnownNat windowx, KnownNat windowy, KnownBits t) =>
-             T '[windowx*width,windowy*height,channels] (Flt t) -> T '[width,height,channels] (Flt t)
+             KnownNat height => KnownNat width
+          => KnownNat channels
+          => (KnownNat windowx, KnownNat windowy, KnownBits t) =>
+             T '[windowx*width,windowy*height,channels] (Flt t)
+          -> T '[width,height,channels] (Flt t)
 maxPool2D x = squeeze0 (Pool (natSat @1) (typeSShape @'[windowx,windowy]) MaxPool (natSat @channels) (typeSShape @'[width,height]) (expandDim0 x))
 
 -- | maxpool layer. window size is the first type argument.
