@@ -11,9 +11,6 @@ module MNIST where
 import TypedFlow
 import TypedFlow.Python
 
-(#>) :: forall b c a. (a -> b) -> (b -> c) -> a -> c
-(#>) = flip (.)
-
 atShape :: forall s t. T s t -> T s t
 atShape x = x
 
@@ -24,18 +21,17 @@ mnist = do
   w1 <- parameterDefault "w1"
   w2 <- parameterDefault "w2"
   return $ \input gold ->
-    let nn = reshape @'[28,28,1]                #>
-             (relu . conv @32 @'[5,5] filters1) #>
-             atShape @'[28,28,32]               #>
-             maxPool2D @2 @2                    #>
-             atShape @'[14,14,32]               #>
-             (relu . conv @64 @'[5,5] filters2) #>
-             maxPool2D @2 @2                    #>
-             atShape @'[7,7,64]                 #>
-             flatten3                           #>
-             (relu . dense @1024 w1)            #>
-             dense @10 w2
+    let nn = dense @10 w2                       .
+             relu . dense @1024 w1              .
+             reshape @'[7*7*64]                 .
+             maxPool2D @2 @2                    .
+             relu . conv @64 @'[5,5] filters2   .
+             maxPool2D @2 @2                    .
+             atShape @'[28,28,32]               .
+             relu . conv @32 @'[5,5] filters1   .
+             reshape @'[28,28,1]
         logits = nn input
+
     in categoricalDistribution logits gold
 
 main :: IO ()
