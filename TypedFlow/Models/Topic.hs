@@ -88,10 +88,10 @@ mkTdlmTopic :: forall
 mkTdlmTopic separationConstant (TopicP topicInput topicOutput) = do
   drpS   <- mkDropout (DropProb 0.1)
   let topicNormalized :: T '[kk,b] (Flt t)
-      topicNormalized = mapT (/ (sqrt (reduceSum axis0  (square topicOutput)) :: T '[b] (Flt t))) topicOutput
+      topicNormalized = mapT normalize topicOutput
       -- matrix of correlation between the topics
-      topicCorrelation :: T '[b,b] (Flt t)
-      topicCorrelation = matmul (transpose01 topicNormalized) topicNormalized
+      topicCorrelation :: T '[kk,kk] (Flt t)
+      topicCorrelation = matmul topicNormalized (transpose01 topicNormalized)
       -- max correlation between two distinct topics
       topicOverlap = reduceMaxAll (square (topicCorrelation ⊝ eye))
   addRegularizer (constant separationConstant ⊙ cast topicOverlap) -- regularizer which ensures that topics are disjoint

@@ -93,8 +93,9 @@ module TypedFlow.TF (
   -- ** Sequences
   sequenceMask,
   -- ** Convolutions
-  convolution, 
+  convolution,
   -- ** Misc
+  norm, normalize,
   stopGradient,
   cast,
   oneHot0, oneHot1,
@@ -257,7 +258,14 @@ x · y = reduceSum0 (x ⊙ y)
 infixl 7 ·
 
 
+norm :: KnownBits t => KnownNat n
+     => T '[n] (Flt t) -> Scalar (Flt t)
+norm = sqrt . reduceSumAll . square
 
+normalize :: (KnownNat n, KnownBits t) =>
+                   T '[n] (Flt t) -> T '[n] (Flt t)
+normalize v = mapT (/ (norm v + epsilon)) v
+  where epsilon = 1.0e-8
 
 -------------------------
 -- Generic parameters
