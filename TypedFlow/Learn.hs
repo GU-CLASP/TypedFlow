@@ -73,6 +73,21 @@ sparseCategorical logits y =
       modelLoss = sparseSoftmaxCrossEntropyWithLogits y logits
   in ModelOutput{..}
 
+-- | First type argument is the number of classes.  @categorical
+-- logits gold@ return (prediction, accuraccy, loss)
+sparseCategoricalDensePredictions :: forall nCat. KnownNat nCat
+  => Tensor '[nCat] Float32
+  -> Tensor '[] Int32
+  -> ModelOutput  Float32 '[nCat] '[]
+sparseCategoricalDensePredictions logits y =
+  let y_ :: T '[nCat] Float32
+      y_ = softmax0 logits
+      modelY = y_
+      modelCorrect = cast (equal (argmax0 logits) y)
+      modelLoss = sparseSoftmaxCrossEntropyWithLogits y logits
+  in ModelOutput{..}
+
+
 -- | First type argument is the number of classes.
 -- @categoricalDistribution logits gold@ return (prediction,
 -- accuraccy, loss) accuracy is reported as predicting the same class
