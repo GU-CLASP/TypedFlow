@@ -44,17 +44,20 @@ import Data.Monoid ((<>))
 tldmDocsummary :: forall
   (vocSize :: Nat) -- number of words
   (e :: Nat) -- size of the embedding
-  (a :: Nat) -- document vector summary size
+  (a :: Nat) -- number of features of the document vector summary 
   (n :: Nat) -- length of the document
   (filterSize :: Nat) -- size of the convolution filter
   (t :: NBits) -- size of floats
   .  KnownNat vocSize => KnownNat filterSize => KnownNat e => KnownNat a => KnownNat n => KnownBits t
-  =>  (EmbeddingP vocSize e t) -> (ConvP t a e '[filterSize]) -> DropProb -> Gen (T '[n] Int32 -> T '[a] (Flt t))
+  => (EmbeddingP vocSize e t)
+  -> (ConvP t a e '[filterSize])
+  -> DropProb
+  -> Gen (T '[n] Int32 -> T '[a] (Flt t))
 tldmDocsummary embs filters dropProb = do
   drpEmb <- mkDropout dropProb
   return $ \document ->
     let embeddedDoc :: Tensor [n,e] (Flt t)
-        embeddedDoc = drpEmb (mapT (embedding @e @vocSize embs) document)
+        embeddedDoc = mapT (drpEmb . embedding @e @vocSize embs) document
     in reduceMax axis0 (conv' @'[n] filters embeddedDoc)
 
 -- | Parameter for topics. This is effectively map from document
