@@ -475,8 +475,10 @@ concatT n = case axisSplitApp' n of Refl -> concatT' (sShapeTake' n s) d1 d2 (sS
   where s = typeSShape @s; d1 = natSat @d1; d2 = natSat @d2
 
 -- | Concatenate tensors on the first dimension
-concat0 :: ∀ d1 d2 ys t. KnownTyp t => KnownShape ys => KnownNat d2 => KnownNat d1 => (KnownLen ys) => T (d1 ': ys) t -> T (d2 ': ys) t -> T ((d1 + d2) ': ys) t
+concat0, (©) :: ∀ d1 d2 ys t. KnownTyp t => KnownShape ys => KnownNat d2 => KnownNat d1 => (KnownLen ys) => T (d1 ': ys) t -> T (d2 ': ys) t -> T ((d1 + d2) ': ys) t
 concat0 = concatT axis0
+
+(©) = concat0
 
 -- | Concatenate tensors on the second dimension
 concat1 :: ∀ n ys d1 d2 t. KnownShape ys => KnownNat n => KnownNat d2 => KnownNat d1 => KnownTyp t => (KnownLen ys) =>  T (n ': d1 ': ys) t -> T (n ': d2 ': ys) t -> T (n ': (d1 + d2) ': ys) t
