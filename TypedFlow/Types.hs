@@ -176,13 +176,23 @@ type HTV t = NP (F T t)
 type family Frst (x :: (a,b)) where Frst '(x,y) = x
 type family Scnd (x :: (a,b)) where Scnd '(x,y) = y
 
-class (KnownShape (Frst r), KnownTyp (Scnd r)) => KnownPair r where
-instance (KnownShape x, KnownTyp y) => KnownPair '(x,y) where
+type family Frst3 (x :: (a,b,c)) where Frst3 '(x,y,z) = x
+type family Scnd3 (x :: (a,b,c)) where Scnd3 '(x,y,z) = y
+type family Thrd3 (x :: (a,b,c)) where Thrd3 '(x,y,z) = z
+
+class (KnownShape (Scnd3 r), KnownTyp (Thrd3 r), KnownSymbol (Frst3 r)) => KnownPlaceholder r
+instance (KnownShape y, KnownTyp z, KnownSymbol x) => KnownPlaceholder '(x,y,z)
+class (KnownShape (Frst r), KnownTyp (Scnd r)) => KnownPair r
+instance (KnownShape x, KnownTyp y) => KnownPair '(x,y)
 
 newtype Uncurry g (s :: (a,b)) = Uncurry {fromUncurry :: g (Frst s) (Scnd s)}
 
 -- | Tensor vector heterogenous in types and shapes.
 type HHTV = NP (Uncurry T)
+
+type Placeholders = NP Placeholder
+
+newtype Placeholder (s :: (Symbol,Shape,Typ)) = PHT (T (Scnd3 s) (Thrd3 s))
 
 hhead :: NP f (x ': xs) -> f x
 hhead (x :* _) = x

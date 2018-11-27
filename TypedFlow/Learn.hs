@@ -158,14 +158,18 @@ instance (KnownTyp t, KnownShape p) => Batched (StateAndOutput t p) where
       (batchify n f xs)
 
 -- | Name of a placeholder of a given shape and type.
-data HolderName (st :: (Shape,Typ)) = HolderName String
+data HolderName (st :: (Symbol,Shape,Typ)) = HolderName String
 
-genBatchedPlaceholders :: All KnownPair shapesAndTypes => Unique -> Sat KnownNat n -> SList' HolderName shapesAndTypes -> Gen (HHTV shapesAndTypes)
+holderName :: forall (st :: (Symbol,Shape,Typ)) proxy. KnownSymbol (Frst3 st) => proxy st -> String
+holderName _ = symbolVal (Proxy @(Frst3 st))
+
+genBatchedPlaceholders :: All KnownPlaceholder shapesAndTypes
+  => Unique -> Sat KnownNat n -> SList shapesAndTypes -> Gen (Placeholders shapesAndTypes)
 genBatchedPlaceholders _ _ Unit = return Unit
-genBatchedPlaceholders u n@Sat (HolderName name :* names) = do
-  x <- placeholder name
+genBatchedPlaceholders u n@Sat (name :* names) = do
+  x <- placeholder (holderName name)
   xs <- genBatchedPlaceholders u n names
-  return (Uncurry (Unbroadcast n u x) :* xs)
+  return (PHT (Unbroadcast n u x) :* xs)
 
 
 knownCons :: KnownNat x => Sat KnownShape s -> Sat KnownShape (x ': s)
@@ -176,13 +180,10 @@ stateless :: KnownLen s => (inputs -> ModelOutput t p s) -> inputs -> HTV t '[] 
 stateless f x Unit = StateAndOutput typeSList (f x) Unit
 
 simpleModel :: forall sx tx sy ty sy_ ty_ p. KnownLen sy_ => (Tensor sx tx -> Tensor sy ty -> ModelOutput  ty_ p sy_) ->
-            (HHTV '[ '(sx, tx), '(sy, ty)] -> HTV ty_ '[] -> (StateAndOutput ty_ p (sy_ ': '[])))
+            (Placeholders '[ '("x",sx, tx), '("y",sy, ty)] -> HTV ty_ '[] -> (StateAndOutput ty_ p (sy_ ': '[])))
 simpleModel f = stateless f'
-  where f' :: HHTV '[ '(sx,tx), '(sy,ty)] -> ModelOutput ty_ p sy_
-        f' (Uncurry x :* Uncurry y :* Unit) = f x y
-
-xyHolderNames :: SList' HolderName '[ '(sx, tx), '(sy, ty)] 
-xyHolderNames = (HolderName "x" :* HolderName "y" :* Unit)
+  where f' :: Placeholders '[ '("x",sx,tx), '("y",sy,ty)] -> ModelOutput ty_ p sy_
+        f' (PHT x :* PHT y :* Unit) = f x y
 
 -- | @updateStates xs ys@ assigns to the tensor (variables!) xs the values ys.
 updateStates :: forall xs ty. KnownTyp ty => All KnownShape xs => HTV ty xs -> HTV ty xs -> Gen (HTV ty xs)
@@ -223,19 +224,18 @@ precompile model =   knownAppend @sy @p $ do
 
 -- | Batch the model (adding one dimension), create placeholders for the inputs.
 batchModel :: forall batchSize shapesAndTypes sy_ ty_ p stateShapes.
-           (KnownNat batchSize, All KnownPair shapesAndTypes, KnownLen stateShapes,
+           (KnownNat batchSize, KnownLen shapesAndTypes, All KnownPlaceholder shapesAndTypes, KnownLen stateShapes,
             All KnownShape stateShapes, KnownShape sy_, KnownTyp ty_, KnownShape p)
-         => SList' HolderName shapesAndTypes -- ^ names for the inputs
-         -> Gen (HHTV shapesAndTypes -> HTV ty_ stateShapes -> (StateAndOutput ty_ p (sy_ ': stateShapes)) )
+         => Gen (Placeholders shapesAndTypes -> HTV ty_ stateShapes -> (StateAndOutput ty_ p (sy_ ': stateShapes)) )
          -> HTV ty_ (Ap (FMap (Cons batchSize)) stateShapes) -- ^ state variables
          -> Gen (StateAndOutput ty_ p (Ap (FMap (Cons batchSize)) (sy_ ': stateShapes))) 
-batchModel names fGen stateVars =
+batchModel fGen stateVars =
   let u = unsafePerformIO newUnique -- unique identifier for the batch dimension
       unbroadcastStates :: forall ss. SList ss -> HTV ty_ (Ap (FMap (Cons batchSize)) ss) -> HTV ty_ ss
       unbroadcastStates Unit Unit = Unit
       unbroadcastStates (_ :* ss) (F x :* xs) = F (Unbroadcast batchSize u x) :* unbroadcastStates ss xs
   in knownAppend @sy_ @p $ do 
-       xs <- genBatchedPlaceholders u batchSize names
+       xs <- genBatchedPlaceholders u batchSize (typeSList @shapesAndTypes)
        f <- fGen
        return $ broadcastGen u True (Proxy @batchSize) (f xs (unbroadcastStates (typeSList) stateVars))
  where batchSize = natSat @batchSize

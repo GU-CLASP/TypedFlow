@@ -381,20 +381,20 @@ compile :: forall batchSize sx tx sy ty sy_ ty_ p.
            (KnownNat batchSize, KnownShape sx, KnownTyp tx, KnownShape sy, KnownTyp ty, KnownShape sy_, KnownTyp ty_, KnownShape p) =>
            Options -> Gen (Tensor sx tx -> Tensor sy ty -> ModelOutput  ty_ p sy_)
         -> Python ()
-compile options fGen = compileGen @batchSize options xyHolderNames (simpleModel <$> fGen)
+compile options fGen = compileGen @batchSize options (simpleModel <$> fGen)
 
 -- | Batchify and compile a model with generic  input to output mapping and states
 compileGen :: forall batchSize shapesAndTypes sy_ ty_ p stateShapes.
-           (KnownNat batchSize, All KnownPair shapesAndTypes, KnownLen stateShapes,
+           (KnownNat batchSize, All KnownPlaceholder shapesAndTypes, KnownLen stateShapes,
+            KnownLen shapesAndTypes,
             All KnownShape stateShapes, KnownShape sy_, KnownTyp ty_, KnownShape p)
          => Options
-         -> SList' HolderName shapesAndTypes -- ^ names for the inputs
-         -> Gen (HHTV shapesAndTypes -> HTV ty_ stateShapes -> (StateAndOutput ty_ p (sy_ ': stateShapes)) )
+         -> Gen (Placeholders shapesAndTypes -> HTV ty_ stateShapes -> (StateAndOutput ty_ p (sy_ ': stateShapes)) )
          -> Python ()
-compileGen options names fGen =
+compileGen options fGen =
   let batchedShapesKnown = mapFMap @(Cons batchSize) knownCons (allKnown @KnownShape @stateShapes typeSList)
   in knownAll batchedShapesKnown $
-     compileAlreadyBatched @batchSize options (precompile @batchSize (batchModel names fGen))
+     compileAlreadyBatched @batchSize options (precompile @batchSize (batchModel fGen))
 
 -- | Generic model compilation (do not use unless you know what you're doing)
 compileAlreadyBatched :: forall bs ty stateShapes. KnownNat bs

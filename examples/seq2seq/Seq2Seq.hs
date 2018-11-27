@@ -12,7 +12,6 @@ module Main  where
 
 import TypedFlow
 import TypedFlow.Python
-import TypedFlow.Python.Top
 
 mkLSTM :: ∀ n x w.
        KnownNat x => KnownNat n => KnownBits w
@@ -71,16 +70,17 @@ decoder prefix = do
 
 seq2seq :: forall (vocSize :: Nat) (n :: Nat).
                  KnownNat vocSize => (KnownNat n)
-        => Gen (HHTV '[ '( '[n], Float32),
-                        '( '[n], Int32),
-                        '( '[],  Int32),
-                        '( '[n], Int32),
-                        '( '[n], Int32)] ->
-                ModelOutput Float32 '[vocSize] '[n])
+        => Gen (Placeholders
+                     '[ '("tgt_weights", '[n], Float32),
+                        '("src_in", '[n], Int32),
+                        '("src_len", '[],  Int32),
+                        '("tgt_in", '[n], Int32),
+                        '("tgt_out", '[n], Int32)] ->
+                ModelOutput Float32 '[n, vocSize] '[])
 seq2seq  = do
   enc <- encoder @256 @vocSize "enc"
   dec <- decoder "dec"
-  return $ \(Uncurry masks :* Uncurry input :* Uncurry inputLen :* Uncurry tgtIn :* Uncurry tgtOut :* Unit) ->
+  return $ \(PHT masks :* PHT input :* PHT inputLen :* PHT tgtIn :* PHT tgtOut :* Unit) ->
     let (VecPair t1 t2,h) = enc inputLen input
         y_ = dec inputLen h (VecPair t1 t2) tgtIn
     in timedCategorical masks y_ tgtOut
@@ -91,12 +91,6 @@ seq2seq  = do
 main :: IO ()
 main = generateFile "s2s.py" (compileGen @256
                                defaultOptions {maxGradientNorm = Just 5}
-                               (HolderName "tgt_weights" :*
-                                HolderName "src_in" :*
-                                HolderName "src_len" :*
-                                HolderName "tgt_in" :*
-                                HolderName "tgt_out" :*
-                                Unit)
                                (stateless <$> seq2seq @15 @22))
 
 -- >>> main
