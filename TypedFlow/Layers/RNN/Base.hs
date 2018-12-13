@@ -275,7 +275,7 @@ gathers :: forall n xs t. All KnownShape xs => KnownNat n =>
 gathers Unit _ Unit = Unit
 gathers (_ :* n) ixs (F x :* xs) = F (gatherFinalStates ixs x) :* gathers @n n ixs xs
 
--- | @rnnWithCull dynLen@ constructs an RNN as normal, but returns the
+-- | @iterateWithCull dynLen@ constructs an RNN as normal, but returns the
 -- state after step @dynLen@ only.
 iterateWithCull :: forall n x y ls b.
   KnownLen ls => KnownNat n => All KnownShape ls =>
