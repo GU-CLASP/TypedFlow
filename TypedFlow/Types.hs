@@ -32,14 +32,23 @@ module TypedFlow.Types where
 import GHC.TypeLits
 import Data.Proxy
 import Control.Monad.State
-import Data.Kind (Constraint)
+import Data.Kind (Constraint,Type)
 import Data.Unique
 import qualified Data.Int as Hask
 import Data.Type.Equality
 import Data.Monoid hiding (Sum,Product,Last,All)
 
-data Sat (a :: k -> Constraint) (b::k) where
-  Sat :: forall b a. a b => Sat a b
+newtype (∘) f (g :: k -> k2) (a::k) where
+  Comp :: forall f g a. f (g a) -> (f ∘ g) a
+
+type Sat = (∘) Dict
+type Sat' f x = f x
+
+data Dict :: Constraint -> Type where
+  Dict :: a => Dict a
+
+pattern Sat :: forall k (g :: k -> Constraint) (a :: k). () => g a => (∘) Dict g a -- the second context is the PROVIDED constraint!
+pattern Sat = Comp Dict
 
 instance (Show (Sat a b)) where
   show _ = "Sat"

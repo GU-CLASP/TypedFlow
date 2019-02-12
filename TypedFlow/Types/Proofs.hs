@@ -74,10 +74,15 @@ instance SingEq STyp where
 Refl #> k = k
 infixr 0 #>
 
--- | Use a reifiedan arbitrary constraint
+-- | Use a reified arbitrary predicate
 (?>) :: Sat constraint a -> (constraint a => k) -> k
 Sat ?> k = k
 infixr 0 ?>
+
+-- | Use a reified arbitrary constraint
+(??>) :: Dict constraint -> (constraint => k) -> k
+Dict ??> k = k
+infixr 0 ??>
 
 productS :: forall s. SShape s -> Sat KnownNat (Product s)
 productS s = knownSShape s ?>
@@ -207,9 +212,9 @@ knownAppend = knownAppendS (typeSList @s) (Proxy @t)
 -- knownFmap' Unit = Unit
 -- knownFmap' ((:*) x n) = (:*) Proxy (knownFmap' @f n)
 
-knownSList :: NP proxy xs -> (KnownLen xs => k) -> k
-knownSList Unit k = k
-knownSList ((:*) _ n) k = knownSList n k
+knownSList :: NP proxy xs -> Sat KnownLen xs
+knownSList Unit = Sat
+knownSList (_ :* n) = knownSList n ?> Sat
 
 knownSShape :: SShape xs -> Sat KnownShape xs
 knownSShape Unit = Sat
@@ -251,7 +256,7 @@ xs *:! x = xs :++: Single x
 
 exprSShape :: forall a x b. ShapeExpr a x b -> SShape x
 exprSShape (AShape s) = s
-exprSShape (Single x) = case dimSat x of Sat -> typeSShape
+exprSShape (Single x) = dimSat x ?> typeSShape
 exprSShape (x :++: y) = exprSShape x .+. exprSShape y
 
 normShape :: forall ws xs ys. ShapeExpr ws xs ys -> (ws * Product xs) :~: ys

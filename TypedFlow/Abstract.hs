@@ -612,7 +612,7 @@ unstack0 x = fmap (`nth0` x) (vcount @n)
 
 -- | Stack a tensor vector. (To be used on literal lists of tensors.)
 litStack0 :: KnownShape s => KnownLen xs => TV s t xs -> Tensor (Length xs ': s) t
-litStack0 tv = knownSList tv $ stack0 $ toV tv
+litStack0 tv = knownSList tv ?> stack0 $ toV tv
   where toV :: TV s t xs -> V (Length xs) (T s t)
         toV Unit = VUnit
         toV (K x :* xs) = x :** toV xs
