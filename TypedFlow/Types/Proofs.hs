@@ -82,6 +82,13 @@ plusComm k = case plusComm' @x @y of
 plusAssoc' :: forall x y z. (x + y) + z :~: x + (y + z)
 plusAssoc' = unsafeCoerce Refl
 
+plusMinusAssoc' :: forall x y z. (x + y) - z :~: x + (y - z)
+plusMinusAssoc' = unsafeCoerce Refl
+
+(#>) :: (a :~: b) -> ((a ~ b) => k) -> k
+Refl #> k = k
+infixr 1 #>
+
 plusAssoc :: forall x y z k. (((x + y) + z) ~ (x + (y + z)) => k) -> k
 plusAssoc k = case plusAssoc' @x @y @z of
   Refl -> k
@@ -114,9 +121,10 @@ termCancelation  :: forall a b k. ((((a + b) - b) ~ a) => k) -> k
 termCancelation k = case termCancelation' @a @b of Refl -> k
 
 plusMono :: forall a b k. ((a <= (a+b)) => k) -> k
-plusMono k = case plusMono' of Refl -> k
-  where plusMono' :: (a <=? (a+b)) :~: 'True
-        plusMono' = unsafeCoerce Refl
+plusMono k = case plusMono' @a @b of Refl -> k
+
+plusMono' :: forall a b. (a <=? (a+b)) :~: 'True
+plusMono' = unsafeCoerce Refl
 
 succPos' :: (1 <=? 1+j) :~: 'True
   -- CmpNat 0 (1 + n) :~: 'LT
@@ -166,7 +174,9 @@ lengthInit' x k = case lengthHomo' @(Init s) @'[Last s] of
 lengthInit :: forall s k. KnownLen s => (0 < Length s) => ((Length (Init s) + 1) ~ Length s => k) -> k
 lengthInit = lengthInit' (typeSList @s)
 
-incrPos' :: forall x. (1 <=? x+1) :~: 'True
+type a :<=: b = ((a <=? b):~: 'True)
+
+incrPos' :: forall x. 1 :<=: (x+1)
 incrPos' = unsafeCoerce Refl
 
 incrPos :: forall x k. ((0 < (x + 1)) => k) -> k
@@ -177,7 +187,6 @@ incrCong' = unsafeCoerce Refl
 
 incrCong :: forall x y k. ((x+1) ~ (y+1)) => ((x ~ y) => k) -> k
 incrCong k = case incrCong' @x @y of Refl -> k
-
 
 initLast' :: forall s k. {-(0 < Length s) => FIXME -} SList s -> ((Init s ++ '[Last s]) ~ s => k) -> k
 initLast' Unit _ = error "initLast': does not hold on empty lists"

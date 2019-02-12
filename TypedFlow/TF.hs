@@ -81,6 +81,7 @@ module TypedFlow.TF (
   stack0, unstack0,
   stack1,
   concatT, concat0, concat1,
+  consT0, snocT0, tailT0, initT0,
   -- ** Reshaping
   expandDim,
   expandDim0, squeeze0,
@@ -105,7 +106,6 @@ module TypedFlow.TF (
   -- ** Mapping
   mapT, zipWithT, 
   mapTT, zipWithTT,
-  consT0, snocT0,
   -- ** Losses
   sigmoidCrossEntropyWithLogits,
   softmaxCrossEntropyWithLogits,
@@ -242,6 +242,15 @@ consT0 x xs = plusComm @1 @n $ concat0 (expandDim0 x) xs
 -- | 'snoc' an element and an array (in the first dimension)
 snocT0 :: forall n s t. KnownTyp t => KnownShape s => KnownNat n =>  KnownLen s => T (n ': s) t -> T s t -> T (n+1 ': s) t
 snocT0 xs x = concat0 xs (expandDim0 x)
+
+tailT0 :: forall n s t. KnownTyp t => KnownShape s => KnownNat n =>  T (n+1 ': s) t -> T (n ': s) t
+tailT0 xs = incrPos' @n              #> -- 0 < n+1
+            plusMinusAssoc' @n @1 @1 #> -- (n+1) - 1 = -- n+ (1 - 1)
+            slice0 @1 @(n+1) xs
+
+initT0 :: forall n s t. KnownTyp t => KnownShape s => KnownNat n =>  T (n+1 ': s) t -> T (n ': s) t
+initT0 xs = plusMono' @n @1 #> -- n <= n+1
+            slice0 @0 @n xs
 
 ----------------
 -- Helpers
