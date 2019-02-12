@@ -191,7 +191,7 @@ bothRnnCells l1 l2 x  =
 withBypass :: forall x y t b s0. KnownNat x => KnownNat y => KnownLen s0
   => KnownTyp t
   => RnnCell b s0 (T '[x] t) (T '[y] t) -> RnnCell b s0 (T '[x] t) (T '[x+y] t)
-withBypass cell x = appRUnit @s0 $
+withBypass cell x = appRUnit @s0 #>
   cell x `bindC` \y ->
   returnC (concat0 x y)
 

@@ -237,19 +237,19 @@ glorotUniform = varianceScaling 1 VSAvg UniformDistr
 
 -- | 'cons' an element and an array (in the first dimension)
 consT0 :: forall n s t. KnownTyp t => KnownShape s => KnownNat n =>  T s t -> T (n ': s) t -> T (n+1 ': s) t
-consT0 x xs = plusComm @1 @n $ concat0 (expandDim0 x) xs
+consT0 x xs = plusComm @1 @n #> concat0 (expandDim0 x) xs
 
 -- | 'snoc' an element and an array (in the first dimension)
 snocT0 :: forall n s t. KnownTyp t => KnownShape s => KnownNat n =>  KnownLen s => T (n ': s) t -> T s t -> T (n+1 ': s) t
 snocT0 xs x = concat0 xs (expandDim0 x)
 
 tailT0 :: forall n s t. KnownTyp t => KnownShape s => KnownNat n =>  T (n+1 ': s) t -> T (n ': s) t
-tailT0 xs = incrPos' @n              #> -- 0 < n+1
-            plusMinusAssoc' @n @1 @1 #> -- (n+1) - 1 = -- n+ (1 - 1)
+tailT0 xs = incrPos @n              #> -- 0 < n+1
+            plusMinusAssoc @n @1 @1 #> -- (n+1) - 1 = -- n+ (1 - 1)
             slice0 @1 @(n+1) xs
 
 initT0 :: forall n s t. KnownTyp t => KnownShape s => KnownNat n =>  T (n+1 ': s) t -> T (n ': s) t
-initT0 xs = plusMono' @n @1 #> -- n <= n+1
+initT0 xs = plusMono @n @1 #> -- n <= n+1
             slice0 @0 @n xs
 
 ----------------

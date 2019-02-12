@@ -69,149 +69,107 @@ instance SingEq STyp where
     (Just Refl, Just Refl) -> Just Refl
     _ -> Nothing
 
-productS :: forall s. SShape s -> Sat KnownNat (Product s)
-productS s = knownSShape s $ knownProduct @s $ Sat
-
-plusComm' :: forall x y. (x + y) :~: (y + x)
-plusComm' = unsafeCoerce Refl
-
-plusComm :: forall x y k. ((x + y) ~ (y + x) => k) -> k
-plusComm k = case plusComm' @x @y of
-  Refl -> k
-
-plusAssoc' :: forall x y z. (x + y) + z :~: x + (y + z)
-plusAssoc' = unsafeCoerce Refl
-
-plusMinusAssoc' :: forall x y z. (x + y) - z :~: x + (y - z)
-plusMinusAssoc' = unsafeCoerce Refl
-
+-- | Use a reified equality relation
 (#>) :: (a :~: b) -> ((a ~ b) => k) -> k
 Refl #> k = k
-infixr 1 #>
+infixr 0 #>
 
-plusAssoc :: forall x y z k. (((x + y) + z) ~ (x + (y + z)) => k) -> k
-plusAssoc k = case plusAssoc' @x @y @z of
-  Refl -> k
+-- | Use a reifiedan arbitrary constraint
+(?>) :: Sat constraint a -> (constraint a => k) -> k
+Sat ?> k = k
+infixr 0 ?>
 
-plusAssocS :: forall x y z k px py pz. px x -> py y -> pz z -> (((x + y) + z) ~ (x + (y + z)) => k) -> k
-plusAssocS _ _ _ k = case plusAssoc' @x @y @z of
-  Refl -> k
+productS :: forall s. SShape s -> Sat KnownNat (Product s)
+productS s = knownSShape s ?>
+             knownProduct @s ?>
+             Sat
 
-prodAssoc' :: forall x y z. (x * y) * z :~: x * (y * z)
-prodAssoc' = unsafeCoerce Refl
+plusComm :: forall x y. (x + y) :~: (y + x)
+plusComm = unsafeCoerce Refl
 
-prodAssoc :: forall (x::Nat) (y::Nat) (z::Nat) k. (((x * y) * z) ~ (x * (y * z)) => k) -> k
-prodAssoc k = case prodAssoc' @x @y @z of
-  Refl -> k
+plusAssoc :: forall x y z. (x + y) + z :~: x + (y + z)
+plusAssoc = unsafeCoerce Refl
 
-prodAssocS :: forall x y z k px py pz. px x -> py y -> pz z -> (((x * y) * z) ~ (x * (y * z)) => k) -> k
-prodAssocS _ _ _ k = case prodAssoc' @x @y @z of
-  Refl -> k
+plusAssocS :: forall x y z px py pz. px x -> py y -> pz z -> ((x + y) + z) :~: (x + (y + z))
+plusAssocS _ _ _ = plusAssoc @x @y @z
 
--- Some proofs.
+prodAssoc :: forall x y z. (x * y) * z :~: x * (y * z)
+prodAssoc = unsafeCoerce Refl
 
--- initLast' :: forall s k. ((Init s ++ '[Last s]) ~ s => k) -> k
+prodAssocS :: forall x y z px py pz. px x -> py y -> pz z -> ((x * y) * z) :~: (x * (y * z))
+prodAssocS _ _ _ = prodAssoc @x @y @z
 
--- initLast' k = unsafeCoerce# k -- why not?
+termCancelation :: forall a b. (a + b) - b :~: a
+termCancelation = plusMinusAssoc @a @b @b #> cancelation @b #> Refl
 
-termCancelation' :: forall a b. (a + b) - b :~: a
-termCancelation' = unsafeCoerce Refl
+plusMinusAssoc :: forall x y z. (x + y) - z :~: x + (y - z)
+plusMinusAssoc = unsafeCoerce Refl
 
-termCancelation  :: forall a b k. ((((a + b) - b) ~ a) => k) -> k
-termCancelation k = case termCancelation' @a @b of Refl -> k
+cancelation :: (a - a) :~: 0
+cancelation = unsafeCoerce Refl
 
-plusMono :: forall a b k. ((a <= (a+b)) => k) -> k
-plusMono k = case plusMono' @a @b of Refl -> k
+plusMono :: forall a b. (a <=? (a+b)) :~: 'True
+plusMono = unsafeCoerce Refl
 
-plusMono' :: forall a b. (a <=? (a+b)) :~: 'True
-plusMono' = unsafeCoerce Refl
-
-succPos' :: (1 <=? 1+j) :~: 'True
+succPos :: (1 <=? 1+j) :~: 'True
   -- CmpNat 0 (1 + n) :~: 'LT
-succPos' = unsafeCoerce Refl
+succPos = unsafeCoerce Refl
 
-succPos :: forall n k. ((0 < (1+n)) => k) -> k
-succPos k = case succPos' @n  of
-  Refl -> k
-
-succPosProx2 :: forall n k proxy a. proxy n a -> ((0 < (1+n)) => k) -> k
+succPosProx2 :: forall n proxy a. proxy n a -> (0 :<: (1+n))
 succPosProx2 _ = succPos @n
 
+prodHomo ::  forall x y. Product (x ++ y) :~: Product x * Product y
+prodHomo = unsafeCoerce Refl
 
-prodHomo' ::  forall x y. Product (x ++ y) :~: Product x * Product y
-prodHomo' = unsafeCoerce Refl
+prodHomoS ::  forall x y px py. px x -> py y -> ((Product (x ++ y) :~: (Product x * Product y)))
+prodHomoS _ _ = prodHomo @x @y
 
-prodHomo ::  forall x y k. ((Product (x ++ y) ~ (Product x * Product y)) => k) -> k
-prodHomo k = case prodHomo' @x @y of Refl -> k
+knownProduct' :: forall s f. All KnownNat s => NP f s -> Sat KnownNat (Product s)
+knownProduct' Unit = Sat
+knownProduct' (_ :* n) = knownProduct' n ?> Sat
 
-prodHomoS ::  forall x y k px py. px x -> py y -> ((Product (x ++ y) ~ (Product x * Product y)) => k) -> k
-prodHomoS _ _ k = case prodHomo' @x @y of Refl -> k
-
-knownProduct' :: forall s f k. All KnownNat s => NP f s -> (KnownNat (Product s) => k) -> k
-knownProduct' Unit k = k
-knownProduct' ((:*) _ n) k = knownProduct' n k
-
-knownProduct :: forall s k. KnownShape s => (KnownNat (Product s) => k) -> k
+knownProduct :: forall s. KnownShape s => Sat KnownNat (Product s)
 knownProduct = knownProduct' @s typeSList
 
 
-takeDrop' :: forall s n. (PeanoNat n <= Length s) => (Take n s ++ Drop n s) :~: s
-takeDrop' = unsafeCoerce Refl
+takeDrop :: forall s n. (PeanoNat n <= Length s) => (Take n s ++ Drop n s) :~: s
+takeDrop = unsafeCoerce Refl
 
-takeDrop :: forall s n k. (PeanoNat n <= Length s) => ((Take n s ++ Drop n s) ~ s => k) -> k
-takeDrop k = case takeDrop' @s @n of Refl -> k
+lengthHomo :: forall x y. Length (x ++ y) :~: Length x + Length y
+lengthHomo = unsafeCoerce Refl
 
-lengthHomo' :: forall x y. Length (x ++ y) :~: Length x + Length y
-lengthHomo' = unsafeCoerce Refl
+lengthHomoS :: forall x y proxyx proxyy. proxyx x -> proxyy y -> ((Length (x ++ y) :~: (Length x + Length y)))
+lengthHomoS _ _ = lengthHomo @x @y
 
-lengthHomoS :: forall x y k proxyx proxyy. proxyx x -> proxyy y -> ((Length (x ++ y) ~ (Length x + Length y)) => k) -> k
-lengthHomoS _ _ k = case lengthHomo' @x @y of Refl -> k
-
-lengthInit' :: forall s k. (0 < Length s) => SList s -> ((Length (Init s) + 1) ~ Length s => k) -> k
-lengthInit' x k = case lengthHomo' @(Init s) @'[Last s] of
-  Refl -> initLast' x k
-
-lengthInit :: forall s k. KnownLen s => (0 < Length s) => ((Length (Init s) + 1) ~ Length s => k) -> k
-lengthInit = lengthInit' (typeSList @s)
+lengthInit :: forall s. (0 < Length s) => SList s -> ((Length (Init s) + 1) :~: Length s)
+lengthInit x = lengthHomo @(Init s) @'[Last s] #> initLast x #> Refl
 
 type a :<=: b = ((a <=? b):~: 'True)
+type i :<: j = (i+1) :<=: j
 
-incrPos' :: forall x. 1 :<=: (x+1)
-incrPos' = unsafeCoerce Refl
+incrPos :: forall x. 1 :<=: (x+1)
+incrPos = unsafeCoerce Refl
 
-incrPos :: forall x k. ((0 < (x + 1)) => k) -> k
-incrPos k = case incrPos' @x of Refl -> k
+incrCong :: forall x y. ((x+1) ~ (y+1)) => x :~: y
+incrCong = unsafeCoerce Refl
 
-incrCong' :: forall x y. ((x+1) ~ (y+1)) => x :~: y
-incrCong' = unsafeCoerce Refl
+initLast :: forall s. {-(0 < Length s) => FIXME -} SList s -> ((Init s ++ '[Last s]) :~: s)
+initLast Unit = error "initLast': does not hold on empty lists"
+initLast ((:*) _ Unit) = Refl
+initLast ((:*) _ ((:*) y ys)) = initLast ((:*) y ys) #> Refl
 
-incrCong :: forall x y k. ((x+1) ~ (y+1)) => ((x ~ y) => k) -> k
-incrCong k = case incrCong' @x @y of Refl -> k
+initLast' :: forall s. {-(0 < Length s) => FIXME -} KnownShape s => ((Init s ++ '[Last s]) :~: s)
+initLast' = initLast (typeSList @s)
 
-initLast' :: forall s k. {-(0 < Length s) => FIXME -} SList s -> ((Init s ++ '[Last s]) ~ s => k) -> k
-initLast' Unit _ = error "initLast': does not hold on empty lists"
-initLast' ((:*) _ Unit) k = k
-initLast' ((:*) _ ((:*) y ys)) k = initLast' ((:*) y ys) k
+appRUnit :: forall s. (s ++ '[]) :~: s
+appRUnit = unsafeCoerce Refl
 
-initLast :: forall s k. KnownShape s => ((Init s ++ '[Last s]) ~ s => k) -> k
-initLast = initLast' @s typeSList
+appAssoc ::  ((xs ++ ys) ++ zs) :~: (xs ++ (ys ++ zs))
+appAssoc = unsafeCoerce Refl
 
-appRUnit' :: forall s. (s ++ '[]) :~: s
-appRUnit' = unsafeCoerce Refl
-
-appRUnit :: forall s k. (((s ++ '[]) ~ s) => k) -> k
-appRUnit k = case appRUnit' @s of
-  Refl -> k
-
-appAssoc' ::  ((xs ++ ys) ++ zs) :~: (xs ++ (ys ++ zs))
-appAssoc' = unsafeCoerce Refl
-
-appAssoc :: forall xs ys zs k. (((xs ++ ys) ++ zs) ~ (xs ++ (ys ++ zs)) => k) -> k
-appAssoc k = case appAssoc' @xs @ys @zs of Refl -> k
-
-appAssocS :: forall xs ys zs k proxy1 proxy2 proxy3.
-             proxy1 xs -> proxy2 ys -> proxy3 zs -> (((xs ++ ys) ++ zs) ~ (xs ++ (ys ++ zs)) => k) -> k
-appAssocS _ _ _  k = case appAssoc' @xs @ys @zs of Refl -> k
+appAssocS :: forall xs ys zs proxy1 proxy2 proxy3.
+             proxy1 xs -> proxy2 ys -> proxy3 zs -> (((xs ++ ys) ++ zs) :~: (xs ++ (ys ++ zs)))
+appAssocS _ _ _  = appAssoc @xs @ys @zs
 
 
 knownLast' :: All KnownNat s => SList s -> (KnownNat (Last s) => k) -> k
@@ -222,12 +180,12 @@ knownLast' ((:*) _ ((:*) y xs)) k = knownLast' ((:*) y xs) k
 knownLast :: forall s k. KnownShape s => (KnownNat (Last s) => k) -> k
 knownLast = knownLast' @s typeSList
 
-knownInit' :: All KnownNat s => SList s -> (KnownShape (Init s) => k) -> k
-knownInit' Unit _ = error "knownLast: does not hold on empty lists"
-knownInit' ((:*) _ Unit) k = k
-knownInit' ((:*) _ ((:*) y xs)) k = knownInit' ((:*) y xs) k
+knownInit' :: All KnownNat s => SList s -> Sat KnownShape (Init s)
+knownInit' Unit = error "knownLast: does not hold on empty lists"
+knownInit' ((:*) _ Unit) = Sat
+knownInit' ((:*) _ ((:*) y xs)) = knownInit' ((:*) y xs) ?> Sat
 
-knownInit :: forall s k. KnownShape s => (KnownShape (Init s) => k) -> k
+knownInit :: forall s. KnownShape s => Sat KnownShape (Init s)
 knownInit = knownInit' @s typeSList
 
 knownTail' :: forall x s k. All KnownNat s => SList (x ': s) -> (KnownShape s => k) -> k
@@ -237,11 +195,11 @@ knownTail' ((:*) _ ((:*) y xs)) k = knownTail' ((:*) y xs) k
 knownTail :: forall s x xs k. (s ~ (x ': xs), KnownShape s) => (KnownShape xs => k) -> k
 knownTail = knownTail' @x @xs typeSList
 
-knownAppendS :: forall s t pt k. (All KnownNat s, KnownShape t) => SList s -> pt t -> (KnownShape (s ++ t) => k) -> k
-knownAppendS Unit _t k = k
-knownAppendS ((:*) _ n) t k = knownAppendS n t k
+knownAppendS :: forall s t pt. (All KnownNat s, KnownShape t) => SList s -> pt t -> Sat KnownShape (s ++ t)
+knownAppendS Unit _t = Sat
+knownAppendS ((:*) _ n) t = knownAppendS n t ?> Sat
 
-knownAppend :: forall s t k.  (KnownShape s, KnownShape t) => (KnownShape (s ++ t) => k) -> k
+knownAppend :: forall s t.  (KnownShape s, KnownShape t) => Sat KnownShape (s ++ t)
 knownAppend = knownAppendS (typeSList @s) (Proxy @t)
 
 
@@ -253,9 +211,9 @@ knownSList :: NP proxy xs -> (KnownLen xs => k) -> k
 knownSList Unit k = k
 knownSList ((:*) _ n) k = knownSList n k
 
-knownSShape :: SShape xs -> (KnownShape xs => k) -> k
-knownSShape Unit k = k
-knownSShape ((:*) Sat s) k = knownSShape s k
+knownSShape :: SShape xs -> Sat KnownShape xs
+knownSShape Unit = Sat
+knownSShape ((:*) Sat s) = knownSShape s ?> Sat
 
 data DimExpr (a :: Nat) (x :: Nat) (b :: Nat) where
   ANat :: Sat KnownNat x -> DimExpr a x (a * x)
@@ -271,7 +229,10 @@ dimSat (x :*: y) = dimSat x `satMul` dimSat y
 
 normDim :: forall ws xs ys. DimExpr ws xs ys -> (ws * xs) :~: ys
 normDim (ANat _) = Refl
-normDim (a :*:b) = case normDim a of Refl -> case normDim b of Refl -> prodAssocS (Proxy @ws) (dimSat a) (dimSat b) Refl
+normDim (a :*:b) = normDim a #>
+                   normDim b #>
+                   prodAssocS (Proxy @ws) (dimSat a) (dimSat b) #>
+                   Refl
 
 data ShapeExpr (a :: Nat) (x :: Shape) (b :: Nat) where
   Single :: DimExpr a x b -> ShapeExpr a '[x] b
@@ -296,11 +257,11 @@ exprSShape (x :++: y) = exprSShape x .+. exprSShape y
 normShape :: forall ws xs ys. ShapeExpr ws xs ys -> (ws * Product xs) :~: ys
 normShape (Single x) = normDim x
 normShape (AShape _) = Refl
-normShape (l :++: r) = case normShape l of
-                         Refl ->  case normShape r of
-                           Refl -> prodHomoS (exprSShape l) (exprSShape r) $
-                                   prodAssocS (Proxy @ws) (productS (exprSShape l)) (productS (exprSShape r))
-                                   Refl
+normShape (l :++: r) = normShape l #>
+                       normShape r #>
+                       prodHomoS (exprSShape l) (exprSShape r) #>
+                       prodAssocS (Proxy @ws) (productS (exprSShape l)) (productS (exprSShape r)) #>
+                       Refl
         -- r :: normShape b y ys ----> (b * y) ~ ys   (1)
         -- l :: normShape ws x b ----> (ws * x) ~ b   (2)
         -- subst (2) in (1): ((ws * x) * y) ~ ys
@@ -348,4 +309,4 @@ deriving instance (Functor (V n))
 instance KnownNat n => Applicative (V n) where
   pure x = fmap (const x) (vcount @n)
   VUnit <*> VUnit = VUnit
-  (f :** fs) <*> (a :** as) = succPosProx2 fs  (f a :** (fs <*> unsafeCoerce as))
+  (f :** fs) <*> (a :** as) = succPosProx2 fs #> (f a :** (fs <*> unsafeCoerce as))

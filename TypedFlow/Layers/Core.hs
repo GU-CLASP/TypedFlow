@@ -140,18 +140,18 @@ data ConvP t outChannels inChannels filterSpatialShape
 
 instance (KnownNat outChannels,KnownNat inChannels, KnownShape filterSpatialShape, KnownBits t) =>
   ParamWithDefault (ConvP t outChannels inChannels filterSpatialShape) where
-  defaultInitializer = prodHomo @filterSpatialShape @'[inChannels, outChannels] $
-                       prodAssoc @(Product filterSpatialShape) @inChannels @outChannels $
-                       knownAppend @filterSpatialShape @'[inChannels,outChannels] $
-                       knownProduct @filterSpatialShape $
+  defaultInitializer = prodHomo @filterSpatialShape @'[inChannels, outChannels] #>
+                       prodAssoc @(Product filterSpatialShape) @inChannels @outChannels #>
+                       knownAppend @filterSpatialShape @'[inChannels,outChannels] ?>
+                       knownProduct @filterSpatialShape ?>
                        ConvP <$> (reshape <$> i) <*> pure (knownFloating @t (constant 0.1))
     where i :: Gen (T '[Product filterSpatialShape*inChannels,outChannels] (Flt t))
-          i = knownProduct @filterSpatialShape glorotUniform
+          i = knownProduct @filterSpatialShape ?> glorotUniform
 
 instance (KnownNat outChannels,KnownNat inChannels, KnownShape filterSpatialShape, KnownBits t) =>
   KnownTensors (ConvP t outChannels inChannels filterSpatialShape) where
-  travTensor f s (ConvP x y) = knownAppend @filterSpatialShape @'[inChannels,outChannels] $
-          ConvP <$> travTensor f (s<>"_filters") x <*> travTensor f (s <> "_biases") y
+  travTensor f s (ConvP x y) = knownAppend @filterSpatialShape @'[inChannels,outChannels] ?>
+          (ConvP <$> travTensor f (s<>"_filters") x <*> travTensor f (s <> "_biases") y)
 
 -- | Size-preserving convolution layer
 conv' :: forall s outChannels filterSpatialShape inChannels t.
@@ -173,12 +173,12 @@ conv :: forall outChannels filterSpatialShape inChannels s t.
             => ConvP t outChannels inChannels filterSpatialShape
             -> T (Init s ++ '[inChannels]) ('Typ 'Float t)
             -> T s ('Typ 'Float t)
-conv = initLast @s $
-        incrPos @(Length filterSpatialShape) $
-        lengthInit @s $
-        incrCong @(Length filterSpatialShape) @(Length (Init s)) $
-        knownInit @s $
-        conv' @(Init s)
+conv = initLast' @s #>
+       incrPos @(Length filterSpatialShape) #>
+       lengthInit (typeSList @s) #>
+       incrCong @(Length filterSpatialShape) @(Length (Init s)) #>
+       knownInit @s ?>
+       conv' @(Init s)
 
 
 -- -- | Convolution layers with no padding (applying the filter only on

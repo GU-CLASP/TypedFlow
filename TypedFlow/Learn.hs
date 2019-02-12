@@ -35,7 +35,7 @@ import Data.Proxy
 import System.IO.Unsafe
 import Data.Unique
 import TypedFlow.Types
-import TypedFlow.Types.Proofs (knownAppend, knownAppendS)
+import TypedFlow.Types.Proofs (knownAppend, knownAppendS, (?>))
 import TypedFlow.Abstract (Batched(..),broadcastGen,defaultT)
 import TypedFlow.TF
 import Prelude hiding (RealFrac(..))
@@ -153,7 +153,7 @@ instance (KnownTyp t, KnownShape p) => Batched (StateAndOutput t p) where
   batchify n f (StateAndOutput s ModelOutput{..} xs)
     = StateAndOutput (n :* s)
       ModelOutput{modelLoss = f modelLoss
-                 ,modelY = knownAppendS s (Proxy @p) (f modelY)
+                 ,modelY = knownAppendS s (Proxy @p) ?> (f modelY)
                  ,modelCorrect = f modelCorrect}
       (batchify n f xs)
 
@@ -207,7 +207,7 @@ precompile :: forall bs p sy ty stateShapes. KnownNat bs
            => (KnownShape sy, KnownShape p, KnownTyp ty)
            => (HTV ty stateShapes -> Gen (StateAndOutput ty p ((bs ': sy) ': stateShapes)))
            -> (Gen (HTV ty stateShapes,Scalar Float32))
-precompile model =   knownAppend @sy @p $ do
+precompile model =   knownAppend @sy @p ?> do
     regularizers <- gets genRegularizers
     trainingPhasePlaceholder <- placeholder "training_phase"
     modify $ \GState{..} -> GState{genTrainingPlaceholder = trainingPhasePlaceholder,..}
@@ -234,7 +234,7 @@ batchModel fGen stateVars =
       unbroadcastStates :: forall ss. SList ss -> HTV ty_ (Ap (FMap (Cons batchSize)) ss) -> HTV ty_ ss
       unbroadcastStates Unit Unit = Unit
       unbroadcastStates (_ :* ss) (F x :* xs) = F (Unbroadcast batchSize u x) :* unbroadcastStates ss xs
-  in knownAppend @sy_ @p $ do 
+  in knownAppend @sy_ @p ?> do 
        xs <- genBatchedPlaceholders u batchSize (typeSList @shapesAndTypes)
        f <- fGen
        return $ broadcastGen u True (Proxy @batchSize) (f xs (unbroadcastStates (typeSList) stateVars))

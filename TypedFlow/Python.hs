@@ -144,7 +144,7 @@ cache x = do
       return (pyVarRepr v)
 
 newPyVar' :: forall s t. SShape s -> STyp t -> Python (Ref s t)
-newPyVar' s t = knownSShape s $ knownTyp t $ newPyVar @s @t
+newPyVar' s t = knownSShape s ?> (knownTyp t $ newPyVar @s @t)
 
 newPyVar :: forall s t. KnownShape s => KnownTyp t => Python (Ref s t)
 newPyVar = do
@@ -199,7 +199,7 @@ generatePure x = do
   case mv of
     Just v -> return v
     Nothing -> do
-      e <- generatePure' (\s x' -> knownSShape s $ generatePure x') typeSShape x
+      e <- generatePure' (\s x' -> knownSShape s ?> generatePure x') typeSShape x
       v <- cache @s @t e
       modify (\g -> g {genPureTable = (snMapInsert2 sn v) (genPureTable g)})
       return v
@@ -216,7 +216,7 @@ genDistr d sh s1 = case d of
     funcall' (funcall "tf.orthogonal_initializer" [named "dtype" (showTyp @t)]) [named "shape" (showSShape (sh .+. s1))]
 
 generatePure' :: forall s t. KnownTyp t => (forall s' t'. KnownTyp t' => SShape s' -> T s' t' -> Python DOC) -> SShape s -> T s t -> Python DOC
-generatePure' rec sR = knownSShape sR $ \case
+generatePure' rec sR = knownSShape sR ?> \case
   Unbroadcast{} -> error "broadcasting operation did not complete!"
   If c x y -> do
     rc <- rec typeSShape c
@@ -424,7 +424,7 @@ compileAlreadyBatched Options{..} model = do
 
 paramToPeek :: VarInfo -> Python (String,UntypedExpression)
 paramToPeek (VarInfo name s t x) = do
-  x' <- knownSShape s $ knownTyp t $ generatePure x
+  x' <- knownSShape s ?> (knownTyp t $ generatePure x)
   return (name,x')
 
 untypedExprs :: All KnownShape xs => KnownTyp t =>  HTV t xs -> Python [DOC]

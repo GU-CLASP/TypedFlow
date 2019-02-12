@@ -113,10 +113,10 @@ instance (KnownNat n, KnownBits w) => (ParamWithDefault (StackP w n)) where
 stackRU :: ∀k n bs w. KnownNat k => KnownNat n => (KnownNat bs) => (KnownBits w) => StackP w n ->
         RnnCell w '[ '[k+1,n]] (Tensor '[n] (Flt w)) (Tensor '[n] (Flt w))
 stackRU (StackP w) input = C $ \(VecSing st1) ->
-  succPos @k $
-  plusMono @k @1 $
-  plusComm @k @1 $ 
-  termCancelation @k @1 $
+  succPos @k #>
+  plusMono @k @1 #>
+  plusComm @k @1 #>
+  termCancelation @k @1 #>
   let ct1 = nth0' @0 st1
       hx = concat0 ct1 input
       action :: T '[3] (Flt w)

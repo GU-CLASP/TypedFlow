@@ -124,7 +124,7 @@ broadcastIndex' n@Sat cr is ix = concatT' ((:*) n is) (natSat @1) cr Unit nIndex
         nIndex = DirectBroadcast Unit Unit ((:*) n Unit) (is .+. (:*) (natSat @1) Unit) range
 
 directBroadcast0 :: forall n s t. KnownShape s => KnownNat n => T s t -> T (n:s) t
-directBroadcast0 = appRUnit @s $ DirectBroadcast Unit ((:*) (natSat @n) Unit) (typeSShape @s) Unit
+directBroadcast0 = appRUnit @s #> DirectBroadcast Unit ((:*) (natSat @n) Unit) (typeSShape @s) Unit
 
 broadcastIndexMany :: forall n containerShape indexShape w.
   KnownBits w =>
@@ -135,15 +135,15 @@ broadcastIndexMany :: forall n containerShape indexShape w.
   IndexTensor (containerShape ++ indexShape) (containerShape ++ '[n]) w
 broadcastIndexMany _ Unit _ x = x
 broadcastIndexMany n ((:*) m@Sat cs) is x =
-  knownSShape (cs .+. (*:) is (sListLenAsNat ((*:) cs n))) $
+  knownSShape (cs .+. (*:) is (sListLenAsNat (cs *: n))) ?>
   -- (m : cs ++ is ++  '[(Length (m : cs ++ [n]))])
-  broadcastIndex m ((*:) cs n) (cs .+. is) $
+  (broadcastIndex m ((*:) cs n) (cs .+. is) $
   -- (m : (cs ++ is ++  '[Length (cs ++ [n])]))
-  appAssocS cs is ((:*) (sListLenAsNat ((*:) cs n)) Unit) $
+  (appAssocS cs is ((:*) (sListLenAsNat (cs *: n)) Unit) #>
   -- (m : cs ++ is ++ '[Length (cs ++ [n])])
   directBroadcast0 $
   -- (cs ++ is ++  '[Length (cs ++ [n])])
-  broadcastIndexMany n cs is x
+  broadcastIndexMany n cs is x))
   -- is
 
 --  Product (filterSpatialShape ++ '[inChannels, outChannels * n])
@@ -173,7 +173,7 @@ protoBroadcast :: forall n s t.
 protoBroadcast u varyNoise n@(Sat) rec finished ty s tensor
   | finished tensor = simpleBC
   | otherwise = knownTyp ty $ case tensor of
-  Softmax bs@Sat m@Sat x -> prodAssocS n bs m $ reshapeAuto (Softmax (satMul n bs) m ((reshapeAuto (rec (typeSShape) x))))
+  Softmax bs@Sat m@Sat x -> prodAssocS n bs m #> reshapeAuto (Softmax (satMul n bs) m ((reshapeAuto (rec (typeSShape) x))))
   DirectBroadcast s0 s1 s2 s3 x -> DirectBroadcast (n :* s0) s1 s2 s3 (rec (s0 .+. s2) x)
   GatherND cs es is x ix
     | finished x -> GatherND cs es (n :* is) x (rec (is *: sListLenAsNat cs) ix)
@@ -183,11 +183,11 @@ protoBroadcast u varyNoise n@(Sat) rec finished ty s tensor
   -- more stuff is sampled), otherwise we copy the noise using simple
   -- broadcasting
   Pool bs@Sat window pt numChans outSpatial x ->
-    knownSShape (zipWithMulSShapes window outSpatial *: numChans) $
-    prodAssocS n bs (productS (zipWithMulSShapes window outSpatial *: numChans)) $
-    prodAssocS n bs (productS (outSpatial *: numChans)) $
-    reshapeFrom (satMul n bs :* outSpatial *: numChans) $
-    Pool (satMul n bs) window pt numChans outSpatial (reshapeAuto (rec typeSShape x))
+    (knownSShape (zipWithMulSShapes window outSpatial *: numChans) ?>
+     (prodAssocS n bs (productS (zipWithMulSShapes window outSpatial *: numChans)) #>
+     (prodAssocS n bs (productS (outSpatial *: numChans)) #>
+     (reshapeFrom (satMul n bs :* outSpatial *: numChans) $
+     Pool (satMul n bs) window pt numChans outSpatial (reshapeAuto (rec typeSShape x))))))
   Where cond x y -> Where (rec s cond) (rec s x) (rec s y)
   If cond x y
     | finished cond -> If cond (rec s x) (rec s y)
@@ -197,7 +197,7 @@ protoBroadcast u varyNoise n@(Sat) rec finished ty s tensor
     | u == u' -> case testEq p n of
         Nothing -> UnOp (error "panic.unbroadcast") Unit x
         Just Refl -> x
-    | otherwise -> knownSShape s $ Unbroadcast p u' (transpose01 (rec (p :* s) x))
+    | otherwise -> knownSShape s ?> Unbroadcast p u' (transpose01 (rec (p :* s) x))
   MatMul Unit a@Sat b@Sat c@Sat x y
      -- this optimisation is absolutely critical to implement dense
      -- layers efficiently (at least with TF 1.3). (about 10x performance increase)
@@ -212,35 +212,35 @@ protoBroadcast u varyNoise n@(Sat) rec finished ty s tensor
     | finished ix -> Gather is (n :* s0) m s1 (rec (s0 .+. m :* s1) x) ix
     -- otherwise, Gather is not strong enough, and we need to convert
     -- it to GatherND before broadcasting.
-    | otherwise -> appAssocS s0 (m :* Unit) s1 $
-                   lengthHomoS s0 (m :* Unit) $
-                   prodHomoS is ((natSat @1) :* Unit) $
-                   knownSShape is $
+    | otherwise -> appAssocS s0 (m :* Unit) s1 #>
+                   lengthHomoS s0 (m :* Unit) #>
+                   prodHomoS is ((natSat @1) :* Unit) #>
+                   knownSShape is ?>
                    rec s (GatherND (s0 *: m) s1 (s0 .+. is) x (broadcastIndexMany m s0 is (reshapeAuto ix)))
   Transpose s0 t x -> Transpose (n :* s0) (PermSkip t) (rec s0 x)
   ReshapeFrom s0 x -> reshapeFrom (n :* s0) (rec s0 x)
   Concat s0 s1 xs -> Concat (n :* s0) s1 (hmap (\(Catable m x) -> (Catable m (rec (s0 .+. m :* s1) x))) xs)
   Convolution bs@(Sat) inChans outChans filterShape s0 x filters
     | finished filters ->
-      prodAssocS n bs (productS (s0 *: inChans)) $
-      prodAssocS n bs (productS (s0 *: outChans)) $
-      knownSShape (s0 *: inChans)  $
-      reshapeFrom (satMul n bs :* s0 *: outChans) $ 
-      Convolution (satMul n bs) inChans outChans filterShape s0 (reshapeAuto (rec typeSShape x)) filters
+      prodAssocS n bs (productS (s0 *: inChans))  #>
+      prodAssocS n bs (productS (s0 *: outChans)) #>
+      knownSShape (s0 *: inChans)                 ?>
+      reshapeFrom (satMul n bs :* s0 *: outChans) 
+                (Convolution (satMul n bs) inChans outChans filterShape s0 (reshapeAuto (rec typeSShape x)) filters)
     | finished x ->
-      knownSShape (filterShape .+. inChans :* outChans :* Unit) $
-      knownSShape (bs :* s0 .+. outChans :* Unit) $
-      transposeN' $
+      knownSShape (filterShape .+. inChans :* outChans :* Unit) ?>
+      knownSShape (bs :* s0 .+. outChans :* Unit) ?>
+      (transposeN' $
       reshapeProven (ANat bs !:* AShape s0 *:! (ANat outChans :*: ANat n))
                     ((ANat bs !:* AShape s0 *:! ANat outChans) *:! ANat n) $
       Convolution bs inChans (outChans `satMul` n) filterShape s0 x $
       reshapeProven ((AShape filterShape :++: (ANat inChans !:* Single (ANat outChans))) *:! ANat n)
                     (AShape filterShape :++: ANat inChans !:* Single (ANat outChans :*: ANat n)) $
       transposeN $
-      rec typeSShape filters
+      rec typeSShape filters)
     | otherwise -> error "broadcast on both convolution filter and data not implemented"
  where simpleBC :: Tensor (n ': s) t
-       simpleBC = appRUnit @s $ DirectBroadcast Unit (n :* Unit) s Unit tensor
+       simpleBC = appRUnit @s #> DirectBroadcast Unit (n :* Unit) s Unit tensor
 
 inversePerm :: Permutation a b -> Permutation b a
 inversePerm PermId = PermId
@@ -268,7 +268,7 @@ reshapeAuto = reshapeFrom typeSShape
 
 reshapeProven :: forall s s0 t n. ShapeX s0 n -> ShapeX s n -> T s0 t -> T s t
 reshapeProven s1 s2 = case decideProductEq s1 s2 of
-                        Refl -> knownSShape (exprSShape s1) $ reshapeAuto
+                        Refl -> knownSShape (exprSShape s1) ?> reshapeAuto
 
 reshapeTo :: forall s s0 t proxy. KnownShape s0=> Product s ~ Product s0 => proxy s -> T s0 t -> T s t
 reshapeTo _ = reshapeAuto
@@ -304,14 +304,14 @@ range = T (Range (natSat @n))
 
 -- | Constant
 constant :: forall s t w. KnownShape s => KnownBits w => KnownKind t => HaskType ('Typ t w) -> T s ('Typ t w)
-constant c = appRUnit @s $ broadcastTT @s (scalar c)
+constant c = appRUnit @s #> broadcastTT @s (scalar c)
 
 scalar :: forall t w. KnownBits w => KnownKind t => HaskType ('Typ t w) -> Scalar ('Typ t w)
 scalar = T . Constant
 
 reduceAll :: forall s t. KnownTyp t => KnownShape s =>
      (∀n s'. (KnownTyp t,KnownShape s') => Axis n s' -> T s' t -> T (Take n s' ++ Drop ('Succ n) s') t) -> Tensor s t -> Tensor '[] t
-reduceAll op x = knownProduct @s $
+reduceAll op x = knownProduct @s ?>
    op axis0 (reshapeTo ((:*) (productS (typeSShape @s)) Unit) x)
 
 -- | Mean value of the input tensor.
@@ -390,7 +390,7 @@ instance (KnownBits b, KnownShape s) => Floating (T s ('Typ 'Float b)) where
 -- | Pretend that the argument is a constant for the purposes of
 -- gradient computation
 stopGradient :: ∀ s t. KnownTyp t => KnownShape s => Tensor s t -> Tensor s t
-stopGradient = appRUnit @s $ UnOp StopGradient (typeSShape @s)
+stopGradient = appRUnit @s #> UnOp StopGradient (typeSShape @s)
 
 -- | Divide tensors, broacasting along shape @s@
 (⊘) :: forall s t. KnownBits t => KnownShape s => T s ('Typ 'Float t) -> T s ('Typ 'Float t) -> T s ('Typ 'Float t)
@@ -423,13 +423,13 @@ matmul :: forall m n o t. KnownNumeric t => KnownNat m => KnownNat o => KnownNat
 matmul = MatMul Unit Sat Sat Sat
 
 unOp :: forall s t. KnownShape s => KnownNumeric t => Num1Op -> T s t -> T s t
-unOp op = appRUnit @s $ UnOp (Num1Op op)  (typeSShape @s)
+unOp op = appRUnit @s #> UnOp (Num1Op op)  (typeSShape @s)
 
 unFlOp :: forall s t. KnownBits t => KnownShape s => Float1Op -> T s (Flt t) -> T s (Flt t)
-unFlOp op = appRUnit @s $ UnOp (Float1Op op) (typeSShape @s)
+unFlOp op = appRUnit @s #> UnOp (Float1Op op) (typeSShape @s)
 
 binOp :: forall s t u. KnownShape s => KnownTyp t => Simple2Op t u -> T s t -> T s t -> T s u
-binOp op = appRUnit @s $ BinOp (Simple2Op op) (typeSShape @s) Unit typeSTyp Unit typeSTyp
+binOp op = appRUnit @s #> BinOp (Simple2Op op) (typeSShape @s) Unit typeSTyp Unit typeSTyp
 
 sigmoid, relu, square, round, floor, hardSigmoid
    :: ∀ s t. (KnownShape s, KnownBits t)
@@ -488,11 +488,11 @@ concat1 = concatT axis1
 expandDim :: forall n s t. KnownTyp t => KnownShape s => (PeanoNat n <= Length s) => Tensor s t -> Tensor (Take n s ++ (1 ': Drop n s)) t
 expandDim x =
   -- Product (Take n s ++ (1 ': Drop n s))
-  prodHomo @(Take n s) @(1' : Drop n s) $
+  prodHomo @(Take n s) @(1' : Drop n s) #>
   -- Product (Take n s) * Product (Drop n s)
-  prodHomo @(Take n s) @(Drop n s) $
+  prodHomo @(Take n s) @(Drop n s) #>
   -- Product (Take n s ++ (1 ': Drop n s))
-  takeDrop @s @n $
+  takeDrop @s @n #>
   -- Product s
   reshapeFrom (typeSShape @s) x
 
@@ -513,14 +513,14 @@ reshape = reshapeAuto
 
 -- | Flatten all the dimensions of the tensor
 flattenAll :: forall s t. KnownTyp t => KnownShape s => Tensor s t -> Tensor '[Product s] t
-flattenAll = knownProduct @s reshape
+flattenAll = knownProduct @s ?> reshape
 
 inflateAll :: forall s t. KnownTyp t => KnownShape s => Tensor '[Product s] t -> Tensor s t
-inflateAll = knownProduct @s reshape
+inflateAll = knownProduct @s ?> reshape
 
 -- | Reshape a tensor so that the first two dimensions are collapsed
 flatten2 :: ∀ m n s t. KnownTyp t => (KnownNat m, KnownNat n, KnownShape s) => Tensor (m ': n ': s) t -> Tensor (m*n ': s) t
-flatten2 = prodAssoc @m @n @(Product s) reshape
+flatten2 = prodAssoc @m @n @(Product s) #> reshape
 
 
 squeeze0 :: ∀ s t. KnownTyp t => (KnownShape s) => Tensor (1 ': s) t -> Tensor s t
@@ -528,41 +528,41 @@ squeeze0 = reshape
 
 -- | Reshape a tensor so that the last two dimensions are collapsed
 flattenN2 :: ∀ s m n t. KnownTyp t => (KnownNat m, KnownNat n, KnownShape s) => Tensor (s ++ '[m,n]) t -> Tensor (s ++ '[m*n]) t
-flattenN2  = prodHomo @s @'[m,n] $
-             prodHomo @s @'[m*n] $
-             knownAppend @s @'[m*n] $
-             knownAppend @s @'[m,n] $
+flattenN2  = prodHomo @s @'[m,n] #>
+             prodHomo @s @'[m*n] #>
+             knownAppend @s @'[m*n] ?>
+             knownAppend @s @'[m,n] ?>
              reshape
 
 -- | Reshape a tensor so that the first three dimensions are collapsed
 flatten3 :: ∀ m n o s t. KnownTyp t => (KnownNat m, KnownNat n, KnownNat o, KnownShape s) => Tensor (m ': n ': o ': s) t -> Tensor (m*n*o ': s) t
 flatten3  =  -- (m * (n * (o * Product s)))
-             prodAssoc @m @n @(o * Product s) $
+             prodAssoc @m @n @(o * Product s) #>
              -- (m * n) * (o * Product s)
-             prodAssoc @(m * n) @o @(Product s) $
+             prodAssoc @(m * n) @o @(Product s) #>
              -- ((m * n) * o) * Product s
              reshape
 
 -- | Reshape a tensor so that the first two dimensions are collapsed
 flatten12 :: ∀ m n o s t. KnownTyp t => KnownNat o => (KnownNat m, KnownNat n, KnownShape s) => Tensor (o ': m ': n ': s) t -> Tensor (o ': m*n ': s) t
-flatten12 = prodAssoc @m @n @(Product s) reshape
+flatten12 = prodAssoc @m @n @(Product s) #> reshape
 
 -- | Reshape a tensor so that the first dimension is expanded into two.
 inflate2 :: ∀ m n s t. KnownTyp t => (KnownNat m, KnownNat n, KnownShape s) => Tensor (m*n ': s) t -> Tensor (m ': n ': s) t
-inflate2 = prodAssoc @m @n @(Product s) reshape
+inflate2 = prodAssoc @m @n @(Product s) #> reshape
 
 -- | Reshape a tensor so that the first dimension is expanded into three.
 inflate3 :: ∀ m n o s t. KnownTyp t => (KnownNat m, KnownNat n, KnownNat o, KnownShape s) => Tensor (m*n*o ': s) t -> Tensor (m ': n ': o ': s) t
 inflate3 = -- (m * (n * (o * Product s)))
-           prodAssoc @m @n @(o * Product s) $
+           prodAssoc @m @n @(o * Product s) #>
            -- (m * n) * (o * Product s)
-           prodAssoc @(m * n) @o @(Product s) $
+           prodAssoc @(m * n) @o @(Product s) #>
            -- ((m * n) * o) * Product s
            reshape
 
 -- | Reshape a tensor so that the first two dimensions are collapsed
 inflate12 :: ∀ m n o s t. KnownTyp t => KnownNat o => (KnownNat m, KnownNat n, KnownShape s) => Tensor (o ': m*n ': s) t -> Tensor (o ': m ': n ': s) t
-inflate12 = prodAssoc @m @n @(Product s) reshape
+inflate12 = prodAssoc @m @n @(Product s) #> reshape
 
 
 -- | Access the last element in a tensor (in the 0th dimension)
@@ -583,11 +583,11 @@ vecToNP f (x :** xs) k = vecToNP f xs $ \xs' -> k (f x :* xs')
 
 stackT :: ∀ s0 s (n::Nat) t. KnownShape s => KnownShape s0 => KnownNat n => (KnownLen s0) => V n (T (s0 ++ s) t) -> Tensor (s0 ++ (n ': s)) t
 stackT v = vecToNP @(T (s0++s) t) @(Catable s0 s t)
-             (\x -> (Catable (natSat @1) $ prodHomoS s0 s
-                                          $ prodHomoS s0 (natSat @1 :* s)
-                                          $ knownAppend @s0 @s
-                                          $ knownSShape (s0 .+. natSat @1 :* s)
-                                          $ reshape x))
+             (\x -> (Catable (natSat @1) $ (prodHomoS s0 s #>
+                                            prodHomoS s0 (natSat @1 :* s) #>
+                                            knownAppend @s0 @s ?>
+                                            knownSShape (s0 .+. natSat @1 :* s) ?>
+                                            reshape x)))
              v $ (Concat (typeSShape @s0)  (typeSShape @s)) 
   where s = typeSShape @s; s0 = typeSShape @s0
 
@@ -602,7 +602,7 @@ stack1 = stackT @'[m]
 
 -- | Concatenate @n@ tensors along the last dimension
 stackN :: ∀ s (n::Nat) t. KnownNat n => KnownShape s => V n (T s t) -> Tensor (s ++ '[n]) t
-stackN = appRUnit @s $
+stackN = appRUnit @s #>
          stackT @s @'[]
 
 
@@ -652,9 +652,9 @@ broadcastT x = broadcast u False (Proxy @n) x
 
 -- | simple broadcasting of a tensor
 broadcastTT :: forall a s t. KnownShape s => KnownTyp t => KnownShape a => KnownLen s => T s t ->  T (a ++ s) t
-broadcastTT x = prodHomo @a @s $
-                knownProduct @a $
-                knownAppend @a @s $
+broadcastTT x = prodHomo @a @s #>
+                knownProduct @a ?>
+                knownAppend @a @s ?>
                 reshape (broadcastT @(Product a) x)
 
 -- | Map a function along the first dimension of a tensor
@@ -666,11 +666,11 @@ mapT f x = broadcast u False (Proxy @n) (f (Unbroadcast (natSat @n) u x))
 -- | Map a function along the few first dimensions of a tensor, given by the first type parameter
 mapTT :: forall a s t r u. KnownShape r => KnownShape a => KnownTyp u => KnownLen r => KnownShape s => KnownTyp t
   => (T s t -> T r u) ->  T (a ++ s) t -> T (a ++ r) u
-mapTT f x = prodHomo @a @r $
-            prodHomo @a @s $
-            knownProduct @a $
-            knownAppend @a @r $
-            knownAppend @a @s $
+mapTT f x = prodHomo @a @r #>
+            prodHomo @a @s #>
+            knownProduct @a ?>
+            knownAppend @a @r ?>
+            knownAppend @a @s ?>
             reshape (mapT @(Product a) f (reshape x))
 
 -- | zip  a function along the first dimension of two tensors tensors
@@ -691,13 +691,13 @@ zipWithTT :: forall a (s :: [Nat]) (s1 :: [Nat]) (s2 :: Shape) (t :: Typ) (t1 ::
             -> Tensor (a ++ s1) t1
             -> Tensor (a ++ s2) t2
 zipWithTT f x y = 
-            prodHomo @a @s1 $
-            prodHomo @a @s2 $
-            prodHomo @a @s $
-            knownProduct @a $
-            knownAppend @a @s1 $
-            knownAppend @a @s2 $
-            knownAppend @a @s $
+            prodHomo @a @s1 #>
+            prodHomo @a @s2 #>
+            prodHomo @a @s #>
+            knownProduct @a ?>
+            knownAppend @a @s1 ?>
+            knownAppend @a @s2 ?>
+            knownAppend @a @s ?>
             reshape (zipWithT @(Product a) f (reshape x) (reshape y))
 
 
@@ -711,8 +711,8 @@ convolution :: forall outputChannels filterSpatialShape inChannels s t.
             => T (s ++ '[inChannels]) t -- ^ input tensor
             -> T (filterSpatialShape ++ '[inChannels,outputChannels]) t -- ^ filters
             -> T (s ++ '[outputChannels]) t
-convolution x filters = knownAppend @s @'[outputChannels] $
-                        knownAppend @s @'[inChannels] $
+convolution x filters = knownAppend @s @'[outputChannels] ?>
+                        knownAppend @s @'[inChannels] ?>
   squeeze0 (Convolution (natSat @1) (natSat @inChannels) (natSat @outputChannels) (typeSShape @filterSpatialShape) (typeSShape @s)
              (expandDim0 x)
              filters)
@@ -763,7 +763,7 @@ argmax1 = argmaxInternal (natSat @n) (natSat @m :* Unit) (typeSShape @s)
 
 -- | Cast the element type.
 cast :: forall u s t. KnownTyp t => KnownShape s => KnownTyp u => T s t -> T s u
-cast = appRUnit @s $ UnOp Cast (typeSShape @s)
+cast = appRUnit @s #> UnOp Cast (typeSShape @s)
 
 -- | (dense) softmax cross entropy with logits.
 softmaxCrossEntropyWithLogits :: forall numClasses.
@@ -786,7 +786,7 @@ sigmoidCrossEntropyWithLogits :: forall s w.
                               -> Tensor s (Flt w) -- ^ logits
                               -> Tensor s (Flt w)
 sigmoidCrossEntropyWithLogits  =
-  appRUnit @s $ BinOp SigmoidCrossEntropyWithLogits 
+  appRUnit @s #> BinOp SigmoidCrossEntropyWithLogits 
     (typeSShape @s)      Unit typeSTyp Unit typeSTyp
 
 -- | sparse softmax cross entropy with logits.
@@ -829,7 +829,7 @@ noise d = do
 
 -- | Clip a tensor
 clipByValue :: forall s t. KnownShape s => KnownBits t => Float -> Float -> T s (Flt t) -> T s (Flt t)
-clipByValue lo hi = appRUnit @s $ UnOp (Float1Op (ClipByValue lo hi)) (typeSShape @s)
+clipByValue lo hi = appRUnit @s #> UnOp (Float1Op (ClipByValue lo hi)) (typeSShape @s)
 
 -- | (where_ c x y)[i] = if c[i] then x[i] else y[i]
 where_ :: T s TFBool -> T s t -> T s t -> T s t
