@@ -1,3 +1,7 @@
+{-# LANGUAGE CPP #-}
+#if __GLASGOW_HASKELL__ >= 806
+{-# LANGUAGE NoStarIsType #-}
+#endif
 {-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE DataKinds #-}
@@ -29,14 +33,14 @@
 
 module TypedFlow.Types where
 
-import GHC.TypeLits
+import GHC.TypeLits 
 import Data.Proxy
 import Control.Monad.State
 import Data.Kind (Constraint,Type)
 import Data.Unique
 import qualified Data.Int as Hask
 import Data.Type.Equality
-import Data.Monoid hiding (Sum,Product,Last,All)
+import Data.Monoid hiding (Sum,Product,Last,All,Ap)
 
 newtype (∘) f (g :: k -> k2) (a::k) where
   Comp :: forall f g a. f (g a) -> (f ∘ g) a

@@ -6,6 +6,10 @@ License     : LGPL-3
 Maintainer  : jean-philippe.bernardy@gu.se
 Stability   : experimental
 -}
+{-# LANGUAGE CPP #-}
+#if __GLASGOW_HASKELL__ >= 806
+{-# LANGUAGE NoStarIsType #-}
+#endif
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE RankNTypes #-}

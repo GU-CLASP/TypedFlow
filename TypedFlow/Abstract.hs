@@ -34,6 +34,10 @@ tensor operations. It is not normally imported directly by users.
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE UnicodeSyntax #-}
+{-# LANGUAGE CPP #-}
+#if __GLASGOW_HASKELL__ >= 806
+{-# LANGUAGE NoStarIsType #-}
+#endif
 
 module TypedFlow.Abstract where
 
