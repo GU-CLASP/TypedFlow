@@ -482,7 +482,7 @@ sListLength Unit = 0
 sListLength ((:*) _ s) = 1+sListLength s
 
 sListLen :: NP f s -> Int
-sListLen = fromIntegral . sListLen
+sListLen = fromIntegral . sListLength
 
 sListLenAsNat :: NP f s -> Sat KnownNat (Length s)
 sListLenAsNat Unit = Sat
