@@ -224,19 +224,19 @@ generatePure' rec sR = knownSShape sR ?> \case
     ry <- rec typeSShape y
     return (func "tf.cond" [rc] [("true_fn", lambda0 rx) ,("false_fn", lambda0 ry) ,("strict","True")])
     where lambda0 z = text "lambda: " <> z
-  DirectBroadcast s0 s1 s2 s3 x -> do
-   recx <- rec (s0 .+. s2) x
-   let expanded = func "tf.reshape" [recx,list (map (showDim' "-1")
-          (concat [shapeToList' s0, genericReplicate (sListLength s1) 1
-                  ,shapeToList' s2, genericReplicate (sListLength s3) 1 ]))] []
-   return (funcall "tf.add" [expanded, func "tf.zeros" [showSShape sR] [("dtype", showTyp @t)]])
-  -- unfortunately, broadcast_to is broken: https://github.com/tensorflow/tensorflow/issues/21901
+  -- if broadcast_to is broken: https://github.com/tensorflow/tensorflow/issues/21901
   -- DirectBroadcast s0 s1 s2 s3 x -> do
   --  recx <- rec (s0 .+. s2) x
   --  let expanded = func "tf.reshape" [recx,list (map (showDim' "-1")
   --         (concat [shapeToList' s0, genericReplicate (sListLength s1) 1
   --                 ,shapeToList' s2, genericReplicate (sListLength s3) 1 ]))] []
-  --  return (funcall "tf.broadcast_to" [expanded, showSShape sR])
+  --  return (funcall "tf.add" [expanded, func "tf.zeros" [showSShape sR] [("dtype", showTyp @t)]])
+  DirectBroadcast s0 s1 s2 s3 x -> do
+   recx <- rec (s0 .+. s2) x
+   let expanded = func "tf.reshape" [recx,list (map (showDim' "-1")
+          (concat [shapeToList' s0, genericReplicate (sListLength s1) 1
+                  ,shapeToList' s2, genericReplicate (sListLength s3) 1 ]))] []
+   return (funcall "tf.broadcast_to" [expanded, showSShape sR])
   Noise noiseId s0 s1 x -> do
     return $ (genDistr x s0 s1) <+> (text "# " <> integer noiseId)
   T op -> return $ case op of
