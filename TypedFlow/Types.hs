@@ -149,7 +149,7 @@ allKnown :: forall constraint s proxy. All constraint s => SList' proxy s -> SLi
 allKnown Unit = Unit
 allKnown (_ :* xs) = Sat :* allKnown xs
 
-class Fun (c :: k -> Constraint)  where
+class Fun (c :: k -> Constraint)  where -- FIXME: use type, not constraint?
   type Ap c (t :: k) :: l
 
 class Cons (x :: k) (xs :: [k])
@@ -185,6 +185,13 @@ type TV s t = NP (K (Tensor s t))
 
 -- | Heterogeneous tensor vector with the same kind of elements
 type HTV t = NP (F T t)
+
+class Scnd' (x::(a,b))
+instance Fun (Scnd') where type Ap Scnd' '(a,b) = b
+
+class Frst' (x::(a,b))
+instance Fun (Frst') where type Ap Frst' '(a,b) = a
+
 
 type family Frst (x :: (a,b)) where Frst '(x,y) = x
 type family Scnd (x :: (a,b)) where Scnd '(x,y) = y

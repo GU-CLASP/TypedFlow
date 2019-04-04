@@ -140,6 +140,11 @@ knownProduct' (_ :* n) = knownProduct' n ?> Sat
 knownProduct :: forall s. KnownShape s => Sat KnownNat (Product s)
 knownProduct = knownProduct' @s typeSList
 
+knownSum' :: forall s f. All KnownNat s => NP f s -> Sat KnownNat (Sum s)
+knownSum' Unit = Sat
+knownSum' (_ :* n) = knownSum' n ?> Sat
+knownSum :: forall s. KnownShape s => Sat KnownNat (Sum s)
+knownSum = knownSum' @s typeSList
 
 takeDrop :: forall s n. (PeanoNat n <= Length s) => (Take n s ++ Drop n s) :~: s
 takeDrop = unsafeCoerce Refl
