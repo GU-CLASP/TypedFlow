@@ -158,7 +158,7 @@ unopInputShape (Diag n) = n :* Unit
 unopInputShape Cast = Unit
 unopInputShape (Axis1Op o) = case o of
   ArgMax n s -> n :* s
-  OneHot s -> s
+  OneHot _n s -> s
   ReduceOp n s _ -> n :* s
 unopInputShape StopGradient = Unit
 unopInputShape (Num1Op _) = Unit

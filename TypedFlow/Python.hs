@@ -258,7 +258,7 @@ generatePure' rec sR = knownSShape sR ?> \case
     StopGradient -> funcall "tf.stop_gradient" [recx]
     Axis1Op op' ->
        let (op,args) = case op' of
-                         OneHot{} -> ("tf.one_hot",[("dtype",showTyp @t), ("depth", int (sListLen s0))])
+                         OneHot depth _ -> ("tf.one_hot",[("dtype",showTyp @t), ("depth", showDimS depth)])
                          ArgMax{} -> ("tf.argmax",[("output_type",showTyp @t)])
                          ReduceOp _ _ r -> ("tf.reduce_" ++ rop, [])
                             where rop = case r of

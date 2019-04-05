@@ -700,7 +700,7 @@ type Tensor shape = T shape
 data ReduceOp = Mean | Max | Min | Sum
 data Axis1Op s1 t s2 u where
   ArgMax :: KnownNumeric t => Sat KnownNat n -> SShape s -> Axis1Op (n ': s) t s ('Typ 'Int b)
-  OneHot :: KnownNumeric t => SShape s -> Axis1Op s ('Typ 'Int b) (n ': s) t
+  OneHot :: KnownNumeric t => Sat KnownNat n -> SShape s -> Axis1Op s ('Typ 'Int b) (n ': s) t
   ReduceOp :: KnownNumeric t => Sat KnownNat n -> SShape s -> ReduceOp -> Axis1Op (n ': s) t s t
 
 data Float1Op
