@@ -806,7 +806,7 @@ sparseSoftmaxCrossEntropyWithLogits  =
 oneHot0 :: forall numClasses w s t. KnownNat numClasses => KnownBits t => KnownBits w =>
   (KnownShape s) =>
   Tensor s ('Typ 'Int w) -> Tensor (numClasses ': s) (Flt t)
-oneHot0 = UnOp (Axis1Op (OneHot (typeSShape @s))) Unit
+oneHot0 = UnOp (Axis1Op (OneHot Sat (typeSShape @s))) Unit
 
 -- | One hot vector along axis 1
 oneHot1 :: forall numClasses w s m t. KnownBits w =>KnownShape s => KnownNat numClasses => KnownNat m => KnownBits t => Tensor (m ': s) ('Typ 'Int w) -> Tensor (m ': numClasses ': s) (Flt t)
