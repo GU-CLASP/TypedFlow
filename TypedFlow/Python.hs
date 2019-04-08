@@ -52,6 +52,9 @@ import qualified Text.PrettyPrint.Compact as PP
 import qualified Data.Map as M
 import TypedFlow.Learn
 
+first :: (t -> a) -> (t, b) -> (a, b)
+first f (x,y) = (f x,y)
+
 paramShape' :: VarInfo -> [Integer]
 paramShape' (VarInfo _ s _ _) = shapeToList' s
 
@@ -384,12 +387,12 @@ compile :: forall batchSize sx tx sy ty sy_ ty_ p.
 compile options fGen = compileGen @batchSize options (simpleModel <$> fGen)
 
 -- | Batchify and compile a model with generic  input to output mapping and states
-compileGen :: forall batchSize shapesAndTypes sy_ ty_ p stateShapes.
+compileGen :: forall batchSize shapesAndTypes sy_ ty_ ps stateShapes.
            (KnownNat batchSize, All KnownPlaceholder shapesAndTypes, KnownLen stateShapes,
             KnownLen shapesAndTypes,
-            All KnownShape stateShapes, KnownShape sy_, KnownTyp ty_, KnownShape p)
+            All KnownShape stateShapes, KnownShape sy_, KnownTyp ty_, All KnownShape ps, KnownLen ps)
          => Options
-         -> Gen (Placeholders shapesAndTypes -> HTV ty_ stateShapes -> (StateAndOutput ty_ p (sy_ ': stateShapes)) )
+         -> Gen (Placeholders shapesAndTypes -> HTV ty_ stateShapes -> StateAndOutputs ty_ ps (sy_ ': stateShapes))
          -> Python ()
 compileGen options fGen =
   let batchedShapesKnown = mapFMap @(Cons batchSize) knownCons (allKnown @KnownShape @stateShapes typeSList)
@@ -397,30 +400,34 @@ compileGen options fGen =
      compileAlreadyBatched @batchSize options (precompile (batchModel @batchSize fGen))
 
 -- | Generic model compilation (do not use unless you know what you're doing)
-compileAlreadyBatched :: forall bs ty stateShapes. KnownNat bs
+compileAlreadyBatched :: forall bs ty stateShapes ps. KnownNat bs
            => KnownTyp ty
            => All KnownShape stateShapes
            => Options
-           -> (Gen (HTV ty stateShapes,Scalar Float32)) -> Python ()
-compileAlreadyBatched Options{..} model = do
+           -> (Gen (NP (K ((String,HTV ty stateShapes,Scalar Float32))) ps)) -> Python ()
+compileAlreadyBatched Options{..} models = do
   gen (text "import tensorflow as tf")
   genFun "mkModel" [text "optimizer=tf.train.AdamOptimizer()"] $ do
-    (updates,lossIn) <- interpGen model
-    loss <- generatePure lossIn
     params <- getParameters
-    trainStep <- assignAny $ case maxGradientNorm of
-      Nothing -> funcall "optimizer.minimize" [loss]
-      Just clip -> funcall "optimizer.apply_gradients" [funcall "zip" [clipByGlobalNorm clip (grad loss params),params]]
+    let go :: forall xs. NP (K (String,HTV ty stateShapes,Scalar Float32)) xs -> Python [(String,DOC)]
+        go Unit = return []
+        go (K (prefix,updates,lossIn) :* ms) = do
+          updates' <- untypedExprs updates
+          loss <- generatePure lossIn
+          trainStep <- assignAny $ case maxGradientNorm of
+            Nothing -> funcall "optimizer.minimize" [loss]
+            Just clip -> funcall "optimizer.apply_gradients" [funcall "zip" [clipByGlobalNorm clip (grad loss params),params]]
+          let pks = map (first (prefix ++)) [("optimizer", (text "optimizer"))
+                                            ,("params", params)
+                                            ,("train", trainStep)
+                                            ,("loss", loss)
+                                            ,("update", list updates')]
+          (pks ++) <$> go ms
+    updatesAndLosses <- interpGen models
+    peeks3 <- go updatesAndLosses
     peeks <- mapM paramToPeek =<< lift (gets genPeeks)
-    updates' <- untypedExprs updates
-    let peeks2 = [("optimizer", (text "optimizer"))
-                 ,("batch_size", (showDim @ bs))
-                 ,("params", params)
-                 ,("train", trainStep)
-                 ,("loss", loss)
-                 ,("update", list updates')
-                 ]
-    gen (text "return " <> dict (peeks ++peeks2))
+    let peeks2 = [("batch_size", (showDim @ bs))]
+    gen (text "return " <> dict (peeks2 ++ peeks ++peeks3))
 
 paramToPeek :: VarInfo -> Python (String,UntypedExpression)
 paramToPeek (VarInfo name s t x) = do
