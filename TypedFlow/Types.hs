@@ -141,11 +141,11 @@ type family All (c :: k -> Constraint) (xs :: [k]) :: Constraint where
   All c '[] = ()
   All c (x ': xs) = (c x, All c xs)
 
-knownAll :: forall constraint s k. SList' (Sat constraint) s -> (All constraint s => KnownLen s => k) -> k
+knownAll :: forall constraint s k. NP (Sat constraint) s -> (All constraint s => KnownLen s => k) -> k
 knownAll Unit k = k
 knownAll (Sat :* xs) k = knownAll xs $ k
 
-allKnown :: forall constraint s proxy. All constraint s => SList' proxy s -> SList' (Sat constraint) s
+allKnown :: forall constraint s proxy. All constraint s => NP proxy s -> NP (Sat constraint) s
 allKnown Unit = Unit
 allKnown (_ :* xs) = Sat :* allKnown xs
 
@@ -166,7 +166,7 @@ instance Fun c => Fun (FMap c)  where
   type Ap (FMap c) '[] = '[]
   type Ap (FMap c) (x ': xs) = Ap c x ': Ap (FMap c) xs
 
-mapFMap :: forall g f xs. (forall x. f x -> f (Ap g x)) -> SList' f xs -> SList' f (Ap (FMap g) xs)
+mapFMap :: forall g f xs. (forall x. f x -> f (Ap g x)) -> NP f xs -> NP f (Ap (FMap g) xs)
 mapFMap _ Unit = Unit
 mapFMap f (x :* xs) = f x :* mapFMap @g @f f xs
 
@@ -292,7 +292,7 @@ hsnoc :: NP f xs -> f x -> NP f (xs ++ '[x])
 hsnoc xs x = happ xs (x :* Unit)
 
 
-data Peano = Zero | Succ Peano -- TODO: type Peano = '[()] (And then SPeano = SList') ?
+data Peano = Zero | Succ Peano -- TODO: type Peano = '[()] (And then SPeano = NP) ?
 
 axis0 :: Axis 'Zero (x ': xs)
 axis0 = AxZero
@@ -541,7 +541,7 @@ listTypeLen = sListLength (typeSList @xs)
 typeSListProxy :: KnownLen xs => proxy xs -> SList xs
 typeSListProxy _ = typeSList
 
-sListProxy :: SList' f xs -> Proxy xs
+sListProxy :: NP f xs -> Proxy xs
 sListProxy _ = Proxy
 
 knownNatVal :: forall x. Sat KnownNat x -> Integer
@@ -566,7 +566,7 @@ proxySShape _ = typeSShape
 
 sListSShape :: forall s. All KnownNat s => SList s -> SShape s
 sListSShape Unit = Unit
-sListSShape ((:*) n s) = (:*) (proxySat n) (sListSShape s)
+sListSShape (n :* s) = proxySat n :* sListSShape s
 
 type None = 514229 --  fibonnaci prime.
 -- type None = 0 - 1 -- GHC does not like negative Nats.
