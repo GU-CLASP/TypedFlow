@@ -394,7 +394,7 @@ compileGen :: forall batchSize shapesAndTypes sy_ ty_ p stateShapes.
 compileGen options fGen =
   let batchedShapesKnown = mapFMap @(Cons batchSize) knownCons (allKnown @KnownShape @stateShapes typeSList)
   in knownAll batchedShapesKnown $
-     compileAlreadyBatched @batchSize options (precompile @batchSize (batchModel fGen))
+     compileAlreadyBatched @batchSize options (precompile (batchModel @batchSize fGen))
 
 -- | Generic model compilation (do not use unless you know what you're doing)
 compileAlreadyBatched :: forall bs ty stateShapes. KnownNat bs

@@ -41,7 +41,10 @@ import TypedFlow.TF
 import Prelude hiding (RealFrac(..))
 import GHC.TypeLits
 import Control.Monad.State (modify, gets)
+
 -- | Triple of values that are always output in a model: prediction, loss and accuracy.
+-- @t@ is the type of the prediction.
+-- @s@ is the shape of the loss and accuracy
 data ModelOutput t predictionShape s =
   ModelOutput {modelY :: T (s++predictionShape) t -- ^ prediction (which can contain prediction-shaped info)
               ,modelLoss :: T s Float32 -- ^ loss associated with the prediction
@@ -105,7 +108,7 @@ categoricalDistribution logits y =
 -- decoder_outputs. It is intended to mask padding positions outside
 -- of the target sequence lengths with values 0.
 --
--- Note that the accuracy is computed by weigthing the accuracies at
+-- Note that the accuracy is computed by multiplying the accuracies at
 -- individual time steps with the targetWeights.
 
 timedCategorical :: forall len nCat bits. KnownNat nCat => KnownNat len => KnownBits bits =>
@@ -197,15 +200,15 @@ addRegularizer :: Scalar Float32 -> Gen ()
 addRegularizer r = modify $ \GState{..} -> GState{genRegularizers=r:genRegularizers,..}
 
 
--- | Prepares the model for compilation:
+-- | Prepares the (already batched) model for compilation:
 -- - add training phase placeholder
 -- - create the state variables
 -- - compute final accuracy and loss (adding eventual regularizers), and expose them.
-precompile :: forall bs p sy ty stateShapes. KnownNat bs
-           => All KnownShape stateShapes
+precompile :: forall p sy ty stateShapes.
+              All KnownShape stateShapes
            => KnownLen stateShapes
            => (KnownShape sy, KnownShape p, KnownTyp ty)
-           => (HTV ty stateShapes -> Gen (StateAndOutput ty p ((bs ': sy) ': stateShapes)))
+           => (HTV ty stateShapes -> Gen (StateAndOutput ty p (sy ': stateShapes)))
            -> (Gen (HTV ty stateShapes,Scalar Float32))
 precompile model =   knownAppend @sy @p ?> do
     regularizers <- gets genRegularizers
@@ -221,21 +224,19 @@ precompile model =   knownAppend @sy @p ?> do
     peekAt "accuracy" accuracy
     return (updates,loss)
 
-
 -- | Batch the model (adding one dimension), create placeholders for the inputs.
-batchModel :: forall batchSize shapesAndTypes sy_ ty_ p stateShapes.
+batchModel :: forall batchSize shapesAndTypes resShapes ty_ stateShapes f.
            (KnownNat batchSize, KnownLen shapesAndTypes, All KnownPlaceholder shapesAndTypes, KnownLen stateShapes,
-            All KnownShape stateShapes, KnownShape sy_, KnownTyp ty_, KnownShape p)
-         => Gen (Placeholders shapesAndTypes -> HTV ty_ stateShapes -> (StateAndOutput ty_ p (sy_ ': stateShapes)) )
+            All KnownShape stateShapes, KnownTyp ty_, All KnownShape resShapes, Batched f)
+         => Gen (Placeholders shapesAndTypes -> HTV ty_ stateShapes -> f resShapes )
          -> HTV ty_ (Ap (FMap (Cons batchSize)) stateShapes) -- ^ state variables
-         -> Gen (StateAndOutput ty_ p (Ap (FMap (Cons batchSize)) (sy_ ': stateShapes))) 
+         -> Gen (f (Ap (FMap (Cons batchSize)) resShapes)) 
 batchModel fGen stateVars =
   let u = unsafePerformIO newUnique -- unique identifier for the batch dimension
       unbroadcastStates :: forall ss. SList ss -> HTV ty_ (Ap (FMap (Cons batchSize)) ss) -> HTV ty_ ss
       unbroadcastStates Unit Unit = Unit
       unbroadcastStates (_ :* ss) (F x :* xs) = F (Unbroadcast batchSize u x) :* unbroadcastStates ss xs
-  in knownAppend @sy_ @p ?> do 
-       xs <- genBatchedPlaceholders u batchSize (typeSList @shapesAndTypes)
-       f <- fGen
-       return $ broadcastGen u True (Proxy @batchSize) (f xs (unbroadcastStates (typeSList) stateVars))
+  in do xs <- genBatchedPlaceholders u batchSize (typeSList @shapesAndTypes)
+        f <- fGen
+        return $ broadcastGen u True (Proxy @batchSize) (f xs (unbroadcastStates (typeSList) stateVars))
  where batchSize = natSat @batchSize
