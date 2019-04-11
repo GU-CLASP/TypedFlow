@@ -154,19 +154,6 @@ data Options = Options {maxGradientNorm :: Maybe Prelude.Float -- ^ apply gradie
 defaultOptions :: Options
 defaultOptions = Options {maxGradientNorm = Nothing}
 
-
--- data StateAndOutput t p ss where
---   StateAndOutput :: SList s -> ModelOutput t p s -> HTV t ss -> StateAndOutput t p (s ': ss)
-
-
--- instance (KnownTyp t, KnownShape p) => Batched (StateAndOutput t p) where
---   batchify n f (StateAndOutput s ModelOutput{..} xs)
---     = StateAndOutput (n :* s)
---       ModelOutput{modelLoss = f modelLoss
---                  ,modelY = knownAppendS s (Proxy @p) (f modelY)
---                  ,modelCorrect = f modelCorrect}
---       (batchify n f xs)
-
 type family Concatenate xs where
   Concatenate (x ': xs) = x ++ Concatenate xs
   Concatenate '[] = '[]
@@ -190,6 +177,12 @@ instance (KnownTyp t, All KnownShape ps) => Batched (StateAndOutputs t ps) where
                                                   ,modelY = knownAppendS s' (Proxy @x) ?> f modelY
                                                   ,modelName = modelName
                                                   ,modelCorrect = f modelCorrect}
+
+nameModels :: String -> StateAndOutputs ty ps stateShapes -> StateAndOutputs ty ps stateShapes
+nameModels prefix (StateAndOutputs s ms ss) = StateAndOutputs s (name ms) ss
+  where name :: NP (F (ModelOutput t) s) ps -> NP (F (ModelOutput t) s) ps
+        name Unit = Unit
+        name (F ModelOutput {..} :* xs) = F ModelOutput {modelName = prefix ++ modelName, ..} :* name xs
 
 jointModels
   :: forall shapesAndTypes ty_ stateShapes sy_ stateShapes2 shapesAndTypes2 ps ps2
