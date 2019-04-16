@@ -163,10 +163,6 @@ data StateAndOutputs t ps ss where
   StateAndOutputs :: SList s -> NP (F (ModelOutput t) s) ps -> HTV t ss -> StateAndOutputs t ps (s ': ss)
 
 
-hmapK :: forall k f g xs. All k xs => (forall x. k x => f x -> g x) -> NP f xs -> NP g xs
-hmapK _ Unit = Unit
-hmapK f (x :* xs) = f x :* hmapK @k f xs
-
 instance (KnownTyp t, All KnownShape ps) => Batched (StateAndOutputs t ps) where
   batchify :: forall n r. KnownNat n => All KnownShape r
     => Proxy n -> (forall s u. KnownTyp u => KnownShape s => T s u -> T (n:s) u)

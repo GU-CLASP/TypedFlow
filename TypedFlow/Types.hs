@@ -228,15 +228,22 @@ htmap f (F x :* xs) = F (f x) :* htmap @f f xs
 -- htmap' _ Unit Unit = Unit
 -- htmap' f ((:*) _ n)(F x :* xs) = F (f x) :* htmap' @f f n xs
 
+-- | Map a natural transformation
 hmap :: (forall x. f x -> g x) -> NP f xs -> NP g xs
 hmap _ Unit = Unit
 hmap f (x :* xs) = f x :* hmap f xs
 
+-- | Variant of hmap with a constraint
+hmapK :: forall k f g xs. All k xs => (forall x. k x => f x -> g x) -> NP f xs -> NP g xs
+hmapK _ Unit = Unit
+hmapK f (x :* xs) = f x :* hmapK @k f xs
+
+-- | If NP is in fact a vector, we have a "usual" map.
 kmap :: (a -> b) -> NP (K a) xs -> NP (K b) xs
 kmap _ Unit = Unit
 kmap f (K x :* xs) = K (f x) :* kmap f xs
 
-
+-- | If NP is in fact a tuple, we can apply a tuple of endomorphisms. (special case of <*>)
 hendo :: NP Endo xs -> HList xs -> HList xs
 hendo Unit Unit = Unit
 hendo (Endo f :* fs) (I x :* xs) = (I (f x) :* hendo fs xs)
