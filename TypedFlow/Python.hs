@@ -381,8 +381,8 @@ grad y vars = funcall "tf.gradients" [y, vars]
 
 -- | Batchify and compile a model with simple input to output mapping.
 compile :: forall batchSize sx tx sy ty sy_ ty_ p.
-           (KnownNat batchSize, KnownShape sx, KnownTyp tx, KnownShape sy, KnownTyp ty, KnownShape sy_, KnownTyp ty_, KnownShape p) =>
-           Options -> Gen (Tensor sx tx -> Tensor sy ty -> ModelOutput  ty_ p sy_)
+           (KnownNat batchSize, KnownShape sx, KnownTyp tx, KnownShape sy, KnownTyp ty, KnownShape sy_, KnownTyp ty_, All KnownShape p, KnownLen p) =>
+           Options -> Gen (Tensor sx tx -> Tensor sy ty -> ModelOutputs  ty_ p sy_)
         -> Python ()
 compile options fGen = compileGen @batchSize options (simpleModel <$> fGen)
 

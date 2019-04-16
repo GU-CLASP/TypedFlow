@@ -76,7 +76,7 @@ seq2seq :: forall (vocSize :: Nat) (n :: Nat).
                         '("src_len", '[],  Int32),
                         '("tgt_in", '[n], Int32),
                         '("tgt_out", '[n], Int32)] ->
-                ModelOutput Float32 '[n, vocSize] '[])
+                OneOutput Float32 '[n, vocSize] '[])
 seq2seq  = do
   enc <- encoder @256 @vocSize "enc"
   dec <- decoder "dec"
