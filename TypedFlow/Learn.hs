@@ -237,10 +237,9 @@ precompile :: forall ps sy ty stateShapes.
               All KnownShape stateShapes
            => KnownLen stateShapes
            => (KnownShape sy, All KnownShape ps, KnownTyp ty, KnownLen ps)
-           => String
-           -> (HTV ty stateShapes -> Gen (StateAndOutputs ty ps (sy ': stateShapes)))
+           => (HTV ty stateShapes -> Gen (StateAndOutputs ty ps (sy ': stateShapes)))
            -> (Gen (NP (K (String, HTV ty stateShapes,Scalar Float32)) ps))
-precompile prefix model =
+precompile model =
  do regularizers <- gets genRegularizers
     trainingPhasePlaceholder <- placeholder "training_phase"
     modify $ \GState{..} -> GState{genTrainingPlaceholder = trainingPhasePlaceholder,..}
@@ -253,8 +252,8 @@ precompile prefix model =
           let loss = reduceMeanAll modelLoss ⊕ addN regularizers
               accuracy = reduceMeanAll (cast @Float32 modelCorrect)
               y_ = modelY
-          peekAt (prefix ++ "y_")  y_
-          peekAt (prefix ++ "accuracy") accuracy
+          peekAt (modelName ++ "y_")  y_
+          peekAt (modelName ++ "accuracy") accuracy
           (K (modelName,updates,loss) :*) <$> go xs ms
     go (allKnown @KnownShape typeSList) models
 
