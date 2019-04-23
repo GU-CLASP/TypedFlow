@@ -1,3 +1,4 @@
+{-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE UndecidableSuperClasses #-}
 {-# LANGUAGE InstanceSigs #-}
 {-|
@@ -49,24 +50,35 @@ data ModelOutput t predictionShape s =
   ModelOutput {modelY :: T (s++predictionShape) t -- ^ prediction (which can contain prediction-shaped info)
               ,modelLoss :: T s Float32 -- ^ loss associated with the prediction
               ,modelCorrect :: T s Float32 -- ^ is the above prediction correct?
+              ,modelName :: String
               }
+
+-- | Several model outputs (for multitask models)
+type ModelOutputs t ps s = NP (F (ModelOutput t) s) ps
+
+type OneOutput t p s = ModelOutputs t '[ p ] s
+
+singleModel :: ModelOutput t p s -> ModelOutputs t '[ p ] s
+singleModel m = F m :* Unit
 
 -- | A standard modelling function: (input value, gold value) ↦ (prediction, accuracy, loss).
 -- input is the shape of the input.
 -- output is the shape of the output (one element per individual loss and accuracy)
 -- p is the shape of each output element.
 -- g is the shape of each gold output --- often equal to p.
-type Model input tIn g p output tOut = T input tIn -> T (g++output) tOut
-                                       -> ModelOutput tOut p output
+type Model input tIn g p output tOut
+  = T input tIn -> T (g++output) tOut -> OneOutput tOut p output
 
 modelBoth :: forall p q s t. 
     KnownShape s => KnownTyp t => KnownNat q => KnownNat p => ModelOutput t '[p] s -> ModelOutput t '[q] s -> ModelOutput t '[p + q] s
-modelBoth (ModelOutput y1 l1 c1) (ModelOutput y2 l2 c2) = ModelOutput arst (l1 + l2) (c1 + c2)
+modelBoth (ModelOutput y1 l1 c1 n1) (ModelOutput y2 l2 c2 _) = ModelOutput arst (l1 + l2) (c1 + c2) n1
     where arst :: T (s ++ '[p + q]) t
           arst = zipWithTT @s @'[p] @'[q] concat0 y1 y2
 
 -- | First type argument is the number of classes.  @categorical
 -- logits gold@ return (prediction, accuraccy, loss)
+
+
 
 sparseCategorical :: forall nCat. KnownNat nCat => Model '[nCat] Float32 '[] '[] '[] Int32
 sparseCategorical logits y =
@@ -74,7 +86,8 @@ sparseCategorical logits y =
       modelY = y_
       modelCorrect = cast (equal y_ y)
       modelLoss = sparseSoftmaxCrossEntropyWithLogits y logits
-  in ModelOutput{..}
+      modelName = ""
+  in singleModel (ModelOutput{..})
 
 -- | First type argument is the number of classes.  @categorical
 -- logits gold@ return (prediction, accuraccy, loss)
@@ -88,6 +101,7 @@ sparseCategoricalDensePredictions logits y =
       modelY = y_
       modelCorrect = cast (equal (argmax0 logits) y)
       modelLoss = sparseSoftmaxCrossEntropyWithLogits y logits
+      modelName = ""
   in ModelOutput{..}
 
 
@@ -96,10 +110,11 @@ sparseCategoricalDensePredictions logits y =
 -- accuraccy, loss) accuracy is reported as predicting the same class
 -- as the input 'winning' class.
 categoricalDistribution :: forall nCat. KnownNat nCat => Model '[nCat] Float32 '[nCat] '[nCat] '[] Float32
-categoricalDistribution logits y =
+categoricalDistribution logits y = singleModel
   ModelOutput{modelY = softmax0 logits
              ,modelCorrect = cast (equal (argmax0 @'B32 logits) (argmax0 y))
              ,modelLoss = softmaxCrossEntropyWithLogits y logits
+             ,modelName = ""
              }
 
 -- | @timedCategorical targetWeights logits y@
@@ -112,7 +127,7 @@ categoricalDistribution logits y =
 -- individual time steps with the targetWeights.
 
 timedCategorical :: forall len nCat bits. KnownNat nCat => KnownNat len => KnownBits bits =>
-  Tensor '[len] (Flt bits) -> Tensor '[len,nCat] (Flt bits) -> Tensor '[len] Int32 -> ModelOutput  (Flt bits) '[len,nCat] '[]
+  Tensor '[len] (Flt bits) -> Tensor '[len,nCat] (Flt bits) -> Tensor '[len] Int32 -> ModelOutputs  (Flt bits) '[ '[len,nCat]] '[]
 timedCategorical targetWeights logits y =
   let y_ :: Tensor '[len] Int32
       y_ = argmax1 logits
@@ -128,16 +143,18 @@ timedCategorical targetWeights logits y =
       modelCorrect = cast (correctPredictionWeighted / weightSum)
       crossEntropies = zipWithT sparseSoftmaxCrossEntropyWithLogits y logits
       modelLoss = cast @Float32 (reduceSumAll (crossEntropies ⊙ targetWeights) / weightSum)
-  in ModelOutput{..}
+      modelName = ""
+  in singleModel ModelOutput{..}
 
 -- | Model with @n@ binary outputs.
 binary :: KnownNat n => Model '[n] Float32 '[] '[] '[n] Int32
 binary logits y =
   let y_ = cast @Int32 (round sigy_)
       sigy_ = sigmoid logits
-  in ModelOutput {modelY = y_
-                 ,modelCorrect = cast (equal y_ y)
-                 ,modelLoss = sigmoidCrossEntropyWithLogits (cast @Float32 y) logits}
+  in singleModel ModelOutput {modelY = y_
+                             ,modelName = ""
+                             ,modelCorrect = cast (equal y_ y)
+                             ,modelLoss = sigmoidCrossEntropyWithLogits (cast @Float32 y) logits}
 
 -- | Model compiler options
 data Options = Options {maxGradientNorm :: Maybe Prelude.Float -- ^ apply gradient clipping
@@ -147,18 +164,30 @@ data Options = Options {maxGradientNorm :: Maybe Prelude.Float -- ^ apply gradie
 defaultOptions :: Options
 defaultOptions = Options {maxGradientNorm = Nothing}
 
+type family Concatenate xs where
+  Concatenate (x ': xs) = x ++ Concatenate xs
+  Concatenate '[] = '[]
 
--- | A fancily-typed pair of a model output and updateable variables (as an HTV)
-data StateAndOutput t p ss where
-  StateAndOutput :: SList s -> ModelOutput t p s -> HTV t ss -> StateAndOutput t p (s ': ss)
 
-instance (KnownTyp t, KnownShape p) => Batched (StateAndOutput t p) where
-  batchify n f (StateAndOutput s ModelOutput{..} xs)
-    = StateAndOutput (n :* s)
-      ModelOutput{modelLoss = f modelLoss
-                 ,modelY = knownAppendS s (Proxy @p) ?> (f modelY)
-                 ,modelCorrect = f modelCorrect}
-      (batchify n f xs)
+-- | A fancily-typed pair of several model outputs and updateable variables (as an HTV)
+data StateAndOutputs t ps ss where
+  StateAndOutputs :: SList s -> ModelOutputs t ps s -> HTV t ss -> StateAndOutputs t ps (s ': ss)
+
+instance (KnownTyp t, All KnownShape ps) => Batched (StateAndOutputs t ps) where
+  batchify :: forall n r. KnownNat n => All KnownShape r
+    => Proxy n -> (forall s u. KnownTyp u => KnownShape s => T s u -> T (n:s) u)
+    -> (StateAndOutputs t ps) r  -> (StateAndOutputs t ps) (Ap (FMap (Cons n)) r)
+  batchify n f (StateAndOutputs s ms xs) = StateAndOutputs (n :* s) (hmapK @KnownShape (h s) ms) (batchify n f xs)
+    where h :: forall x s. KnownShape s => KnownShape x => SList s -> F (ModelOutput t) s x -> F (ModelOutput t) (n ': s) x
+          h s' (F ModelOutput{..}) = F ModelOutput{modelLoss = f modelLoss
+                                                  ,modelY = knownAppendS s' (Proxy @x) ?> f modelY
+                                                  ,modelName = modelName
+                                                  ,modelCorrect = f modelCorrect}
+
+-- | Prefix the model names
+nameModels :: String -> ModelOutputs t ps s -> ModelOutputs t ps s
+nameModels _ Unit = Unit
+nameModels prefix (F ModelOutput {..} :* xs) = F ModelOutput {modelName = prefix ++ modelName, ..} :* nameModels prefix xs
 
 -- | Name of a placeholder of a given shape and type.
 data HolderName (st :: (Symbol,Shape,Typ)) = HolderName String
@@ -179,13 +208,13 @@ knownCons :: KnownNat x => Sat KnownShape s -> Sat KnownShape (x ': s)
 knownCons Sat = Sat
 
 -- | Turn a stateless modelling function into a trivially stateful one.
-stateless :: KnownLen s => (inputs -> ModelOutput t p s) -> inputs -> HTV t '[] -> StateAndOutput t p '[ s ]
-stateless f x Unit = StateAndOutput typeSList (f x) Unit
+stateless :: KnownLen s => (inputs -> ModelOutputs t p s) -> inputs -> HTV t '[] -> StateAndOutputs t p '[ s ]
+stateless f x Unit = StateAndOutputs typeSList (f x) Unit
 
-simpleModel :: forall sx tx sy ty sy_ ty_ p. KnownLen sy_ => (Tensor sx tx -> Tensor sy ty -> ModelOutput  ty_ p sy_) ->
-            (Placeholders '[ '("x",sx, tx), '("y",sy, ty)] -> HTV ty_ '[] -> (StateAndOutput ty_ p (sy_ ': '[])))
+simpleModel :: forall sx tx sy ty sy_ ty_ p. KnownLen sy_ => (Tensor sx tx -> Tensor sy ty -> ModelOutputs  ty_ p sy_) ->
+            (Placeholders '[ '("x",sx, tx), '("y",sy, ty)] -> HTV ty_ '[] -> (StateAndOutputs ty_ p (sy_ ': '[])))
 simpleModel f = stateless f'
-  where f' :: Placeholders '[ '("x",sx,tx), '("y",sy,ty)] -> ModelOutput ty_ p sy_
+  where f' :: Placeholders '[ '("x",sx,tx), '("y",sy,ty)] -> ModelOutputs ty_ p sy_
         f' (PHT x :* PHT y :* Unit) = f x y
 
 -- | @updateStates xs ys@ assigns to the tensor (variables!) xs the values ys.
@@ -204,25 +233,31 @@ addRegularizer r = modify $ \GState{..} -> GState{genRegularizers=r:genRegulariz
 -- - add training phase placeholder
 -- - create the state variables
 -- - compute final accuracy and loss (adding eventual regularizers), and expose them.
-precompile :: forall p sy ty stateShapes.
+precompile :: forall ps sy ty stateShapes.
               All KnownShape stateShapes
            => KnownLen stateShapes
-           => (KnownShape sy, KnownShape p, KnownTyp ty)
-           => (HTV ty stateShapes -> Gen (StateAndOutput ty p (sy ': stateShapes)))
-           -> (Gen (HTV ty stateShapes,Scalar Float32))
-precompile model =   knownAppend @sy @p ?> do
-    regularizers <- gets genRegularizers
+           => (KnownShape sy, All KnownShape ps, KnownTyp ty, KnownLen ps)
+           => (HTV ty stateShapes -> Gen (StateAndOutputs ty ps (sy ': stateShapes)))
+           -> (Gen (NP (K (String, HTV ty stateShapes,Scalar Float32)) ps))
+precompile model =
+ do regularizers <- gets genRegularizers
     trainingPhasePlaceholder <- placeholder "training_phase"
     modify $ \GState{..} -> GState{genTrainingPlaceholder = trainingPhasePlaceholder,..}
     (stateVars :: HTV ty stateShapes) <- travTensor (persistent False) "state" (repeatT defaultT)
-    (StateAndOutput _ ModelOutput{..} newStates) <- model stateVars
+    (StateAndOutputs _ models newStates) <- model stateVars
     updates <- updateStates @stateShapes stateVars newStates
-    let loss = (reduceMeanAll modelLoss ⊕ addN regularizers)
-        accuracy = (reduceMeanAll (cast @Float32 modelCorrect))
-        y_ = modelY
-    peekAt "y_"  y_
-    peekAt "accuracy" accuracy
-    return (updates,loss)
+    let go :: forall xs. NP (Sat KnownShape) xs -> ModelOutputs ty xs sy -> Gen (NP (K (String,HTV ty stateShapes,Scalar Float32)) xs)
+        go Unit Unit = return Unit
+        go (x@Sat :* xs) (F ModelOutput{..} :* ms) = knownAppendS (typeSList @sy) x ?> do
+          let loss = reduceMeanAll modelLoss ⊕ addN regularizers
+              accuracy = reduceMeanAll (cast @Float32 modelCorrect)
+              y_ = modelY
+          peekAt (modelName ++ "y_")  y_
+          peekAt (modelName ++ "accuracy") accuracy
+          (K (modelName,updates,loss) :*) <$> go xs ms
+    go (allKnown @KnownShape typeSList) models
+
+
 
 -- | Batch the model (adding one dimension), create placeholders for the inputs.
 batchModel :: forall batchSize shapesAndTypes resShapes ty_ stateShapes f.
@@ -230,7 +265,7 @@ batchModel :: forall batchSize shapesAndTypes resShapes ty_ stateShapes f.
             All KnownShape stateShapes, KnownTyp ty_, All KnownShape resShapes, Batched f)
          => Gen (Placeholders shapesAndTypes -> HTV ty_ stateShapes -> f resShapes )
          -> HTV ty_ (Ap (FMap (Cons batchSize)) stateShapes) -- ^ state variables
-         -> Gen (f (Ap (FMap (Cons batchSize)) resShapes)) 
+         -> Gen (f (Ap (FMap (Cons batchSize)) resShapes))
 batchModel fGen stateVars =
   let u = unsafePerformIO newUnique -- unique identifier for the batch dimension
       unbroadcastStates :: forall ss. SList ss -> HTV ty_ (Ap (FMap (Cons batchSize)) ss) -> HTV ty_ ss

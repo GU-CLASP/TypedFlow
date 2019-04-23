@@ -116,7 +116,8 @@ def train (session, model,
            valid_generator=bilist_generator(([],[])),
            epochs=100,
            callbacks=[],
-           extraVectors=[]):
+           extraVectors=[],
+           modelPrefix=""):
     '''
     Train the given model.
 
@@ -130,6 +131,8 @@ def train (session, model,
       Each callback receives an epoch entry (see below). If it returns False then the training is aborted.
 
     extraVectors: list of extra vectors to pass to session.run when training.
+
+    modelPrefix: in case of a multitask/multimodel, give the prefix of the model to use.
 
     This function returns a list of epoch entries. Each entry is a dictionary with:
      - "epoch": current epoch
@@ -147,8 +150,8 @@ def train (session, model,
         for inputs in train_generator(batch_size) if isTraining else valid_generator(batch_size):
             print(".",end="")
             sys.stdout.flush()
-            maybeTrain = [model["train"]] if isTraining else []
-            results = session.run([model["loss"],model["accuracy"]] + maybeTrain + extraVectors + [model["update"]],
+            maybeTrain = [model[modelPrefix+"train"]] if isTraining else []
+            results = session.run([model[modelPrefix+"loss"],model[modelPrefix+"accuracy"]] + maybeTrain + extraVectors + [model["update"]],
                                   feed_dict=dict([(model["training_phase"],isTraining)] +
                                                  [(model[k],inputs[k]) for k in inputs]))
             loss = results[0]

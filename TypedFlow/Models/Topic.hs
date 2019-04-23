@@ -130,7 +130,7 @@ mkTdlmTopic :: forall
   (b :: Nat) -- topic representation size
   (t :: NBits) -- size of floats
   . KnownNat kk => KnownNat a => KnownNat b => KnownBits t
-  => Float -> TopicP t a kk b -> Gen (T '[a] (Flt t) -> Tensor '[b] (Flt t))
+  => Float -> TopicP t a kk b -> Gen (T '[a] (Flt t) -> (Tensor '[b] (Flt t), Tensor '[kk] (Flt t)))
 mkTdlmTopic separationConstant (TopicP topicInput topicOutput) = do
   drpS   <- mkDropout (DropProb 0.1)
   let topicNormalized :: T '[kk,b] (Flt t)
@@ -144,7 +144,7 @@ mkTdlmTopic separationConstant (TopicP topicInput topicOutput) = do
 
   return (\d -> let p :: T '[kk] (Flt t)
                     p = softmax0 (topicInput ∙ d) -- attention distribution (among the topics)
-                in drpS (topicOutput ∙ p))
+                in (drpS (topicOutput ∙ p), p))
 
 
 
