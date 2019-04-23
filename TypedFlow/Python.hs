@@ -40,7 +40,7 @@ module TypedFlow.Python (compile, compileGen, generateFile) where
 
 import Data.Char (toLower)
 import Data.Proxy
-import Data.List (genericReplicate)
+import Data.List (genericReplicate, isPrefixOf)
 import GHC.TypeLits
 import Control.Monad.State
 import TypedFlow.Types
@@ -415,12 +415,13 @@ compileAlreadyBatched Options{..} models = do
         go (K (prefix,updates,lossIn) :* ms) = do
           updates' <- untypedExprs updates
           loss <- generatePure lossIn
-          trainStep <- case lossIn of
-            T (Constant 0) -> return (text "None")
-              -- otherwise tensorflow complains. (This is for tasks which are not for training but testing only.)
-            _ -> assignAny $ case maxGradientNorm of
-              Nothing -> funcall "optimizer.minimize" [loss]
-              Just clip -> funcall "optimizer.apply_gradients" [funcall "zip" [clipByGlobalNorm clip (grad loss params),params]]
+          trainStep <-
+            if "test" `isPrefixOf` prefix
+            then return (text "None") -- otherwise tensorflow complains. (This is for tasks which are not for training but testing only.)
+            else assignAny $ case maxGradientNorm of
+                               Nothing -> funcall "optimizer.minimize" [loss]
+                               Just clip -> funcall "optimizer.apply_gradients"
+                                              [funcall "zip" [clipByGlobalNorm clip (grad loss params),params]]
           let pks = map (first (prefix ++)) [("optimizer", (text "optimizer"))
                                             ,("params", params)
                                             ,("train", trainStep)
