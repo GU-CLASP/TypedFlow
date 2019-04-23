@@ -225,7 +225,7 @@ def Save(sess,saver,ckptfile):
 ################################################################################################
 # Prediction and evaluation
 
-def predict (session, model, xs, result="y_"):
+def predict (session, model, xs, result="y_",modelPrefix=""):
     '''Evaluate the model for given input and result.
     Input is given as a dictionary of lists to pass to session.run'''
     bs = int(model[result].shape[0])
@@ -243,7 +243,7 @@ def predict (session, model, xs, result="y_"):
             else:
                 origLen = bs
             # print (".")
-            yield (session.run(model[result],
+            yield (session.run(model[modelPrefix+result],
                                dict([(model["training_phase"],False)] +
                                     [(model[k],chunks[k]) for k in xs])))[:origLen]
     return np.concatenate(list(run()))
