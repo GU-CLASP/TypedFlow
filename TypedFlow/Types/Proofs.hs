@@ -96,6 +96,9 @@ productS s = knownSShape s ?>
 plusComm :: forall x y. (x + y) :~: (y + x)
 plusComm = unsafeCoerce Refl
 
+plusCommS :: forall x y px py. px x -> py y -> (x + y) :~: (y + x)
+plusCommS _ _ = plusComm @x @y
+
 plusAssoc :: forall x y z. (x + y) + z :~: x + (y + z)
 plusAssoc = unsafeCoerce Refl
 
@@ -295,10 +298,11 @@ decideProductEq l r = case decideProductEq1 l of
 unsafePositive :: (1 <=? n) :~: 'True
 unsafePositive = unsafeCoerce Refl
 
-sucPred :: ((1 <=? n) ~ 'True) => 1 + (n - 1) :~: n
+sucPred :: ((1 <=? n) ~ 'True) => (n - 1) + 1  :~: n
 sucPred = unsafeCoerce Refl
 
-natRec :: forall (n :: Nat) (p :: Nat -> Type). KnownNat n => p 0 -> (forall (m :: Nat). p m -> p (1+m)) -> p n
+
+natRec :: forall (n :: Nat) (p :: Nat -> Type). KnownNat n => p 0 -> (forall (m :: Nat). p m -> p (m+1)) -> p n
 natRec z s = case natVal (Proxy @n) of
   0 -> unsafeCoerce z
   _ -> case unsafePositive @n of
@@ -310,7 +314,10 @@ data CountRes n where
   CountRes :: Integer -> V n Integer -> CountRes n
 
 vcount :: forall n. KnownNat n => V n Integer
-vcount = case natRec @n (CountRes (natVal (Proxy @n)-1) VUnit) (\(CountRes m xs) -> CountRes (m-1) (m :** xs)) of
+vcount =
+  case natRec @n (CountRes (natVal (Proxy @n)-1) VUnit) (\(CountRes m xs) ->
+                                                            plusCommS (Proxy @1) (F xs)
+                                                            #> CountRes (m-1) (m :** xs)) of
   CountRes _ x -> x
 
 data V n a where
