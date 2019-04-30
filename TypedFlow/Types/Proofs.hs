@@ -149,6 +149,9 @@ knownSum' (_ :* n) = knownSum' n ?> Sat
 knownSum :: forall s. KnownShape s => Sat KnownNat (Sum s)
 knownSum = knownSum' @s typeSList
 
+knownPlus :: forall m n. KnownNat m => KnownNat n => Sat KnownNat (m + n)
+knownPlus = Sat
+
 takeDrop :: forall s n. (PeanoNat n <= Length s) => (Take n s ++ Drop n s) :~: s
 takeDrop = unsafeCoerce Refl
 

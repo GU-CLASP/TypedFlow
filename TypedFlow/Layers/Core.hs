@@ -44,7 +44,9 @@ module TypedFlow.Layers.Core
     -- * Embedding
     EmbeddingP(..), embedding, 
     -- * Convolutional
-    ConvP(..), conv, conv', {-convValid,-} maxPool1D, maxPool2D)
+    ConvP(..), conv, conv', {-convValid,-} maxPool1D, maxPool2D,
+    glu
+  )
 
 where
 import Prelude hiding (RealFrac(..))
@@ -197,4 +199,12 @@ conv = initLast' @s #>
 --           -> (T ('[outChannels] ++ s) ('Typ 'Float t))
 -- convValid (ConvP filters bias) input = convolutionValid input filters + bias
 
-
+-- | Gated Linear Unit
+-- See: Language Modeling with Gated Convolutional Networks
+-- https://arxiv.org/pdf/1612.08083.pdf
+glu :: forall n t. KnownBits t => KnownNat n => T '[n+n] ('Typ 'Float t) -> T '[n] ('Typ 'Float t)
+glu x = plusMono @n @n #> knownPlus @n @n ?>
+        let gate, h :: T '[n] ('Typ 'Float t)
+            gate = slice0 @0 @n x
+            h =  termCancelation @n @n #> slice0 @n @(n+n) x
+        in sigmoid gate ⊙ h
