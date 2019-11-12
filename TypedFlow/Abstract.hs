@@ -166,13 +166,14 @@ unopInputShape (Float1Op _) = Unit
 unopInputShape (SliceOp _ n s _ _) = n :* s
 
 protoBroadcast :: forall n s t.
-  Unique -> Bool
-  -> Sat KnownNat n
-  -> (forall s' t'. KnownTyp t' => SShape s' -> T s' t' -> T (n ': s') t')
-  -> (forall s' t'. T s' t' -> Bool)
-  -> STyp t
-  -> SShape s
-  -> T s t
+  Unique -- unique identifier marking the variable tensor which will be marking inputs (not to broadcast).
+  -> Bool -- how to expand the noise? (If True use different noise for all indices)
+  -> Sat KnownNat n -- added dimension's size
+  -> (forall s' t'. KnownTyp t' => SShape s' -> T s' t' -> T (n ': s') t') -- recursive case
+  -> (forall s' t'. T s' t' -> Bool) -- test if we're done
+  -> STyp t -- representation of the type
+  -> SShape s -- representation of the shape
+  -> T s t -- tensor (expression) to broadcast
   -> T (n ': s) t
 protoBroadcast u varyNoise n@(Sat) rec finished ty s tensor
   | finished tensor = simpleBC

@@ -53,7 +53,7 @@ this manyfold is. (Interpolation problem.)
 
 - Typically programmed using python (standard in scientific computing)
 
-- "Strongly typed".
+- "Strongly typed"
   - but: no abstraction over dimensions
   - but: "brodcasting"
   - but: running the metaprogram can be quite slow ~1 minute (so type
@@ -62,6 +62,8 @@ this manyfold is. (Interpolation problem.)
   - but: types are typically not written as such. Given any two
     functions, weather they compose (and what the composition does) is
     a mistery unless one examines their code.
+
+- "map" has a surprising semantics (see below)
 
 * What is TypedFlow?
 
@@ -82,7 +84,8 @@ applications from building blocks.
 * Deep Learning: The state of the art
 
 [[file:cards.jpg]]
-
+ 
+(Actually this has become worse!)
 * Notation
 
 Haskell is typically much closer to mathematical notation than
@@ -130,6 +133,24 @@ usual RNN cells with attention models in several ways. The state of
 the art is to reprogram such combinations by hand.
 
 file:../TypedFlow/Layers/RNN.hs::/^attentiveWithFeedback.*::/
+
+* Mapping tensors
+
+- Tensorflow's map spawns processes. This is (usually) quite a bad
+  idea --- tensor operations are parallelized anyway (but not on
+  several GPUs... the purpose of map apparently).
+
+- Most (but not all!) operations have so-called "broadcast semantics";
+  they can be (implicitly!) raised to tensors of higher dimensions.
+
+- file:../TypedFlow/Abstract.hs::/^protoBroadcast.*::/
+
+  - Note "gather" goes to "gather_nd"
+  - Certain convolutions can't be 
+
+* Pretending that tensor operations are functional
+
+- Done using the old trick of observable sharing. (Memoizing, etc.)
 
 * Long game
 
