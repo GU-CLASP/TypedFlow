@@ -136,9 +136,9 @@ file:../TypedFlow/Layers/RNN.hs::/^attentiveWithFeedback.*::/
 
 * Mapping tensors
 
-- Tensorflow's map spawns processes. This is (usually) quite a bad
+- Tensorflow's ~map~ spawns processes. This is (usually) quite a bad
   idea --- tensor operations are parallelized anyway (but not on
-  several GPUs... the purpose of map apparently).
+  several GPUs... the purpose of ~map~ apparently).
 
 - Most (but not all!) operations have so-called "broadcast semantics";
   they can be (implicitly!) raised to tensors of higher dimensions.
@@ -146,15 +146,16 @@ file:../TypedFlow/Layers/RNN.hs::/^attentiveWithFeedback.*::/
 - file:../TypedFlow/Abstract.hs::/^protoBroadcast.*::/
 
   - Note "gather" goes to "gather_nd"
-  - Certain convolutions can't be 
+  - Certain convolutions can't be broadcasted at all 😿
 
 * Pretending that tensor operations are functional
 
-- Done using the old trick of observable sharing. (Memoizing, etc.)
+- They are EXCEPT that sharing is lost
+- Use the old trick of observable sharing. (Memoizing, etc.)
 
 * Long game
 
-Integrate cutting edge DL ideas as they arrive with moderate effort.
+- Integrate cutting edge DL ideas as they arrive with moderate effort.
 
 * MNIST
 
