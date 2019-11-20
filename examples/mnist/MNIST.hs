@@ -6,6 +6,7 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UnicodeSyntax #-}
+{-# LANGUAGE NoStarIsType #-}
 module MNIST where
 
 import TypedFlow
@@ -23,7 +24,7 @@ mnist = do
   return $ \input gold ->
     let nn = dense @10 w2                       .
              relu . dense @1024 w1              .
-             reshape @'[7*7*64]                 .
+             reshape @'[7 * 7 * 64]             .
              maxPool2D @2 @2                    .
              relu . conv @64 @'[5,5] filters2   .
              maxPool2D @2 @2                    .

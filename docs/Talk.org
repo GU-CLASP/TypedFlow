@@ -32,7 +32,7 @@ Task:
 Given X, find θ such that f(θ,x) < ε, if
 x is considered similar to points in X, and > ε otherwise.
 
-Commentary: Every point in X lie on a manyfold. We want to find what
+Commentary: Every point in X lie on a manifold. We want to find what
 this manyfold is. (Interpolation problem.)
 
 * "Deep" learning in 45 seconds
