@@ -200,7 +200,7 @@ protoBroadcast u varyNoise n@(Sat) rec finished ty s tensor
   T _ -> error "panic: broadcast constant should be finished!"
   Unbroadcast p@Sat u' x
     | u == u' -> case testEq p n of
-        Nothing -> UnOp (error "panic.unbroadcast") Unit x
+        Nothing -> UnOp (error "panic.unbroadcast.unit") Unit x
         Just Refl -> x
     | otherwise -> knownSShape s ?> Unbroadcast p u' (transpose01 (rec (p :* s) x))
   MatMul Unit a@Sat b@Sat c@Sat x y
@@ -705,6 +705,15 @@ zipWithTT f x y =
             knownAppend @a @s ?>
             reshape (zipWithT @(Product a) f (reshape x) (reshape y))
 
+zipWith3T :: forall (n :: Nat) (s :: [Nat]) (t :: Typ) (s1 :: [Nat]) (t1 :: Typ) (s2 :: Shape) (t2 :: Typ) (s3 :: Shape)  (t3 :: Typ).
+            KnownShape s3 => KnownNat n => KnownTyp t3
+            => (T s t -> T s1 t1 -> T s2 t2 -> T s3 t3)
+            -> Tensor (n ': s) t
+            -> Tensor (n ': s1) t1
+            -> Tensor (n ': s2) t2
+            -> Tensor (n ': s3) t3
+zipWith3T f x y z = broadcast u False (Proxy @n) (f (Unbroadcast (natSat @n) u x) (Unbroadcast (natSat @n) u y) (Unbroadcast (natSat @n) u z))
+  where u = unsafePerformIO newUnique
 
 
 -- | Size-preserving convolution operation.

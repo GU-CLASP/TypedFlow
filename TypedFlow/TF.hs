@@ -104,7 +104,7 @@ module TypedFlow.TF (
   if_, where_, lessThan,
   -- * Contrib
   -- ** Mapping
-  mapT, zipWithT, 
+  mapT, zipWithT, zipWith3T,
   mapTT, zipWithTT,
   -- ** Losses
   sigmoidCrossEntropyWithLogits,
