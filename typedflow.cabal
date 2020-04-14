@@ -41,6 +41,7 @@ library
        TypedFlow.Layers.RNN.Attention,
        TypedFlow.Learn,
        TypedFlow.Models.Topic,
+       TypedFlow.Models.Transformer,
        TypedFlow.Python,
        TypedFlow.TF,
        TypedFlow.Types,
