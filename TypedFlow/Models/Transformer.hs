@@ -37,18 +37,13 @@ import TypedFlow.TF
 import TypedFlow.Layers
 import TypedFlow.Types
 import TypedFlow.Types.Proofs ((?>), knownSum')
-import TypedFlow.Learn
 import GHC.TypeLits
-import Data.Monoid ((<>))
-import Data.Proxy
-
-
 
 normalizer :: forall e. KnownNat e => T '[e] Float32 -> T '[e] Float32
-normalizer x = mapT (⊘ (factor + epsilon)) x
+normalizer x = mapT (⊘ (sigma + epsilon)) x
   where mu = reduceMeanAll x
-        factor = sqrt $ reduceMeanAll $ square (mapT (⊝ mu) x)
-        epsilon = 000.1
+        sigma = sqrt (reduceMeanAll (square (mapT (⊝ mu) x)))
+        epsilon = 000.1 -- ?
 
 dotAttention1 :: KnownNat e => KnownNat n => T '[e,n] Float32 -> T '[n,e] Float32 -> T '[e] Float32 -> T '[e] Float32
 dotAttention1 q v k = v ∙ softmax0 (q ∙ k)
@@ -61,7 +56,7 @@ multiheadLinearEncoder :: forall h e. KnownNat e => KnownNat h =>
   String -> Gen (T '[e] Float32 -> T '[h,e] Float32)
 multiheadLinearEncoder name = do
   wv <- parameterDefault ("w_" ++ name)
-  return $ \x -> reshape (dense wv x)
+  return $ \x -> reshape (wv # x)
 
 
 multiheadSelfAttentionModule :: forall h n e. KnownNat n => KnownNat h => KnownNat e => Gen (T '[n,e] Float32 -> T '[n,e] Float32)
@@ -72,9 +67,9 @@ multiheadSelfAttentionModule = do
   w1 <- parameterDefault "w1"
   w2 <- parameterDefault "w2"
   return $ \x ->
-    let v = transpose01 $ mapT ev x
-        q = transpose01 $ mapT eq x
-        k = transpose01 $ mapT ek x
+    let v = transpose01 (mapT ev x)
+        q = transpose01 (mapT eq x)
+        k = transpose01 (mapT ek x)
         r :: T '[n,h,e] Float32
         r = transpose01 (zipWith3T dotAttention q k v)
         r' = mapT (dense @e w1 . reshape @'[h * e]) r
@@ -82,9 +77,25 @@ multiheadSelfAttentionModule = do
 
 feedForwardModule :: forall e. KnownNat e => Gen (T '[e] Float32 -> T '[e] Float32)
 feedForwardModule = do
-  w1 <- parameterDefault "ff1"
+  w1 :: DenseP 'B32 e e <- parameterDefault "ff1"
   w2 <- parameterDefault "ff2"
-  return $ \x -> normalizer (x + (w2 # relu (dense @e w1 x)))
+  return $ \x -> normalizer (x + (w2 # relu (w1 # x)))
 
+encoderModule :: forall h n e. KnownNat n => KnownNat h => KnownNat e
+  => T '[n,e] Float32 -> Gen (T '[n,e] Float32 -> T '[n,e] Float32)
+encoderModule positionalTensor = do
+  selfAtt <- multiheadSelfAttentionModule @h
+  ff <- feedForwardModule
+  return (mapT ff . selfAtt . (+ positionalTensor))
 
+positionalModule :: KnownNat e => KnownNat n => Gen (T '[n,e] Float32)
+positionalModule = do
+  e <- parameterDefault "positional"
+  return $ let EmbeddingP x = e in x
 
+encoderStack :: forall h n e. KnownNat h => KnownNat n => KnownNat e
+  => Int -> Gen (T '[n,e] Float32 -> T '[n,e] Float32)
+encoderStack n = do
+  p <- positionalModule
+  encoders <- mapM (\_ -> encoderModule @h p) [1..n]
+  return (foldr (.) id encoders)
