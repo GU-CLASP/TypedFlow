@@ -47,8 +47,7 @@ import GHC.TypeLits
 -- | Normalise a vector. But add a small epsilon to avoid division by zero
 normalizer :: forall e. KnownNat e => T '[e] Float32 -> T '[e] Float32
 normalizer x = mapT (⊘ (sigma + epsilon)) xmu
-  where mu = reduceMeanAll x
-        xmu = mapT (⊝ mu) x
+  where xmu = mapT (⊝ reduceMeanAll x) x
         sigma = sqrt (reduceMeanAll (square xmu)) -- the norm of the vector.
         epsilon = 0.001 -- ?
 
