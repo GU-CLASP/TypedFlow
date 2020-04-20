@@ -34,6 +34,7 @@ Stability   : experimental
 module TypedFlow.Model.Transformer where
 import Prelude hiding (RealFrac(..))
 import TypedFlow.TF
+import TypedFlow.Abstract
 import TypedFlow.Layers
 import TypedFlow.Types
 import TypedFlow.Types.Proofs ((?>), knownSum')
@@ -51,11 +52,14 @@ normalizer x = mapT (⊘ (sigma + epsilon)) xmu
         sigma = sqrt (reduceMeanAll (square xmu)) -- the norm of the vector.
         epsilon = 0.001 -- ?
 
+dimAsFloat :: forall e. KnownNat e => Float
+dimAsFloat = fromIntegral (knownNatVal (natSat @e))
+
 -- | dot product attention on one key (k)
 dotAttention1 :: forall e n. KnownNat e => KnownNat n
   => T '[e,n] Float32 -> T '[n,e] Float32 -> T '[e] Float32 -> T '[e] Float32
 dotAttention1 q v k = v ∙ softmax0 (mapT (⊘ normFactor) (q ∙ k))
-  where normFactor = constant (sqrt (fromIntegral (knownNatVal (natSat @e))))
+  where normFactor = constant (sqrt (dimAsFloat @e))
 
 -- | dot product attention for every position
 dotAttention :: forall n e. KnownNat n => KnownNat e
@@ -102,14 +106,19 @@ encoderModule nm positionalTensor = do
   ff <- feedForwardModule (nm ++ "ff")
   return (mapT ff . selfAtt . (+ positionalTensor))
 
-positionalModule :: KnownNat e => KnownNat n => Gen (T '[n,e] Float32)
-positionalModule = do
+positionalModuleSinCos :: forall n e. KnownNat e => KnownNat n => T '[n,e] Float32
+positionalModuleSinCos = sin (transpose01 (broadcastT pos) * (broadcastT omega))
+  where pos = cast (range @n @'B32)
+        omega = constant (log 10000) * exp (constant (-2.0 / dimAsFloat @e) * cast (range @e @'B32))
+
+positionalModuleLearned :: KnownNat e => KnownNat n => Gen (T '[n,e] Float32)
+positionalModuleLearned = do
   e <- parameterDefault "positional"
   return $ let EmbeddingP x = e in x
 
 encoderStack :: forall h n e. KnownNat h => KnownNat n => KnownNat e
   => Int -> Gen (T '[n,e] Float32 -> T '[n,e] Float32)
 encoderStack n = do
-  p <- positionalModule
+  p <- positionalModuleLearned
   encoders <- mapM (\i -> encoderModule @h ("enc" ++ show i) p) [1..n]
   return (foldr (.) id encoders)

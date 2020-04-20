@@ -74,7 +74,7 @@ module TypedFlow.TF (
   -- clipByGlobalNorm,
   clipByValue,
   -- ** Indexing
-  last0, nth0, nth0', lookupT, gather,
+  last0, nth0, nth0', lookupT, gather, range,
   -- ** Split and concatenate
   slice, slice0, slice1,
   litStack0,
