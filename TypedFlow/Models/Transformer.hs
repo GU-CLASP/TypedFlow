@@ -53,8 +53,10 @@ normalizer x = mapT (⊘ (sigma + epsilon)) xmu
         epsilon = 0.001 -- ?
 
 -- | dot product attention on one key (k)
-dotAttention1 :: KnownNat e => KnownNat n => T '[e,n] Float32 -> T '[n,e] Float32 -> T '[e] Float32 -> T '[e] Float32
-dotAttention1 q v k = v ∙ softmax0 (q ∙ k)
+dotAttention1 :: forall e n. KnownNat e => KnownNat n
+  => T '[e,n] Float32 -> T '[n,e] Float32 -> T '[e] Float32 -> T '[e] Float32
+dotAttention1 q v k = v ∙ softmax0 (mapT (⊘ normFactor) (q ∙ k))
+  where normFactor = constant (sqrt (fromIntegral (knownNatVal (natSat @e))))
 
 -- | dot product attention for every position
 dotAttention :: forall n e. KnownNat n => KnownNat e
