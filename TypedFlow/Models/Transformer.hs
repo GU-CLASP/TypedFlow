@@ -111,6 +111,8 @@ positionalModuleSinCos = sin (transpose01 (broadcastT pos) * (broadcastT omega) 
   where pos = cast (range @n @'B32)
         phase = cast ((range @e @'B32) `floorMod` constant 2) * (constant pi/2)
         omega = constant (log 10000) * exp (constant (-2.0 / dimAsFloat @e) * cast (range @e @'B32))
+        -- Note I'm not dividing the frequence by 2 because integer
+        -- division isn't implemented. Should not have any consequence.
 
 positionalModuleLearned :: KnownNat e => KnownNat n => Gen (T '[n,e] Float32)
 positionalModuleLearned = do
