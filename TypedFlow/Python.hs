@@ -299,6 +299,7 @@ generatePure' rec sR = knownSShape sR ?> \case
                                    Minimum -> "tf.minimum"
                                    Maximum -> "tf.maximum"
                                    LessThan -> "tf.less"
+                                   FloorMod -> "tf.math.floorMod"
                        in funcall pop [recx,recy]
      SigmoidCrossEntropyWithLogits -> func "tf.nn.sigmoid_cross_entropy_with_logits" [] [("labels",recx),("logits",recy)]
      SparseSoftmaxCrossEntropyWithLogits -> func "tf.nn.sparse_softmax_cross_entropy_with_logits" []  [("labels",recx),("logits",recy)]

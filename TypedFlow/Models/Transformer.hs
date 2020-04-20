@@ -107,8 +107,9 @@ encoderModule nm positionalTensor = do
   return (mapT ff . selfAtt . (+ positionalTensor))
 
 positionalModuleSinCos :: forall n e. KnownNat e => KnownNat n => T '[n,e] Float32
-positionalModuleSinCos = sin (transpose01 (broadcastT pos) * (broadcastT omega))
+positionalModuleSinCos = sin (transpose01 (broadcastT pos) * (broadcastT omega) + broadcastT phase)
   where pos = cast (range @n @'B32)
+        phase = cast ((range @e @'B32) `floorMod` constant 2) * (constant pi/2)
         omega = constant (log 10000) * exp (constant (-2.0 / dimAsFloat @e) * cast (range @e @'B32))
 
 positionalModuleLearned :: KnownNat e => KnownNat n => Gen (T '[n,e] Float32)

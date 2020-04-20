@@ -444,6 +444,9 @@ hardSigmoid = unFlOp HardSigmoid
 square = unOp Square
 relu = unFlOp Relu
 
+floorMod :: ∀ s t. (KnownShape s, KnownNumeric t) => Tensor s t -> Tensor s t -> Tensor s t
+floorMod = binOp FloorMod
+
 -- Unfortunately RealFrac is utterly broken; so we have to do this:
 round = unFlOp Round
 floor = unFlOp Floor

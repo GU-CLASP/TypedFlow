@@ -196,6 +196,7 @@ runUnOp sL op (BT x) = backendTensor (typeSTyp @t) $ case op of
     Negate -> BT (Backend.neg x)
     Sign -> BT (Backend.sign x)
     Abs -> BT (Backend.abs x)
+    FloorMod -> BT (Backend.floorMod x)
   Float1Op flop -> knownFloatingB @t $ knownFloating @(TypBits u) $ knownFloatingB @u $ case flop of
      Tanh -> BT (BackCore.tanh x)
      Sin -> BT (BackCore.sin x)

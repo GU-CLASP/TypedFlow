@@ -752,6 +752,7 @@ data Simple2Op t u where
   Add :: KnownNumeric t => Simple2Op t t
   Minimum :: KnownNumeric t => Simple2Op t t
   Maximum :: KnownNumeric t => Simple2Op t t
+  FloorMod :: KnownNumeric t => Simple2Op t t
   LessThan :: KnownNumeric t => Simple2Op t TFBool
 
 -- deriving instance Show (Simple2Op t u)
