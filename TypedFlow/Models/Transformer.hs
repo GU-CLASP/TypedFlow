@@ -24,7 +24,7 @@
 {-|
 Module      : TypedFlow.Models.Transformer
 Description : Topic models
-Copyright   : (c) Jean-Philippe Bernardy, 2019
+Copyright   : (c) Jean-Philippe Bernardy, 2020
 License     : LGPL-3
 Maintainer  : jean-philippe.bernardy@gu.se
 Stability   : experimental
@@ -39,19 +39,29 @@ import TypedFlow.Types
 import TypedFlow.Types.Proofs ((?>), knownSum')
 import GHC.TypeLits
 
-normalizer :: forall e. KnownNat e => T '[e] Float32 -> T '[e] Float32
-normalizer x = mapT (⊘ (sigma + epsilon)) x
-  where mu = reduceMeanAll x
-        sigma = sqrt (reduceMeanAll (square (mapT (⊝ mu) x)))
-        epsilon = 000.1 -- ?
+-- Convention for type variables:
+-- h = number of heads
+-- e = embedding size
+-- n = sequence length
 
+-- | Normalise a vector. But add a small epsilon to avoid division by zero
+normalizer :: forall e. KnownNat e => T '[e] Float32 -> T '[e] Float32
+normalizer x = mapT (⊘ (sigma + epsilon)) xmu
+  where mu = reduceMeanAll x
+        xmu = mapT (⊝ mu) x
+        sigma = sqrt (reduceMeanAll (square xmu)) -- the norm of the vector.
+        epsilon = 0.001 -- ?
+
+-- | dot product attention on one key (k)
 dotAttention1 :: KnownNat e => KnownNat n => T '[e,n] Float32 -> T '[n,e] Float32 -> T '[e] Float32 -> T '[e] Float32
 dotAttention1 q v k = v ∙ softmax0 (q ∙ k)
 
+-- | dot product attention for every position
 dotAttention :: forall n e. KnownNat n => KnownNat e
   => T '[n,e] Float32 -> T '[n,e] Float32 -> T '[n,e] Float32 -> T '[n,e] Float32
-dotAttention v k q = mapT (dotAttention1 (transpose01 q) v) (k)
+dotAttention v k q = mapT (dotAttention1 (transpose01 q) v) k
 
+-- | h copies of a dense layer.
 multiheadLinearEncoder :: forall h e. KnownNat e => KnownNat h =>
   String -> Gen (T '[e] Float32 -> T '[h,e] Float32)
 multiheadLinearEncoder name = do
@@ -59,13 +69,15 @@ multiheadLinearEncoder name = do
   return $ \x -> reshape (wv # x)
 
 
-multiheadSelfAttentionModule :: forall h n e. KnownNat n => KnownNat h => KnownNat e => Gen (T '[n,e] Float32 -> T '[n,e] Float32)
-multiheadSelfAttentionModule = do
-  ev <- multiheadLinearEncoder @h "v"
-  eq <- multiheadLinearEncoder @h "q"
-  ek <- multiheadLinearEncoder @h "k"
-  w1 <- parameterDefault "w1"
-  w2 <- parameterDefault "w2"
+multiheadSelfAttentionModule
+  :: forall h n e. KnownNat n => KnownNat h => KnownNat e
+  => String -> Gen (T '[n,e] Float32 -> T '[n,e] Float32)
+multiheadSelfAttentionModule nm = do
+  ev <- multiheadLinearEncoder @h ("v" ++ nm)
+  eq <- multiheadLinearEncoder @h ("q" ++ nm)
+  ek <- multiheadLinearEncoder @h ("k" ++ nm)
+  w1 <- parameterDefault ("w1" ++ nm)
+  w2 <- parameterDefault ("w2" ++ nm)
   return $ \x ->
     let v = transpose01 (mapT ev x)
         q = transpose01 (mapT eq x)
@@ -75,17 +87,18 @@ multiheadSelfAttentionModule = do
         r' = mapT (dense @e w1 . reshape @'[h * e]) r
     in mapT (dense w2 . normalizer) (r' + x)
 
-feedForwardModule :: forall e. KnownNat e => Gen (T '[e] Float32 -> T '[e] Float32)
-feedForwardModule = do
-  w1 :: DenseP 'B32 e e <- parameterDefault "ff1"
-  w2 <- parameterDefault "ff2"
+feedForwardModule :: forall e. KnownNat e
+  => String -> Gen (T '[e] Float32 -> T '[e] Float32)
+feedForwardModule nm = do
+  w1 :: DenseP 'B32 e e <- parameterDefault (nm ++ "w1")
+  w2 <- parameterDefault (nm ++ "w2")
   return $ \x -> normalizer (x + (w2 # relu (w1 # x)))
 
 encoderModule :: forall h n e. KnownNat n => KnownNat h => KnownNat e
-  => T '[n,e] Float32 -> Gen (T '[n,e] Float32 -> T '[n,e] Float32)
-encoderModule positionalTensor = do
-  selfAtt <- multiheadSelfAttentionModule @h
-  ff <- feedForwardModule
+  => String -> T '[n,e] Float32 -> Gen (T '[n,e] Float32 -> T '[n,e] Float32)
+encoderModule nm positionalTensor = do
+  selfAtt <- multiheadSelfAttentionModule @h (nm ++ "mh")
+  ff <- feedForwardModule (nm ++ "ff")
   return (mapT ff . selfAtt . (+ positionalTensor))
 
 positionalModule :: KnownNat e => KnownNat n => Gen (T '[n,e] Float32)
@@ -97,5 +110,5 @@ encoderStack :: forall h n e. KnownNat h => KnownNat n => KnownNat e
   => Int -> Gen (T '[n,e] Float32 -> T '[n,e] Float32)
 encoderStack n = do
   p <- positionalModule
-  encoders <- mapM (\_ -> encoderModule @h p) [1..n]
+  encoders <- mapM (\i -> encoderModule @h ("enc" ++ show i) p) [1..n]
   return (foldr (.) id encoders)
