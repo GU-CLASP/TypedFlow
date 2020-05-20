@@ -66,13 +66,12 @@ dotAttention :: forall n e. KnownNat n => KnownNat e
   => T '[n,e] Float32 -> T '[n,e] Float32 -> T '[n,e] Float32 -> T '[n,e] Float32
 dotAttention v k q = mapT (dotAttention1 (transpose01 q) v) k
 
--- | h copies of a dense layer.
+-- | h copies of a dense layer (the same for every copy).
 multiheadLinearEncoder :: forall h e. KnownNat e => KnownNat h =>
   String -> Gen (T '[e] Float32 -> T '[h,e] Float32)
 multiheadLinearEncoder name = do
   wv <- parameterDefault ("w_" ++ name)
   return $ \x -> reshape (wv # x)
-
 
 multiheadSelfAttentionModule
   :: forall h n e. KnownNat n => KnownNat h => KnownNat e
@@ -108,8 +107,8 @@ encoderModule nm positionalTensor = do
 
 positionalModuleSinCos :: forall n e. KnownNat e => KnownNat n => T '[n,e] Float32
 positionalModuleSinCos = sin (transpose01 (broadcastT pos) * (broadcastT omega) + broadcastT phase)
-  where pos = cast (range @n @'B32)
-        phase = cast ((range @e @'B32) `floorMod` constant 2) * (constant pi/2)
+  where pos = (cast (range @n @'B32)) :: T '[n] Float32
+        phase = cast ((range @e @'B32) `floorMod` constant 2) * (constant pi/2) :: T '[e] Float32
         omega = constant (log 10000) * exp (constant (-2.0 / dimAsFloat @e) * cast (range @e @'B32))
         -- Note I'm not dividing the frequence by 2 because integer
         -- division isn't implemented. Should not have any consequence.
@@ -124,4 +123,4 @@ encoderStack :: forall h n e. KnownNat h => KnownNat n => KnownNat e
 encoderStack n = do
   p <- positionalModuleLearned
   encoders <- mapM (\i -> encoderModule @h ("enc" ++ show i) p) [1..n]
-  return (foldr (.) id encoders)
+  return (foldr (.) id encoders) -- n-ary function composition
