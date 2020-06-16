@@ -170,6 +170,9 @@ funcall' :: DOC -> [DOC] -> DOC
 funcall' f args = hangWith "" 2 (f <> "(") (as <> ")")
   where as = sep (punctuate comma args)
 
+comment :: DOC -> Python ()
+comment c = gen ("#" <> c)
+
 func :: String -> [DOC] -> [(String,DOC)] -> DOC
 func fname positional namedArgs = funcall fname (positional ++ map (uncurry named) namedArgs )
 
@@ -315,7 +318,8 @@ generatePure' rec sR = knownSShape sR ?> \case
     return (funcall "tf.concat" [list rxs, text "axis=" <> integer (sListLength s0)])
   Transpose s p x -> do
     rx <- rec s x
-    return (func "tf.transpose" [rx] [("perm",list (map (integer . permToFun p) [0.. sListLength s]))])
+    comment ("transpose: p = " <> text (show p) <> "; " <> text (show s))
+    return (func "tf.transpose" [rx] [("perm",list (map (integer . permToFun p) [0.. sListLength s-1]))])
   Gather indexShape s0 m s1 x ix -> do
     rx <- rec (s0 .+. ((:*) m s1)) x
     rix <- rec indexShape ix
