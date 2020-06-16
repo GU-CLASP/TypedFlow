@@ -31,7 +31,7 @@ Stability   : experimental
 -}
 
 
-module TypedFlow.Model.Transformer where
+module TypedFlow.Models.Transformer where
 import Prelude hiding (RealFrac(..))
 import TypedFlow.TF
 import TypedFlow.Abstract
