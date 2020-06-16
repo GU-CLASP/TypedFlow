@@ -55,6 +55,10 @@ import TypedFlow.Types hiding (T)
 import TypedFlow.Types.Proofs
 import Data.Monoid((<>))
 
+{-# NOINLINE uniqueFor #-}
+uniqueFor :: T n s -> Unique
+uniqueFor s = s `seq` unsafePerformIO newUnique
+
 broadcast :: forall n s t proxy. KnownTyp t => KnownShape s => KnownNat n
   => Unique -> Bool -> proxy n -> T s t -> T (n : s) t
 broadcast u varyNoise n x = result
@@ -656,7 +660,7 @@ sequenceMask lens = mapT (lens `lessThan`) (range @maxlen)
 -- | simple broadcasting of a tensor
 broadcastT :: forall n s t. KnownShape s => KnownNat n => KnownTyp t => KnownLen s => T s t ->  T (n ': s) t
 broadcastT x = broadcast u False (Proxy @n) x
-  where u = unsafePerformIO newUnique
+  where u = uniqueFor x
 
 -- | simple broadcasting of a tensor
 broadcastTT :: forall a s t. KnownShape s => KnownTyp t => KnownShape a => KnownLen s => T s t ->  T (a ++ s) t
@@ -669,7 +673,7 @@ broadcastTT x = prodHomo @a @s #>
 mapT :: forall n s r t u. KnownShape r => KnownNat n => KnownTyp u => KnownLen r => KnownLen s
      => (T s t -> T r u) ->  T (n ': s) t -> T (n ': r) u
 mapT f x = broadcast u False (Proxy @n) (f (Unbroadcast (natSat @n) u x))
-  where u = unsafePerformIO newUnique
+  where u = uniqueFor x
 
 -- | Map a function along the few first dimensions of a tensor, given by the first type parameter
 mapTT :: forall a s t r u. KnownShape r => KnownShape a => KnownTyp u => KnownLen r => KnownShape s => KnownTyp t
@@ -689,7 +693,7 @@ zipWithT :: forall (n :: Nat) (s :: [Nat]) (t :: Typ) (s1 :: [Nat]) (t1 :: Typ) 
             -> Tensor (n ': s1) t1
             -> Tensor (n ': s2) t2
 zipWithT f x y = broadcast u False (Proxy @n) (f (Unbroadcast (natSat @n) u x) (Unbroadcast (natSat @n) u y))
-  where u = unsafePerformIO newUnique
+  where u = uniqueFor x
 
 -- | zip  a function along the few first dimensions of a tensor, given by the first type parameter
 zipWithTT :: forall a (s :: [Nat]) (s1 :: [Nat]) (s2 :: Shape) (t :: Typ) (t1 :: Typ)  (t2 :: Typ).
@@ -716,7 +720,7 @@ zipWith3T :: forall (n :: Nat) (s :: [Nat]) (t :: Typ) (s1 :: [Nat]) (t1 :: Typ)
             -> Tensor (n ': s2) t2
             -> Tensor (n ': s3) t3
 zipWith3T f x y z = broadcast u False (Proxy @n) (f (Unbroadcast (natSat @n) u x) (Unbroadcast (natSat @n) u y) (Unbroadcast (natSat @n) u z))
-  where u = unsafePerformIO newUnique
+  where u = uniqueFor x
 
 
 -- | Size-preserving convolution operation.
