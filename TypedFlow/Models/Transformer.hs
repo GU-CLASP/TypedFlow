@@ -1,3 +1,4 @@
+{-# LANGUAGE PartialTypeSignatures #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# OPTIONS_GHC -fplugin GHC.TypeLits.KnownNat.Solver #-}
@@ -45,12 +46,19 @@ import GHC.TypeLits
 -- e = embedding size
 -- n = sequence length
 
+average :: forall e. KnownNat e => T '[e] Float32 -> Scalar Float32
+average = reduceMeanAll
+
 -- | Normalise a vector. But add a small epsilon to avoid division by zero
 normalizer :: forall e. KnownNat e => T '[e] Float32 -> T '[e] Float32
-normalizer x = mapT (⊘ (sigma + epsilon)) xmu
-  where xmu = mapT (⊝ reduceMeanAll x) x
-        sigma = sqrt (reduceMeanAll (square xmu)) -- the norm of the vector.
+normalizer x = mapT (⊘ (sigma + epsilon)) xmu -- so the norm of result is almost 1
+  where mu = average x
+        xmu = mapT (⊝ mu) x  -- so the average of xmu is 0
+        sigma = sqrt (average (square xmu)) -- the norm of xmu.
         epsilon = 0.001 -- ?
+
+-- Informally:
+-- mapT f x = vector y such that y_i = f (x_i) -- (the first axis)
 
 dimAsFloat :: forall e. KnownNat e => Float
 dimAsFloat = fromIntegral (knownNatVal (natSat @e))
@@ -81,7 +89,7 @@ multiheadSelfAttentionModule nm = do
   eq <- multiheadLinearEncoder @h ("q" ++ nm)
   ek <- multiheadLinearEncoder @h ("k" ++ nm)
   w1 <- parameterDefault ("w1" ++ nm)
-  w2 <- parameterDefault ("w2" ++ nm)
+  -- w2 <- parameterDefault ("w2" ++ nm)
   return $ \x ->
     let v = transpose01 (mapT ev x)
         q = transpose01 (mapT eq x)
@@ -89,7 +97,30 @@ multiheadSelfAttentionModule nm = do
         r :: T '[n,h,e] Float32
         r = transpose01 (zipWith3T dotAttention q k v)
         r' = mapT (dense @e w1 . reshape @'[h * e]) r
-    in mapT (dense w2 . normalizer) (r' + x)
+    in mapT ({-dense w2 . -}normalizer) (r' + x)
+       -- x + mapT normalizer r'
+
+multiheadSelfAttentionModuleDecoder
+  :: forall h n e. KnownNat n => KnownNat h => KnownNat e
+  => String -> Gen (T '[n,e] Float32 -> T '[n,e] Float32  -> T '[n,e] Float32)
+multiheadSelfAttentionModuleDecoder nm = do
+  ev <- multiheadLinearEncoder @h ("v" ++ nm)
+  eq <- multiheadLinearEncoder @h ("q" ++ nm)
+  ek <- multiheadLinearEncoder @h ("k" ++ nm)
+  w1 <- parameterDefault ("w1" ++ nm)
+  -- w2 <- parameterDefault ("w2" ++ nm)
+  return $ \x    -- comes from decoder
+            y    -- comes from encoder
+           ->
+    let k = transpose01 (mapT ek y)
+        v = transpose01 (mapT ev x)
+        q = transpose01 (mapT eq y)
+        r :: T '[n,h,e] Float32
+        r = transpose01 (zipWith3T dotAttention q k v)
+        r' = mapT (dense @e w1 . reshape @'[h * e]) r
+    in mapT ({-dense w2 . -}normalizer) (r' + x)
+       -- x + mapT normalizer r'
+
 
 feedForwardModule :: forall e. KnownNat e
   => String -> Gen (T '[e] Float32 -> T '[e] Float32)
