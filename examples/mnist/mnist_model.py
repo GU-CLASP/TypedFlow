@@ -14,7 +14,7 @@ def mkModel(optimizer=tf.train.AdamOptimizer()):
   #[]
   var7=tf.constant(0.1, shape=[], dtype=tf.float32)
   #[32]
-  var8=tf.add(tf.reshape(var7, [1]), tf.zeros([32], dtype=tf.float32))
+  var8=tf.broadcast_to(tf.reshape(var7, [1]), [32])
   #[32]
   var9=tf.reshape(var8, [32])
   var10=tf.Variable(var9, name="f1_biases", trainable=True)
@@ -25,7 +25,7 @@ def mkModel(optimizer=tf.train.AdamOptimizer()):
   var13=tf.reshape(var12, [5,5,32,64])
   var14=tf.Variable(var13, name="f2_filters", trainable=True)
   #[64]
-  var15=tf.add(tf.reshape(var7, [1]), tf.zeros([64], dtype=tf.float32))
+  var15=tf.broadcast_to(tf.reshape(var7, [1]), [64])
   #[64]
   var16=tf.reshape(var15, [64])
   var17=tf.Variable(var16, name="f2_biases", trainable=True)
@@ -58,9 +58,9 @@ def mkModel(optimizer=tf.train.AdamOptimizer()):
   #[32]
   var36=var10
   #[784,32]
-  var37=tf.add(tf.reshape(var36, [1,32]), tf.zeros([784,32], dtype=tf.float32))
+  var37=tf.broadcast_to(tf.reshape(var36, [1,32]), [784,32])
   #[100,784,32]
-  var38=tf.add(tf.reshape(var37, [1,784,32]), tf.zeros([100,784,32], dtype=tf.float32))
+  var38=tf.broadcast_to(tf.reshape(var37, [1,784,32]), [100,784,32])
   #[100,784,32]
   var39=tf.add(var35, var38)
   #[100,28,28,32]
@@ -82,9 +82,9 @@ def mkModel(optimizer=tf.train.AdamOptimizer()):
   #[64]
   var48=var17
   #[196,64]
-  var49=tf.add(tf.reshape(var48, [1,64]), tf.zeros([196,64], dtype=tf.float32))
+  var49=tf.broadcast_to(tf.reshape(var48, [1,64]), [196,64])
   #[100,196,64]
-  var50=tf.add(tf.reshape(var49, [1,196,64]), tf.zeros([100,196,64], dtype=tf.float32))
+  var50=tf.broadcast_to(tf.reshape(var49, [1,196,64]), [100,196,64])
   #[100,196,64]
   var51=tf.add(var47, var50)
   #[100,14,14,64]
@@ -106,7 +106,7 @@ def mkModel(optimizer=tf.train.AdamOptimizer()):
   #[1024]
   var60=var23
   #[100,1024]
-  var61=tf.add(tf.reshape(var60, [1,1024]), tf.zeros([100,1024], dtype=tf.float32))
+  var61=tf.broadcast_to(tf.reshape(var60, [1,1024]), [100,1024])
   #[100,1024]
   var62=tf.add(var59, var61)
   #[100,1024]
@@ -122,7 +122,7 @@ def mkModel(optimizer=tf.train.AdamOptimizer()):
   #[10]
   var68=var29
   #[100,10]
-  var69=tf.add(tf.reshape(var68, [1,10]), tf.zeros([100,10], dtype=tf.float32))
+  var69=tf.broadcast_to(tf.reshape(var68, [1,10]), [100,10])
   #[100,10]
   var70=tf.add(var67, var69)
   #[100]
@@ -134,7 +134,7 @@ def mkModel(optimizer=tf.train.AdamOptimizer()):
   #[]
   var74=tf.constant(0.0, shape=[], dtype=tf.float32)
   #[1]
-  var75=tf.add(tf.reshape(var74, [1]), tf.zeros([1], dtype=tf.float32))
+  var75=tf.broadcast_to(tf.reshape(var74, [1]), [1])
   #[]
   var76=tf.reshape(var75, [])
   #[]
@@ -162,7 +162,8 @@ def mkModel(optimizer=tf.train.AdamOptimizer()):
   var88=tf.reshape(var87, [100,10])
   #[]
   var89=var0
-  return {"accuracy":var85
+  return {"batch_size":100
+         ,"accuracy":var85
          ,"y_":var88
          ,"w2_bias":var68
          ,"w2_w":var65
@@ -176,7 +177,7 @@ def mkModel(optimizer=tf.train.AdamOptimizer()):
          ,"x":var31
          ,"training_phase":var89
          ,"optimizer":optimizer
-         ,"batch_size":100
          ,"params":tf.trainable_variables()
          ,"train":var78
+         ,"loss":var77
          ,"update":[]}
