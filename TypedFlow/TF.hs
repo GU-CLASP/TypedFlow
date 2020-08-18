@@ -34,6 +34,7 @@ TensorFlow functions. Higher-level functions are not defined here.
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE UnicodeSyntax #-}
+{-# LANGUAGE ApplicativeDo #-}
 
 module TypedFlow.TF (
   -- * Variables, Parameters
@@ -48,7 +49,7 @@ module TypedFlow.TF (
   modifyPersistent,
   -- ** Placeholders and outputs
   placeholder,
-  peekAt,
+  -- peekAt,
   -- peekAtMany,
   -- * Operations
   -- ** Constants
@@ -153,36 +154,40 @@ repeatHT f = zs (typeSList @ss)
 parameter' :: ∀ (shape :: Shape) t. (KnownTyp t,KnownShape shape) => String -> T shape t -> Gen (T shape t)
 parameter' = persistent True
 
+example :: Gen (Tensor '[] Float32)
+example = do
+  (x::Scalar Float32) <- T . Variable <$> GPVariable True "rstin" Nothing
+  pure (x ⊕ x)
 
-newParameter :: MonadState GState m => VarInfo -> m ()
-newParameter p =   modify $ \GState{..} -> GState{genParams = p:genParams,..}
+-- newParameter :: MonadState GState m => VarInfo -> m ()
+-- newParameter p =   modify $ \GState{..} -> GState{genParams = p:genParams,..}
 
 -- TODO: use a different type for persistent?
 -- | Declare variable which persists between calls to session.run.
 persistent :: ∀ (shape :: Shape) t. (KnownTyp t,KnownShape shape) => Bool -> String -> T shape t -> Gen (T shape t)
 persistent trainable name initial = do
-  result <- T . Variable <$> GPVariable trainable name initial
-  when trainable (newParameter (VarInfo name (typeSShape @shape) (typeSTyp @t) result))
-  peekAt name result
+  result <- T . Variable <$> GPVariable trainable name (Just initial)
+  -- when trainable (newParameter (VarInfo name (typeSShape @shape) (typeSTyp @t) result))
+  -- peekAt name result
   return result
 
 placeholder :: ∀ (shape :: Shape) t. (KnownTyp t,KnownShape shape) => String -> Gen (T shape t)
 placeholder n = do
-  x <- GPPlaceholder typeSShape typeSTyp n
-  peekAt n (T (Variable x))
+  x <- GPVariable True n Nothing -- typeSShape typeSTyp
+  -- peekAt n (T (Variable x))
   return (T (Variable x))
 
 -- | Modify a mutable tensor. Attention: for the assignment to happen,
 -- the resulting tensor must be evaluated!
 modifyPersistent :: (KnownShape s,KnownTyp t) => T s t -> T s t -> Gen (T s t)
-modifyPersistent v x = (GPModify v x)
+modifyPersistent (T (Variable v)) x = (GPModify v x) -- FIXME: pattern matching here is poor style.
 
 
--- | Name a tensor so that it is made available for session.run.
-peekAt :: forall s t. (KnownShape s,KnownTyp t) => String -> Tensor s t -> Gen ()
-peekAt name v =  modify $ \GState{..} -> GState{genPeeks = p:genPeeks,..}
-  where p :: VarInfo
-        p = (VarInfo name (typeSShape @s) (typeSTyp @t) v)
+-- -- | Name a tensor so that it is made available for session.run.
+-- peekAt :: forall s t. (KnownShape s,KnownTyp t) => String -> Tensor s t -> Gen ()
+-- peekAt name v =  modify $ \GState{..} -> GState{genPeeks = p:genPeeks,..}
+--   where p :: VarInfo
+--         p = (VarInfo name (typeSShape @s) (typeSTyp @t) v)
 
 -- type family AddSpatialDims xs ys where
 --   AddSpatialDims '[x] '[] = '[x]

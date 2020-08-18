@@ -1,3 +1,4 @@
+{-# LANGUAGE ViewPatterns #-}
 {-|
 Module      : TypedFlow.Python
 Description : Python-generation Functions 
@@ -44,7 +45,7 @@ import Data.List (genericReplicate, isPrefixOf)
 import GHC.TypeLits
 import Control.Monad.State
 import TypedFlow.Types
-import TypedFlow.Abstract (newId, permToFun,unopInputShape)
+import TypedFlow.Abstract (permToFun,unopInputShape)
 import TypedFlow.Types.Proofs
 import TypedFlow.Memo
 import Text.PrettyPrint.Compact hiding (All,Last,Product,Sum,Options)
@@ -148,6 +149,13 @@ cache x = do
 
 newPyVar' :: forall s t. SShape s -> STyp t -> Python (Ref s t)
 newPyVar' s t = knownSShape s ?> (knownTyp t $ newPyVar @s @t)
+
+-- newId :: Gen Integer
+newId :: MonadState GState m => m Integer
+newId = do
+  n <- gets nextVar
+  modify $ \GState{..} -> GState {nextVar=nextVar+1,..}
+  return n
 
 newPyVar :: forall s t. KnownShape s => KnownTyp t => Python (Ref s t)
 newPyVar = do
@@ -347,33 +355,70 @@ generatePure' rec sR = knownSShape sR ?> \case
      rx <- rec typeSShape x
      return $ func "tf.nn.softmax" [rx] [("axis","1")]
 
-type Python a = StateT PyState (State GState) a
+type Python a = State PyState  a
 
-interpGen :: Gen a -> Python a
-interpGen (GPReturn x) = return x
-interpGen (GPBind a b) = do x <- interpGen a
-                            interpGen (b x)
-interpGen (GPVariable trainable name initial) = do
-  i <- generatePure initial
-  v <- newPyVar
-  v <-- funcall "tf.Variable" [i, named "name" (string (show (name))), named "trainable" (bool trainable)]
-  return v
-interpGen (GPPlaceholder s t n) = do
-  name <- newPyVar' s t
-  name <-- funcall "tf.placeholder" [showSTyp t, named "shape" (showSShape s), named "name" (text (show n))]
-  return name
-interpGen (GPModify ref value) = do
-  res <- newPyVar
-  r <- generatePure ref
-  v <- generatePure value
-  res <-- (funcall "tf.assign" [r,v])
-  return (T (Variable res))
-interpGen (GPState f) = lift (state f)
+generateVars :: Gen a -> Python a
+generateVars p = do
+  let (x,vs) = runState (extractVars p) initialGstate
+  forM_ (genVars vs) $ \v -> case v of
+      VarInfo {..} -> case varRef of
+        Ref _refId shap typ -> do
+          ii <- case varInitial of
+            Nothing -> return []
+            Just iii -> do
+              iiii <- case knownSShape shap of
+                Sat -> knownTyp typ $ generatePure iii
+              return [named "initial_value" iiii]
+          varRef <-- funcall "tf.Variable" ([named "name" (string (show (varName))), named "trainable" (bool varTrainable)] ++ ii)
+          return ()
+  return x
+
+interpGen :: (KnownShape s, KnownTyp t) => Gen (T s t) -> Python ([VarInfo],DOC)
+interpGen p = do
+  -- generate variables
+  let (x,genVars -> vs) = runState (extractVars p) initialGstate
+  forM_ vs $ \v -> case v of
+      VarInfo {..} -> case varRef of
+        Ref _refId shap typ -> do
+          ii <- case varInitial of
+            Nothing -> return []
+            Just iii -> do
+              iiii <- case knownSShape shap of
+                Sat -> knownTyp typ $ generatePure iii
+              return [named "initial_value" iiii]
+          varRef <-- funcall "tf.Variable" ([named "name" (string (show (varName))), named "trainable" (bool varTrainable)] ++ ii)
+          return ()
+  x' <- generatePure x
+  return (vs,x')
+
+-- interpGen :: Gen a -> Python a
+-- interpGen (GPReturn x) = return x
+-- interpGen (GPApp a b) = do x <- interpGen a
+--                            y <- interpGen b
+--                            return (x y)
+-- -- Variable already generated and initialized; here we use it only.
+-- interpGen (GPVariable trainable name initial) = do
+--   return (text ("self." ++ name))
+-- -- interpGen (GPVariable trainable name initial) = do 
+-- --   i <- mapM interpGen initial
+-- --   v <- newPyVar
+-- --   v <-- funcall "tf.Variable" [named "initial_value" i, named "name" (string (show (name))), named "trainable" (bool trainable)]
+-- --   return v
+-- -- interpGen (GPPlaceholder s t n) = do
+-- --   name <- newPyVar' s t
+-- --   name <-- funcall "tf.Variable" [named "dtype" (showSTyp t), named "shape" (showSShape s), named "name" (text (show n))]
+-- --   return name
+-- interpGen (GPModify ref value) = do
+--   res <- newPyVar
+--   v <- generatePure value
+--   res <-- (funcall "tf.assign" [pyVarRepr ref,v])
+--   return (T (Variable res))
+-- -- interpGen (GPState f) = lift (state f)
 
 -- TODO: get the parameters from the genParams field
--- | Return a list of parameters.
-getParameters :: Python UntypedExpression
-getParameters = return ("tf.trainable_variables()")
+-- -- | Return a list of parameters.
+-- getParameters :: Python UntypedExpression
+-- getParameters = return ("tf.trainable_variables()")
 
 -- | Clip a gradient
 clipByGlobalNorm :: Float -> UntypedExpression -> UntypedExpression
@@ -435,14 +480,14 @@ compileAlreadyBatched Options{..} models = do
           (pks ++) <$> go ms
     updatesAndLosses <- interpGen models
     peeks3 <- go updatesAndLosses
-    peeks <- mapM paramToPeek =<< lift (gets genPeeks)
+    -- peeks <- mapM paramToPeek =<< lift (gets genPeeks)
     let peeks2 = [("batch_size", (showDim @ bs))]
     gen (text "return " <> dict (peeks2 ++ peeks ++peeks3))
 
-paramToPeek :: VarInfo -> Python (String,UntypedExpression)
-paramToPeek (VarInfo name s t x) = do
-  x' <- knownSShape s ?> (knownTyp t $ generatePure x)
-  return (name,x')
+-- paramToPeek :: VarInfo -> Python (String,UntypedExpression)
+-- paramToPeek (VarInfo name s t x) = do
+--   x' <- knownSShape s ?> (knownTyp t $ generatePure x)
+--   return (name,x')
 
 untypedExprs :: All KnownShape xs => KnownTyp t =>  HTV t xs -> Python [DOC]
 untypedExprs Unit = return []

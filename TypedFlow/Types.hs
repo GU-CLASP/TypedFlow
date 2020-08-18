@@ -29,6 +29,7 @@
 {-# LANGUAGE UndecidableSuperClasses #-}
 {-# LANGUAGE UnicodeSyntax #-}
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE ApplicativeDo #-}
 {-# OPTIONS_GHC -fplugin GHC.TypeLits.KnownNat.Solver #-}
 
 module TypedFlow.Types where
@@ -581,40 +582,49 @@ type None = 514229 --  fibonnaci prime.
 
 
 --------------------------------
--- Generation Effects
+-- Generation Effects (TODO: move to other module)
 
-data VarInfo = forall s t. VarInfo String (SShape s) (STyp t) (Tensor s t)
+data VarInfo = forall s t. VarInfo {varTrainable :: Bool,
+                                    varName :: String,
+                                    varRef :: Ref s t,
+                                    varInitial :: Maybe (T s t)} 
 data GState = GState {nextVar :: Integer, -- ^ next free variable
-                      genParams :: [VarInfo], -- ^ optimizable parameters
-                      genPeeks :: [VarInfo], -- ^ variables available after running the model (outputs)
+                      genVars :: [VarInfo], -- ^ optimizable parameters
+                      -- genPeeks :: [VarInfo], -- ^ variables available after running the model (outputs)
                       genRegularizers :: [Scalar Float32], -- ^ accumulated regularizers
                       genTrainingPlaceholder :: Scalar TFBool -- ^ flag which is true when training
                      }
 initialGstate :: GState
 initialGstate = (GState {nextVar = 0
-                        ,genParams=[]
+                        ,genVars=[]
                         ,genRegularizers=[]
                         ,genTrainingPlaceholder = error "NO TRAINING PLACEHOLDER!"
-                        ,genPeeks=[]})
+                        -- ,genPeeks=[]
+                        })
+
+extractVars :: Gen a -> State GState a
+extractVars (GPVariable trainable name initial) = do
+  i <- mapM extractVars initial
+  GState {..} <- get
+  let r = Ref (fromIntegral nextVar) typeSShape typeSTyp
+  put GState {genVars = VarInfo trainable name r i : genVars,nextVar = nextVar+1,..}
+  return r
+extractVars (GPApp a b) = do f <- extractVars a; x <- extractVars b; return (f x)
+
 
 data Gen a where
-  GPVariable :: forall (shape :: Shape) t. (KnownTyp t,KnownShape shape) => Bool -> String -> T shape t -> Gen (Ref shape t) 
-  GPPlaceholder :: forall s t. SShape s -> STyp t -> String -> Gen (Ref s t)
-  GPModify :: (KnownShape s,KnownTyp t) => T s t -> T s t -> Gen (T s t)
+  GPId :: Gen Integer
+  GPVariable :: forall (shape :: Shape) t. (KnownTyp t,KnownShape shape) => Bool -> String -> Maybe (Gen (T shape t)) -> Gen (Ref shape t) 
+  -- GPPlaceholder :: forall s t. SShape s -> STyp t -> String -> Gen (Ref s t)
+  GPModify :: (KnownShape s,KnownTyp t) => Ref s t -> T s t -> Gen (T s t)
   GPReturn :: a -> Gen a
-  GPState :: (GState -> (a,GState)) -> Gen a
-  GPBind :: Gen a -> (a -> Gen b) -> Gen b
+  -- GPState :: (GState -> (a,GState)) -> Gen a
+  GPApp :: (Gen (a -> b)) -> Gen a -> Gen b
 
-instance MonadState GState Gen where
-  state = GPState
-
-instance Monad Gen where
-  (>>=) = GPBind
-  return = GPReturn
 
 instance Applicative Gen where
-  (<*>) = ap
-  pure = return
+  (<*>) = GPApp
+  pure = GPReturn
 
 instance Functor Gen where
   fmap f = (pure f <*>)

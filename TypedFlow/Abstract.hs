@@ -11,6 +11,7 @@ This module provides operations on the abstract representation of
 tensor operations. It is not normally imported directly by users.
 -}
 
+{-# LANGUAGE ApplicativeDo #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
@@ -53,7 +54,6 @@ import TypedFlow.Memo
 import TypedFlow.Types (T(..))
 import TypedFlow.Types hiding (T)
 import TypedFlow.Types.Proofs
-import Data.Monoid((<>))
 
 {-# NOINLINE uniqueFor #-}
 uniqueFor :: T n s -> Unique
@@ -829,23 +829,11 @@ oneHot0 = UnOp (Axis1Op (OneHot Sat (typeSShape @s))) Unit
 oneHot1 :: forall numClasses w s m t. KnownBits w =>KnownShape s => KnownNat numClasses => KnownNat m => KnownBits t => Tensor (m ': s) ('Typ 'Int w) -> Tensor (m ': numClasses ': s) (Flt t)
 oneHot1 = mapT oneHot0
 
-newVar :: Gen String
-newVar = do
-  n <- newId
-  return ("var" <> show n)
-
--- newId :: Gen Integer
-newId :: MonadState GState m => m Integer
-newId = do
-  n <- gets nextVar
-  modify $ \GState{..} -> GState {nextVar=nextVar+1,..}
-  return n
-
 -- | Generate a random tensor whose distribution is given. A new noise
 -- is sampled for each element in a batch.
 noise :: KnownShape s => Distribution s t -> Gen (T s t)
 noise d = do
-  noiseId <- newId -- necessary for correct broadcasting behaviour
+  noiseId <- GPId -- necessary for correct broadcasting behaviour
   return $ Noise noiseId Unit typeSShape d
 
 -- | Clip a tensor
