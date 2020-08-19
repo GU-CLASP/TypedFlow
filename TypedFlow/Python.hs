@@ -57,13 +57,13 @@ first :: (t -> a) -> (t, b) -> (a, b)
 first f (x,y) = (f x,y)
 
 paramShape' :: VarInfo -> [Integer]
-paramShape' (VarInfo _ s _ _) = shapeToList' s
+paramShape' (VarInfo {varRef = Ref _ s _}) = shapeToList' s
 
 paramDType ::  VarInfo -> Typ
-paramDType (VarInfo _ _ t _) = sTypTyp t
+paramDType (VarInfo {varRef = Ref _ _ t}) = sTypTyp t
 
 paramName :: VarInfo -> String
-paramName (VarInfo nm _ _ _) = nm
+paramName (VarInfo {..}) = varName
 
 generateFile :: String -> Python () -> IO ()
 generateFile fname g = do
@@ -150,23 +150,28 @@ cache x = do
 newPyVar' :: forall s t. SShape s -> STyp t -> Python (Ref s t)
 newPyVar' s t = knownSShape s ?> (knownTyp t $ newPyVar @s @t)
 
--- newId :: Gen Integer
-newId :: MonadState GState m => m Integer
+newId :: Python Integer
 newId = do
-  n <- gets nextVar
-  modify $ \GState{..} -> GState {nextVar=nextVar+1,..}
+  n <- gets genId
+  modify $ \PyState{..} -> PyState {genId=genId+1,..}
   return n
 
 newPyVar :: forall s t. KnownShape s => KnownTyp t => Python (Ref s t)
 newPyVar = do
-  n <- lift newId
+  n <- newId
   return $ Ref (fromIntegral n) typeSShape typeSTyp
+
+pyVarInfoRepr :: VarInfo -> DOC
+pyVarInfoRepr (VarInfo {varRef = r}) = pyVarRepr r
 
 pyVarRepr :: Ref s t -> DOC
 pyVarRepr (Ref n _ _) = text ("var" <> show n)
 
 tuple :: [DOC] -> DOC
 tuple = parens . sep . punctuate comma
+
+-- list :: [DOC] -> DOC
+-- list = brackets . sep . punctuate comma
 
 dict :: [(String,DOC)] -> DOC
 dict xs = encloseSep "{" "}" "," [text (show k) <> ":" <> v | (k,v) <- xs]
@@ -200,11 +205,13 @@ assignAny x = do
   return (pyVarRepr v)
 
 generate :: Python () -> (String,[VarInfo])
-generate s = (renderWith (PP.Options 92 (const id)) genText, genParams)
-  where (PyState{..},GState{..}) = runState (execStateT s initPyState) initialGstate
+generate s = (renderWith (PP.Options 92 (const id)) genText, genPyVars)
+  where PyState{..} = execState s initPyState
         initPyState = PyState {genPureTable = mempty
                               ,genAssignTable = mempty
-                              ,genText = mempty}
+                              ,genText = mempty
+                              ,genPyVars = mempty
+                              ,genId = 12345}
 
 generatePure :: forall s t. KnownTyp t => KnownShape s => T s t -> Python DOC
 generatePure x = do
@@ -355,26 +362,11 @@ generatePure' rec sR = knownSShape sR ?> \case
      rx <- rec typeSShape x
      return $ func "tf.nn.softmax" [rx] [("axis","1")]
 
-type Python a = State PyState  a
+type Python a = State PyState a
 
-generateVars :: Gen a -> Python a
+
+generateVars :: Gen a -> Python ([VarInfo],a)
 generateVars p = do
-  let (x,vs) = runState (extractVars p) initialGstate
-  forM_ (genVars vs) $ \v -> case v of
-      VarInfo {..} -> case varRef of
-        Ref _refId shap typ -> do
-          ii <- case varInitial of
-            Nothing -> return []
-            Just iii -> do
-              iiii <- case knownSShape shap of
-                Sat -> knownTyp typ $ generatePure iii
-              return [named "initial_value" iiii]
-          varRef <-- funcall "tf.Variable" ([named "name" (string (show (varName))), named "trainable" (bool varTrainable)] ++ ii)
-          return ()
-  return x
-
-interpGen :: (KnownShape s, KnownTyp t) => Gen (T s t) -> Python ([VarInfo],DOC)
-interpGen p = do
   -- generate variables
   let (x,genVars -> vs) = runState (extractVars p) initialGstate
   forM_ vs $ \v -> case v of
@@ -388,8 +380,7 @@ interpGen p = do
               return [named "initial_value" iiii]
           varRef <-- funcall "tf.Variable" ([named "name" (string (show (varName))), named "trainable" (bool varTrainable)] ++ ii)
           return ()
-  x' <- generatePure x
-  return (vs,x')
+  return (vs,x)
 
 -- interpGen :: Gen a -> Python a
 -- interpGen (GPReturn x) = return x
@@ -431,9 +422,9 @@ grad y vars = funcall "tf.gradients" [y, vars]
 
 -- | Batchify and compile a model with simple input to output mapping.
 compile :: forall batchSize sx tx sy ty sy_ ty_ p
-        .  (KnownNat batchSize, KnownShape sx, KnownTyp tx, KnownShape sy, KnownTyp ty, KnownShape sy_, KnownTyp ty_, All KnownShape p, KnownLen p)
+        .  (KnownNat batchSize, KnownShape sx, KnownTyp tx, KnownShape sy, KnownTyp ty, KnownShape sy_, KnownTyp ty_, KnownShape p, KnownLen p)
         => Options
-        -> Gen (Tensor sx tx -> Tensor sy ty -> ModelOutputs  ty_ p sy_)
+        -> Gen (Tensor sx tx -> Tensor sy ty -> ModelOutput  ty_ p sy_)
         -> Python ()
 compile options fGen = compileGen @batchSize options (simpleModel <$> fGen)
 
@@ -441,48 +432,43 @@ compile options fGen = compileGen @batchSize options (simpleModel <$> fGen)
 compileGen :: forall batchSize shapesAndTypes sy_ ty_ ps stateShapes.
            (KnownNat batchSize, All KnownPlaceholder shapesAndTypes, KnownLen stateShapes,
             KnownLen shapesAndTypes,
-            All KnownShape stateShapes, KnownShape sy_, KnownTyp ty_, All KnownShape ps, KnownLen ps)
+            All KnownShape stateShapes, KnownShape sy_, KnownTyp ty_, KnownShape ps, KnownLen ps)
          => Options
-         -> Gen (Placeholders shapesAndTypes -> HTV ty_ stateShapes -> StateAndOutputs ty_ ps (sy_ ': stateShapes))
+         -> Gen (Placeholders shapesAndTypes -> HTV ty_ stateShapes -> StateAndOutput ty_ ps (sy_ ': stateShapes))
          -> Python ()
-compileGen options fGen =
-  let batchedShapesKnown = mapFMap @(Cons batchSize) knownCons (allKnown @KnownShape @stateShapes typeSList)
-  in knownAll batchedShapesKnown $
-     compileAlreadyBatched @batchSize options (precompile (batchModel @batchSize fGen))
+compileGen options fGen = knownAll known (compileAlreadyBatched @batchSize options batched)
+  where (known,batched) = batchModel @batchSize fGen
 
 -- | Generic model compilation (do not use unless you know what you're doing)
-compileAlreadyBatched :: forall bs ty stateShapes ps. KnownNat bs
+compileAlreadyBatched :: forall bs ty stateShapes sy ps. KnownNat bs
            => KnownTyp ty
+           => KnownShape sy
+           => KnownShape ps
            => All KnownShape stateShapes
            => Options
-           -> (Gen (NP (K ((String,HTV ty stateShapes,Scalar Float32))) ps)) -> Python ()
-compileAlreadyBatched Options{..} models = do
+           -> (Gen (HTV ty stateShapes,HTV ty stateShapes -> (ModelOutput ty ps sy, HTV ty stateShapes))) -> Python ()
+compileAlreadyBatched Options{..} model = knownAppend @sy @ps ?> do
   gen (text "import tensorflow as tf")
-  genFun "mkModel" [text "optimizer=tf.train.AdamOptimizer()"] $ do
-    params <- getParameters
-    let go :: forall xs. NP (K (String,HTV ty stateShapes,Scalar Float32)) xs -> Python [(String,DOC)]
-        go Unit = return []
-        go (K (prefix,updates,lossIn) :* ms) = do
-          updates' <- untypedExprs updates
-          loss <- generatePure lossIn
-          trainStep <-
-            if "test" `isPrefixOf` prefix
-            then return (text "None") -- otherwise tensorflow complains. (This is for tasks which are not for training but testing only.)
-            else assignAny $ case maxGradientNorm of
-                               Nothing -> funcall "optimizer.minimize" [loss]
-                               Just clip -> funcall "optimizer.apply_gradients"
-                                              [funcall "zip" [clipByGlobalNorm clip (grad loss params),params]]
-          let pks = map (first (prefix ++)) [("optimizer", (text "optimizer"))
-                                            ,("params", params)
-                                            ,("train", trainStep)
-                                            ,("loss", loss)]
-                    ++ [("update", list updates')]
-          (pks ++) <$> go ms
-    updatesAndLosses <- interpGen models
-    peeks3 <- go updatesAndLosses
-    -- peeks <- mapM paramToPeek =<< lift (gets genPeeks)
-    let peeks2 = [("batch_size", (showDim @ bs))]
-    gen (text "return " <> dict (peeks2 ++ peeks ++peeks3))
+  genFun "mkModel" [text "optimizer"] $ do
+    let apply' (x,f) = f x
+        model' = fmap (fst . apply') model -- FIXME: run state updates
+    (vs,ModelOutput {..}) <- generateVars model'
+    loss <- generatePure modelLoss
+    y_ <- generatePure modelY
+    accuracy <- generatePure modelCorrect
+    modify $ \PyState{..} -> PyState{genPyVars=vs,..}
+    trainStep <- assignAny $ case maxGradientNorm of
+       Nothing -> funcall "optimizer.minimize" [loss]
+                                 -- FIXME: traverse the loss to see what parameters are, or use the tensorflow tape object.
+                                 -- Just clip -> funcall "optimizer.apply_gradients"
+                                 --                [funcall "zip" [clipByGlobalNorm clip (grad loss params),params]]
+    let peeks = [("optimizer", (text "optimizer"))
+                ,("train", trainStep)
+                ,("loss", loss)
+                ,("accuracy", accuracy)
+                ,("y_", y_)
+                ,("batch_size", (showDim @ bs))]
+    gen (text "return " <> dict peeks)
 
 -- paramToPeek :: VarInfo -> Python (String,UntypedExpression)
 -- paramToPeek (VarInfo name s t x) = do
@@ -503,7 +489,10 @@ pretty = case kindVal @(TypKind t) of
     SB32 -> float
     SB64 -> double
 
-data PyState = PyState {genText :: DOC
+data PyState = PyState {
+                       genId :: Integer
+                       ,genText :: DOC
+                       ,genPyVars :: [VarInfo]
                        ,genPureTable :: SSNMap2 Shape Typ T DOC
                        -- ^ Table mapping pointers to their
                        -- interpretations, so that sharing in the data

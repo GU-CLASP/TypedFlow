@@ -618,8 +618,11 @@ data Gen a where
   -- GPPlaceholder :: forall s t. SShape s -> STyp t -> String -> Gen (Ref s t)
   GPModify :: (KnownShape s,KnownTyp t) => Ref s t -> T s t -> Gen (T s t)
   GPReturn :: a -> Gen a
-  -- GPState :: (GState -> (a,GState)) -> Gen a
+  GPState :: (GState -> (a,GState)) -> Gen a
   GPApp :: (Gen (a -> b)) -> Gen a -> Gen b
+
+genGets :: (GState -> a) -> Gen a
+genGets f = GPState  (\s -> (f s, s))
 
 
 instance Applicative Gen where
@@ -785,26 +788,26 @@ deriving instance Show (Permutation s t)
 
 class KnownTensors p where
   -- | traverse all the tensors contained in p.
-  travTensor :: Monad m => (forall s t. (KnownTyp t, KnownShape s) => String -> T s t -> m (T s t)) -> String -> p -> m p 
+  travTensor :: Applicative m => (forall s t. (KnownTyp t, KnownShape s) => String -> T s t -> m (T s t)) -> String -> p -> m p 
 
 instance (KnownTyp t, KnownShape shape) => KnownTensors (T shape t) where
   travTensor f = f
 
 instance (All KnownPair ys) => KnownTensors (HHTV ys) where
-  travTensor :: forall m. Monad m => (forall s t'. (KnownTyp t', KnownShape s) => String -> T s t' -> m (T s t')) -> String -> (HHTV ys) -> m (HHTV ys)
+  travTensor :: forall m. Applicative m => (forall s t'. (KnownTyp t', KnownShape s) => String -> T s t' -> m (T s t')) -> String -> (HHTV ys) -> m (HHTV ys)
   travTensor f s = ttr 0
     where ttr :: forall xs. All KnownPair xs => Int -> HHTV xs -> m (HHTV xs)
-          ttr _ Unit = return Unit
+          ttr _ Unit = pure Unit
           ttr n (Uncurry x :* xs) = do
             x' <- f (s <> "_" <> show n) x
             xs' <- ttr (n + 1) xs
             return (Uncurry x' :* xs')
 
 instance (KnownTyp t, All KnownShape ys) => KnownTensors (HTV t ys) where
-  travTensor :: forall m. Monad m => (forall s t'. (KnownTyp t', KnownShape s) => String -> T s t' -> m (T s t')) -> String -> (HTV t ys) -> m (HTV t ys)
+  travTensor :: forall m. Applicative m => (forall s t'. (KnownTyp t', KnownShape s) => String -> T s t' -> m (T s t')) -> String -> (HTV t ys) -> m (HTV t ys)
   travTensor f s = ttr 0
     where ttr :: forall xs. All KnownShape xs => Int -> HTV t xs -> m (HTV t xs)
-          ttr _ Unit = return Unit
+          ttr _ Unit = pure Unit
           ttr n (F x :* xs) = do
             x' <- f (s <> "_" <> show n) x
             xs' <- ttr (n + 1) xs
