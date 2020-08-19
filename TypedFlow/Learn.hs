@@ -293,3 +293,4 @@ batchModel' fGen =
         f <- fGen
         return $ \stateVars -> broadcastGen u True (Proxy @batchSize) (f xs (unbroadcastStates (typeSList) stateVars))
  where batchSize = natSat @batchSize
+

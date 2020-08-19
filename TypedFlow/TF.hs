@@ -39,7 +39,6 @@ TensorFlow functions. Higher-level functions are not defined here.
 module TypedFlow.TF (
   -- * Variables, Parameters
   -- ** Parameters
-  parameter',
   parameter,
   parameterDefault,
   ParamWithDefault(..),
@@ -128,8 +127,6 @@ import GHC.TypeLits
 import Data.Proxy
 import TypedFlow.Types
 import TypedFlow.Types.Proofs
-import Control.Monad (when)
-import Control.Monad.State
 import TypedFlow.Abstract
 
 -- | Repeat a flexible-shape constant vector to form a heterogeneous tensor vector.
@@ -148,46 +145,26 @@ repeatHT f = zs (typeSList @ss)
         zs Unit = Unit
         zs (_ :* n) = Uncurry f :* zs n
 
--- | Declare a parameter to optimize. The shape of parameter should
--- not depend on dimensions which can change between runs, such as the
--- batch size.
-parameter' :: ∀ (shape :: Shape) t. (KnownTyp t,KnownShape shape) => String -> T shape t -> Gen (T shape t)
-parameter' = persistent True
+-- | Declare a parameter to optimize.
+parameter :: ∀ (shape :: Shape) t. (KnownTyp t,KnownShape shape) => String -> Gen (T shape t) -> Gen (T shape t)
+parameter = persistent True
 
-example :: Gen (Tensor '[] Float32)
-example = do
-  (x::Scalar Float32) <- T . Variable <$> GPVariable True "rstin" Nothing
-  pure (x ⊕ x)
+-- -- | Create a parameter.
+-- parameter :: forall p. KnownTensors p => String -> Gen p -> Gen p
+-- parameter s p = parameter' s p
 
--- newParameter :: MonadState GState m => VarInfo -> m ()
--- newParameter p =   modify $ \GState{..} -> GState{genParams = p:genParams,..}
-
--- TODO: use a different type for persistent?
 -- | Declare variable which persists between calls to session.run.
-persistent :: ∀ (shape :: Shape) t. (KnownTyp t,KnownShape shape) => Bool -> String -> T shape t -> Gen (T shape t)
+persistent :: ∀ (shape :: Shape) t. (KnownTyp t,KnownShape shape) => Bool -> String -> Gen (T shape t) -> Gen (T shape t)
 persistent trainable name initial = do
-  result <- T . Variable <$> GPVariable trainable name (Just initial)
-  -- when trainable (newParameter (VarInfo name (typeSShape @shape) (typeSTyp @t) result))
-  -- peekAt name result
-  return result
+  T . Variable <$> GPVariable trainable name (Just initial)
 
 placeholder :: ∀ (shape :: Shape) t. (KnownTyp t,KnownShape shape) => String -> Gen (T shape t)
-placeholder n = do
-  x <- GPVariable True n Nothing -- typeSShape typeSTyp
-  -- peekAt n (T (Variable x))
-  return (T (Variable x))
+placeholder name = T . Variable <$> GPVariable False name Nothing
 
 -- | Modify a mutable tensor. Attention: for the assignment to happen,
 -- the resulting tensor must be evaluated!
 modifyPersistent :: (KnownShape s,KnownTyp t) => T s t -> T s t -> Gen (T s t)
 modifyPersistent (T (Variable v)) x = (GPModify v x) -- FIXME: pattern matching here is poor style.
-
-
--- -- | Name a tensor so that it is made available for session.run.
--- peekAt :: forall s t. (KnownShape s,KnownTyp t) => String -> Tensor s t -> Gen ()
--- peekAt name v =  modify $ \GState{..} -> GState{genPeeks = p:genPeeks,..}
---   where p :: VarInfo
---         p = (VarInfo name (typeSShape @s) (typeSTyp @t) v)
 
 -- type family AddSpatialDims xs ys where
 --   AddSpatialDims '[x] '[] = '[x]
@@ -286,13 +263,8 @@ normalize v = mapT (/ (norm v + epsilon)) v
 
 -- | Create a parameter and initialize it with a suitable default for its type. Control the exact initializer using 'parameter'.
 parameterDefault :: forall p. ParamWithDefault p => String -> Gen p
-parameterDefault name = parameter name defaultInitializer
+parameterDefault name = withScope name $ defaultInitializer
 
--- | Create a parameter.
-parameter :: forall p. KnownTensors p => String -> Gen p -> Gen p
-parameter s p = do
-  x <- p
-  travTensor parameter' s x
 
 -- flattenHTV :: KnownTyp t => All KnownShape xs => HTV t xs -> Tensor '[Sum (Ap (FMap CProduct) xs)] t
 -- flattenHTV Unit = zeros

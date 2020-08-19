@@ -75,7 +75,7 @@ instance (KnownNat numObjects, KnownBits b, KnownNat embeddingSize) => KnownTens
   travTensor f s (EmbeddingP p) = EmbeddingP <$> travTensor f s p
 
 instance (KnownNat numObjects, KnownBits b, KnownNat embeddingSize) => ParamWithDefault (EmbeddingP numObjects embeddingSize b) where
-  defaultInitializer = EmbeddingP <$> (noise $ UniformD (-0.05) 0.05)
+  defaultInitializer = initializerScope (EmbeddingP <$> (noise $ UniformD (-0.05) 0.05))
 
 -- | embedding layer
 embedding :: ∀ embeddingSize numObjects t. KnownNat embeddingSize => KnownNat numObjects =>
@@ -83,12 +83,11 @@ embedding :: ∀ embeddingSize numObjects t. KnownNat embeddingSize => KnownNat 
 embedding (EmbeddingP param) input = gather param input
 
 
-
 instance (KnownNat a, KnownNat b, KnownBits t) => KnownTensors (DenseP t a b) where
   travTensor f s (DenseP x y) = DenseP <$> travTensor f (s<>"_w") x <*> travTensor f (s<>"_bias") y
 
 instance (KnownNat n, KnownNat m, KnownBits b) => ParamWithDefault (DenseP b n m) where
-  defaultInitializer = DenseP <$> glorotUniform <*> (noise $ TruncatedNormalD 0.1)
+  defaultInitializer = initializerScope (DenseP <$> glorotUniform <*> (noise $ TruncatedNormalD 0.1))
 
 -- | Dense layer (Apply a linear function)
 (#), dense :: ∀m n t. KnownNat n => KnownNat m => KnownBits t => DenseP t n m -> Tensor '[n] (Flt t) -> Tensor '[m] (Flt t)
@@ -146,7 +145,8 @@ data ConvP t outChannels inChannels filterSpatialShape
 
 instance (KnownNat outChannels,KnownNat inChannels, KnownShape filterSpatialShape, KnownBits t) =>
   ParamWithDefault (ConvP t outChannels inChannels filterSpatialShape) where
-  defaultInitializer = prodHomo @filterSpatialShape @'[inChannels, outChannels] #>
+  defaultInitializer = initializerScope $
+                       prodHomo @filterSpatialShape @'[inChannels, outChannels] #>
                        prodAssoc @(Product filterSpatialShape) @inChannels @outChannels #>
                        knownAppend @filterSpatialShape @'[inChannels,outChannels] ?>
                        knownProduct @filterSpatialShape ?>

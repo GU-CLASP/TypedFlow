@@ -42,16 +42,9 @@ main = do
   putStrLn "done!"
 
 -- >>> main
--- Parameters (total 3274634):
--- w2_bias: T [10] tf.float32
--- w2_w: T [1024,10] tf.float32
--- w1_bias: T [1024] tf.float32
--- w1_w: T [3136,1024] tf.float32
--- f2_biases: T [64] tf.float32
--- f2_filters: T [5,5,32,64] tf.float32
--- f1_biases: T [32] tf.float32
--- f1_filters: T [5,5,1,32] tf.float32
--- done!
+-- Parameters (total *** Exception: broadcast on both convolution filter and data not implemented
+-- CallStack (from HasCallStack):
+--   error, called at ./TypedFlow/Abstract.hs:250:20 in typedflow-0.9-inplace:TypedFlow.Abstract
 
 
 -- Local Variables:

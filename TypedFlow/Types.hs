@@ -589,6 +589,7 @@ data VarInfo = forall s t. VarInfo {varTrainable :: Bool,
                                     varRef :: Ref s t,
                                     varInitial :: Maybe (T s t)} 
 data GState = GState {nextVar :: Integer, -- ^ next free variable
+                      varScope :: String,
                       genVars :: [VarInfo], -- ^ optimizable parameters
                       -- genPeeks :: [VarInfo], -- ^ variables available after running the model (outputs)
                       genRegularizers :: [Scalar Float32], -- ^ accumulated regularizers
@@ -596,6 +597,7 @@ data GState = GState {nextVar :: Integer, -- ^ next free variable
                      }
 initialGstate :: GState
 initialGstate = (GState {nextVar = 0
+                        ,varScope = ""
                         ,genVars=[]
                         ,genRegularizers=[]
                         ,genTrainingPlaceholder = error "NO TRAINING PLACEHOLDER!"
@@ -603,14 +605,31 @@ initialGstate = (GState {nextVar = 0
                         })
 
 extractVars :: Gen a -> State GState a
+extractVars (GPReturn x) = return x
+extractVars (GPState f) = state f
+extractVars (GPLocal f a) = do
+  s <- get
+  modify f
+  x <- extractVars a
+  put s
+  return x
+extractVars GPId = do
+  GState {..} <- get
+  put GState {nextVar=nextVar+1,..}
+  return nextVar
 extractVars (GPVariable trainable name initial) = do
   i <- mapM extractVars initial
   GState {..} <- get
   let r = Ref (fromIntegral nextVar) typeSShape typeSTyp
-  put GState {genVars = VarInfo trainable name r i : genVars,nextVar = nextVar+1,..}
+  put GState {genVars = VarInfo trainable (varScope++name) r i : genVars,nextVar = nextVar+1,..}
   return r
 extractVars (GPApp a b) = do f <- extractVars a; x <- extractVars b; return (f x)
 
+initializerScope :: Gen a -> Gen a
+initializerScope = withScope "init_"
+
+withScope :: [Char] -> Gen a -> Gen a
+withScope s = GPLocal $ \GState {..} -> (GState {varScope = varScope ++ s,..})
 
 data Gen a where
   GPId :: Gen Integer
@@ -619,10 +638,13 @@ data Gen a where
   GPModify :: (KnownShape s,KnownTyp t) => Ref s t -> T s t -> Gen (T s t)
   GPReturn :: a -> Gen a
   GPState :: (GState -> (a,GState)) -> Gen a
+  GPLocal :: (GState -> GState) -> Gen a -> Gen a
   GPApp :: (Gen (a -> b)) -> Gen a -> Gen b
 
 genGets :: (GState -> a) -> Gen a
 genGets f = GPState  (\s -> (f s, s))
+
+
 
 
 instance Applicative Gen where
