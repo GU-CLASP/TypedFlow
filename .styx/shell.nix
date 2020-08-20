@@ -30,5 +30,6 @@ pkgs.stdenv.mkDerivation {
   shellHook = ''
  export LANG=en_US.UTF-8
  eval $(egrep ^export ${ghc}/bin/ghc)
+ export LOCALE_ARCHIVE=/usr/lib/locale/locale-archive
 '';
 }
