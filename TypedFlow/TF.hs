@@ -39,7 +39,7 @@ TensorFlow functions. Higher-level functions are not defined here.
 module TypedFlow.TF (
   -- * Variables, Parameters
   -- ** Parameters
-  parameter,
+  parameter',
   parameterDefault,
   ParamWithDefault(..),
   -- getParameters,
@@ -146,12 +146,12 @@ repeatHT f = zs (typeSList @ss)
         zs (_ :* n) = Uncurry f :* zs n
 
 -- | Declare a parameter to optimize.
-parameter :: ∀ (shape :: Shape) t. (KnownTyp t,KnownShape shape) => String -> Gen (T shape t) -> Gen (T shape t)
-parameter = persistent True
+parameter' :: ∀ (shape :: Shape) t. (KnownTyp t,KnownShape shape) => String -> Gen (T shape t) -> Gen (T shape t)
+parameter' = persistent True
 
 -- -- | Create a parameter.
 -- parameter :: forall p. KnownTensors p => String -> Gen p -> Gen p
--- parameter s p = parameter' s p
+-- parameter s p = travTensor (\s' -> parameter' (s ++ s')) s p
 
 -- | Declare variable which persists between calls to session.run.
 persistent :: ∀ (shape :: Shape) t. (KnownTyp t,KnownShape shape) => Bool -> String -> Gen (T shape t) -> Gen (T shape t)
@@ -263,7 +263,7 @@ normalize v = mapT (/ (norm v + epsilon)) v
 
 -- | Create a parameter and initialize it with a suitable default for its type. Control the exact initializer using 'parameter'.
 parameterDefault :: forall p. ParamWithDefault p => String -> Gen p
-parameterDefault name = withScope name $ defaultInitializer
+parameterDefault name = defaultInitializer parameter' name
 
 
 -- flattenHTV :: KnownTyp t => All KnownShape xs => HTV t xs -> Tensor '[Sum (Ap (FMap CProduct) xs)] t

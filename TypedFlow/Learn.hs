@@ -221,14 +221,6 @@ updateStates (F x :* xs) (F y :* ys) = (:*) <$> (F <$> modifyPersistent x y) <*>
 addRegularizer :: Scalar Float32 -> Gen ()
 addRegularizer r = GPState  $ \GState{..} -> ((),GState{genRegularizers=r:genRegularizers,..})
 
-data SomeKnownT where SomeT :: (KnownShape s,KnownTyp t) => T s t -> SomeKnownT
-data Task = Task {
-    taskName :: String,
-    taskLoss :: SomeKnownT,
-    taskAccuracy :: SomeKnownT,
-    taskPrediction :: SomeKnownT
-  }
-
 batchModel :: forall batchSize shapesAndTypes sy_ ty_ stateShapes ps.
            (KnownNat batchSize, KnownLen shapesAndTypes, All KnownPlaceholder shapesAndTypes, KnownLen stateShapes,
             All KnownShape stateShapes, KnownTyp ty_, KnownShape sy_, KnownShape ps)

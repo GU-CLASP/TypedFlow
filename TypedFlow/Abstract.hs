@@ -133,6 +133,8 @@ broadcast u varyNoise n x = result
         -- 'finished' in 'protoBroadcast' for proper efficiency.
         result = f typeSTyp typeSShape x
 
+genTrainingPlaceholder :: Scalar TFBool
+genTrainingPlaceholder = T (Magic "training_placeholder")
 
 protoFinished :: Unique -> Bool -> (forall s' t'. T s' t' -> Bool) -> T s t -> Bool
 protoFinished u varyNoise rec = \case

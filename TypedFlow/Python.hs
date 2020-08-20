@@ -46,7 +46,7 @@ import GHC.TypeLits
 import Control.Monad.State
 import Control.Monad.RWS (runRWS)
 import TypedFlow.Types
-import TypedFlow.Abstract (permToFun,unopInputShape,mkBC)
+import TypedFlow.Abstract (permToFun,unopInputShape,mkBC,reduceSumAll)
 import TypedFlow.Types.Proofs
 import TypedFlow.Memo
 import Text.PrettyPrint.Compact hiding (All,Last,Product,Sum,Options)
@@ -366,11 +366,11 @@ generatePure' rec sR = knownSShape sR ?> \case
 type Python a = State PyState a
 
 
-generateVars :: Gen a -> Python ([VarInfo],a)
+generateVars :: Gen a -> Python (GState,a)
 generateVars p = do
   -- generate variables
-  let (x,genVars -> vs,()) = runRWS (extractVars p) "" initialGstate
-  forM_ vs $ \v -> case v of
+  let (x,finalState,()) = runRWS (extractVars p) "" initialGstate
+  forM_ (genVars finalState) $ \v -> case v of
       VarInfo {..} -> case varRef of
         Ref _refId shap typ -> do
           ii <- case varInitial of
@@ -381,7 +381,7 @@ generateVars p = do
               return [named "initial_value" iiii]
           varRef <-- funcall "tf.Variable" ([named "name" (string (show (varName))), named "trainable" (bool varTrainable)] ++ ii)
           return ()
-  return (vs,x)
+  return (finalState,x)
 
 -- interpGen :: Gen a -> Python a
 -- interpGen (GPReturn x) = return x
@@ -453,11 +453,11 @@ compileAlreadyBatched Options{..} model = knownAppend @sy @ps ?> do
   genFun "mkModel" [text "optimizer"] $ do
     let apply' (x,f) = f x
         model' = fmap (fst . apply') model -- FIXME: run state updates
-    (vs,ModelOutput {..}) <- generateVars model'
-    loss <- generatePure (modelLoss)
-    y_ <- generatePure (modelY)
+    (finalState,ModelOutput {..}) <- generateVars model'
+    loss <- generatePure (reduceSumAll modelLoss + sum (genRegularizers finalState))
+    y_ <- generatePure modelY
     accuracy <- generatePure (modelCorrect)
-    modify $ \PyState{..} -> PyState{genPyVars=vs,..}
+    modify $ \PyState{..} -> PyState{genPyVars=genVars finalState,..}
     trainStep <- assignAny $ case maxGradientNorm of
        Nothing -> funcall "optimizer.minimize" [loss]
                                  -- FIXME: traverse the loss to see what parameters are, or use the tensorflow tape object.

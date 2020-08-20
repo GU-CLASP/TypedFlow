@@ -601,16 +601,12 @@ data VarInfo = forall s t. VarInfo {varTrainable :: Bool,
 
 data GState = GState {nextVar :: Integer, -- ^ next free variable
                       genVars :: [VarInfo], -- ^ optimizable parameters
-                      -- genPeeks :: [VarInfo], -- ^ variables available after running the model (outputs)
-                      genRegularizers :: [Scalar Float32], -- ^ accumulated regularizers
-                      genTrainingPlaceholder :: Scalar TFBool -- ^ flag which is true when training
+                      genRegularizers :: [Scalar Float32] -- ^ accumulated regularizers
                      }
 initialGstate :: GState
 initialGstate = (GState {nextVar = 0
                         ,genVars=[]
                         ,genRegularizers=[]
-                        ,genTrainingPlaceholder = error "NO TRAINING PLACEHOLDER!"
-                        -- ,genPeeks=[]
                         })
 
 extractVars :: Gen a -> RWS String () GState a
@@ -629,9 +625,6 @@ extractVars (GPVariable trainable name initial) = do
   put GState {genVars = VarInfo trainable (varScope++name) r i : genVars,nextVar = nextVar+1,..}
   return r
 extractVars (GPApp a b) = do f <- extractVars a; x <- extractVars b; return (f x)
-
-initializerScope :: Gen a -> Gen a
-initializerScope = withScope "init_"
 
 withScope :: [Char] -> Gen a -> Gen a
 withScope s = GPLocal (++ s)
@@ -676,6 +669,7 @@ data Distribution (s :: Shape) (t :: Typ) where
 data Ref s t = Ref Int (SShape s) (STyp t)
 
 data NilOp s t where
+  Magic :: String -> NilOp s t
   Variable :: Ref s t -> NilOp s t
   Constant :: HaskType t -> NilOp '[] t
   Range :: KnownBits w => Sat KnownNat n -> NilOp '[n] ('Typ 'Int w)
@@ -817,15 +811,15 @@ data Permutation (s :: [k]) (t :: [k]) where
 
 deriving instance Show (Permutation s t)
 
-class KnownTensors p where
+class KnownTensors p where -- TODO: delete
   -- | traverse all the tensors contained in p.
-  travTensor :: Applicative m => (forall s t. (KnownTyp t, KnownShape s) => String -> T s t -> m (T s t)) -> String -> p -> m p 
+  travTensor :: Applicative m => (forall s t. (KnownTyp t, KnownShape s) => String -> (T s t) -> m (T s t)) -> String -> p -> m p
 
 instance (KnownTyp t, KnownShape shape) => KnownTensors (T shape t) where
   travTensor f = f
 
 instance (All KnownPair ys) => KnownTensors (HHTV ys) where
-  travTensor :: forall m. Applicative m => (forall s t'. (KnownTyp t', KnownShape s) => String -> T s t' -> m (T s t')) -> String -> (HHTV ys) -> m (HHTV ys)
+  travTensor :: forall m. Applicative m => (forall s t'. (KnownTyp t', KnownShape s) => String -> T s t' -> m (T s t')) -> String -> HHTV ys -> m (HHTV ys)
   travTensor f s = ttr 0
     where ttr :: forall xs. All KnownPair xs => Int -> HHTV xs -> m (HHTV xs)
           ttr _ Unit = pure Unit
@@ -853,7 +847,7 @@ instance (KnownTensors p1, KnownTensors p2, KnownTensors p3) => KnownTensors (p1
 instance (KnownTensors p1, KnownTensors p2, KnownTensors p3, KnownTensors p4) => KnownTensors (p1,p2,p3,p4) where
   travTensor f s (x,y,z,w) = (,,,) <$> travTensor f (s<>"_1") x <*> travTensor f (s<>"_2") y <*> travTensor f (s<>"_3") z <*> travTensor f (s<>"_4") w
 
-class KnownTensors p => ParamWithDefault p where
-  defaultInitializer :: Gen p
+class ParamWithDefault p where
+  defaultInitializer :: (forall s t. (KnownTyp t,KnownShape s) => String -> Gen (T s t) -> Gen (T s t)) -> String -> Gen p
 
 
