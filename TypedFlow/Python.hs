@@ -44,8 +44,9 @@ import Data.Proxy
 import Data.List (genericReplicate, isPrefixOf)
 import GHC.TypeLits
 import Control.Monad.State
+import Control.Monad.RWS (runRWS)
 import TypedFlow.Types
-import TypedFlow.Abstract (permToFun,unopInputShape)
+import TypedFlow.Abstract (permToFun,unopInputShape,mkBC)
 import TypedFlow.Types.Proofs
 import TypedFlow.Memo
 import Text.PrettyPrint.Compact hiding (All,Last,Product,Sum,Options)
@@ -368,7 +369,7 @@ type Python a = State PyState a
 generateVars :: Gen a -> Python ([VarInfo],a)
 generateVars p = do
   -- generate variables
-  let (x,genVars -> vs) = runState (extractVars p) initialGstate
+  let (x,genVars -> vs,()) = runRWS (extractVars p) "" initialGstate
   forM_ vs $ \v -> case v of
       VarInfo {..} -> case varRef of
         Ref _refId shap typ -> do
@@ -453,9 +454,9 @@ compileAlreadyBatched Options{..} model = knownAppend @sy @ps ?> do
     let apply' (x,f) = f x
         model' = fmap (fst . apply') model -- FIXME: run state updates
     (vs,ModelOutput {..}) <- generateVars model'
-    loss <- generatePure modelLoss
-    y_ <- generatePure modelY
-    accuracy <- generatePure modelCorrect
+    loss <- generatePure (modelLoss)
+    y_ <- generatePure (modelY)
+    accuracy <- generatePure (modelCorrect)
     modify $ \PyState{..} -> PyState{genPyVars=vs,..}
     trainStep <- assignAny $ case maxGradientNorm of
        Nothing -> funcall "optimizer.minimize" [loss]
@@ -475,9 +476,9 @@ compileAlreadyBatched Options{..} model = knownAppend @sy @ps ?> do
 --   x' <- knownSShape s ?> (knownTyp t $ generatePure x)
 --   return (name,x')
 
-untypedExprs :: All KnownShape xs => KnownTyp t =>  HTV t xs -> Python [DOC]
-untypedExprs Unit = return []
-untypedExprs (F x :* xs) = (:) <$> generatePure x <*> untypedExprs xs
+-- untypedExprs :: All KnownShape xs => KnownTyp t =>  HTV t xs -> Python [DOC]
+-- untypedExprs Unit = return []
+-- untypedExprs (F x :* xs) = (:) <$> generatePure x <*> untypedExprs xs
 
 pretty :: forall t. KnownTyp t => HaskType t -> DOC
 pretty = case kindVal @(TypKind t) of

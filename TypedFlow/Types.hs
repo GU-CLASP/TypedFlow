@@ -1,3 +1,4 @@
+{-# LANGUAGE QuantifiedConstraints #-}
 {-# LANGUAGE CPP #-}
 #if __GLASGOW_HASKELL__ >= 806
 {-# LANGUAGE NoStarIsType #-}
@@ -37,8 +38,8 @@ module TypedFlow.Types where
 import GHC.TypeLits 
 import Data.Proxy
 import Control.Monad.State
+import Control.Monad.RWS (RWS(..), local, ask)
 import Data.Kind (Constraint,Type)
-import Data.Unique
 import qualified Data.Int as Hask
 import Data.Type.Equality
 import Data.Monoid hiding (Sum,Product,Last,All,Ap)
@@ -109,6 +110,8 @@ type family Reverse xs where
 data NP f (xs :: [k]) where
   Unit :: NP f '[]
   (:*) :: f x -> NP f xs -> NP f (x ': xs)
+
+deriving instance (forall x. Show (f x)) => Show (NP f xs)
 type SList' = NP
 
 (.+.) = appSList
@@ -233,6 +236,13 @@ htmap f (F x :* xs) = F (f x) :* htmap @f f xs
 hmap :: (forall x. f x -> g x) -> NP f xs -> NP g xs
 hmap _ Unit = Unit
 hmap f (x :* xs) = f x :* hmap f xs
+
+hTraverse :: Applicative m => (forall x. f x -> m (g x)) -> NP f xs -> m (NP g xs)
+hTraverse _ Unit = pure Unit
+hTraverse f (x :* xs) = do
+  x' <- f x
+  xs' <- hTraverse f xs
+  return (x' :* xs')
 
 -- | Variant of hmap with a constraint
 hmapK :: forall k f g xs. All k xs => (forall x. k x => f x -> g x) -> NP f xs -> NP g xs
@@ -488,7 +498,7 @@ instance Eq (SShape s) where
   ((:*) x xs) == ((:*) y ys) = x == y && xs == ys
 
 
-instance Show (SShape s) where
+instance {-# OVERLAPPING #-} Show (SShape s) where
   show x = show (shapeToList' x)
 
 
@@ -588,8 +598,8 @@ data VarInfo = forall s t. VarInfo {varTrainable :: Bool,
                                     varName :: String,
                                     varRef :: Ref s t,
                                     varInitial :: Maybe (T s t)} 
+
 data GState = GState {nextVar :: Integer, -- ^ next free variable
-                      varScope :: String,
                       genVars :: [VarInfo], -- ^ optimizable parameters
                       -- genPeeks :: [VarInfo], -- ^ variables available after running the model (outputs)
                       genRegularizers :: [Scalar Float32], -- ^ accumulated regularizers
@@ -597,22 +607,16 @@ data GState = GState {nextVar :: Integer, -- ^ next free variable
                      }
 initialGstate :: GState
 initialGstate = (GState {nextVar = 0
-                        ,varScope = ""
                         ,genVars=[]
                         ,genRegularizers=[]
                         ,genTrainingPlaceholder = error "NO TRAINING PLACEHOLDER!"
                         -- ,genPeeks=[]
                         })
 
-extractVars :: Gen a -> State GState a
+extractVars :: Gen a -> RWS String () GState a
 extractVars (GPReturn x) = return x
 extractVars (GPState f) = state f
-extractVars (GPLocal f a) = do
-  s <- get
-  modify f
-  x <- extractVars a
-  put s
-  return x
+extractVars (GPLocal f a) = local f (extractVars a)
 extractVars GPId = do
   GState {..} <- get
   put GState {nextVar=nextVar+1,..}
@@ -620,6 +624,7 @@ extractVars GPId = do
 extractVars (GPVariable trainable name initial) = do
   i <- mapM extractVars initial
   GState {..} <- get
+  varScope <- ask
   let r = Ref (fromIntegral nextVar) typeSShape typeSTyp
   put GState {genVars = VarInfo trainable (varScope++name) r i : genVars,nextVar = nextVar+1,..}
   return r
@@ -629,16 +634,15 @@ initializerScope :: Gen a -> Gen a
 initializerScope = withScope "init_"
 
 withScope :: [Char] -> Gen a -> Gen a
-withScope s = GPLocal $ \GState {..} -> (GState {varScope = varScope ++ s,..})
+withScope s = GPLocal (++ s)
 
 data Gen a where
   GPId :: Gen Integer
   GPVariable :: forall (shape :: Shape) t. (KnownTyp t,KnownShape shape) => Bool -> String -> Maybe (Gen (T shape t)) -> Gen (Ref shape t) 
-  -- GPPlaceholder :: forall s t. SShape s -> STyp t -> String -> Gen (Ref s t)
   GPModify :: (KnownShape s,KnownTyp t) => Ref s t -> T s t -> Gen (T s t)
   GPReturn :: a -> Gen a
   GPState :: (GState -> (a,GState)) -> Gen a
-  GPLocal :: (GState -> GState) -> Gen a -> Gen a
+  GPLocal :: (String -> String) -> Gen a -> Gen a
   GPApp :: (Gen (a -> b)) -> Gen a -> Gen b
 
 genGets :: (GState -> a) -> Gen a
@@ -677,8 +681,13 @@ data NilOp s t where
   Range :: KnownBits w => Sat KnownNat n -> NilOp '[n] ('Typ 'Int w)
 
 data Catable s1 s2 t n = Catable (Sat KnownNat n) (T (s1 ++ (n ': s2)) t)
+  -- deriving Show
+
+
+type Unique = Integer
 
 data T (s :: Shape) (t :: Typ) where
+  MapT :: KnownTyp t => Sat KnownNat n -> SShape s -> (T s t -> T r u) ->  T (n ': s) t -> T (n ': r) u
   T :: NilOp s t -> T s t
   Noise :: Integer -> -- this is the unique noise identifier, preventing two different noises to ever be re-shared.
            SShape s0 -> SShape s1 ->
@@ -710,8 +719,8 @@ data T (s :: Shape) (t :: Typ) where
   Softmax :: Sat KnownNat bs -> Sat KnownNat n -> T '[bs,n] (Flt w) -> T '[bs,n] (Flt w)
     -- yes, softmax is shape-fixed: https://www.tensorflow.org/api_docs/cc/class/tensorflow/ops/softmax
 
-instance Show Unique where
-  show _ = "<Unique>"
+-- instance Show Unique where
+--   show _ = "<Unique>"
 
 -- deriving instance (Show (T s t))
 

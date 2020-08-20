@@ -46,18 +46,81 @@ import Control.Monad.State
 import Data.Kind (Type,)
 import Data.Proxy
 import Data.Type.Equality
-import Data.Unique
+-- import Data.Unique
 import GHC.TypeLits
 import Prelude hiding (RealFrac(..))
 import System.IO.Unsafe
+import System.Mem.StableName
 import TypedFlow.Memo
 import TypedFlow.Types (T(..))
 import TypedFlow.Types hiding (T)
 import TypedFlow.Types.Proofs
 
-{-# NOINLINE uniqueFor #-}
-uniqueFor :: T n s -> Unique
-uniqueFor s = s `seq` unsafePerformIO newUnique
+-- {-# NOINLINE uniqueFor #-}
+-- uniqueFor :: T n s -> Unique
+-- uniqueFor s = s `seq` unsafePerformIO newUnique
+
+-- doIt :: T s t -> T s t
+-- doIt = mapT f x
+
+data GS = GS { gsUnique :: Integer,
+               gsTable :: SNMap22 Shape Typ T T}
+
+type G x = State GS x
+
+class Batched (f :: [Shape] -> Type) where
+  -- | Applying an expansion function to all the tensors in the given structure.
+  batchify :: forall n r. KnownNat n => All KnownShape r => Proxy n ->
+    (forall s t. KnownTyp t => KnownShape s => T s t -> G (T (n:s) t)) ->
+    f r -> G (f (Ap (FMap (Cons n)) r))
+
+-- | Perform broadcast on all the tensors in the given structure
+broadcastGen  :: KnownNat n => Batched f => All KnownShape r => Unique -> Bool -> Proxy n -> f r -> G (f (Ap (FMap (Cons n)) r))
+broadcastGen u varyNoise n = batchify n (\x -> broadcast u varyNoise n <$> generateBC x)
+
+runBC u a = fst $ runState a GS { gsUnique = u, gsTable = mempty}
+
+-- | implement map, zipWith, etc. as broadcasting.
+mkBC ::  forall s t. KnownTyp t => KnownShape s => Integer -> T s t -> T s t
+mkBC u x = fst $ runState (generateBC x) GS { gsUnique = u, gsTable = mempty}
+
+generateBC' :: forall s t. KnownTyp t => (forall s' t'. KnownTyp t' => SShape s' -> T s' t' -> G (T s' t')) -> SShape s -> T s t -> G (T s t)
+generateBC' rec (n@Sat :* sR) (MapT _ s' f x) = knownSShape sR ?> do
+  u <- gets ((1+) . gsUnique)
+  modify $ \GS {..} -> GS {gsUnique = u,..}
+  x' <- rec (n :* s') x
+  y' <- rec sR (f (Unbroadcast n u x'))
+  return (broadcast u False n y')
+generateBC' _ _ (n@T {}) = return n
+generateBC' _ _ (n@Noise {}) = return n
+generateBC' rec _ (BinOp op s0 s1 t1 s2 t2 x y) = knownTyp t1 $ knownTyp t2 $ BinOp op s0 s1 t1 s2 t2 <$> (rec (s0 .+. s1) x) <*> (rec (s0 .+. s2) y)
+generateBC' rec _ (UnOp op s0 x) = UnOp op s0 <$> rec (s0 .+. unopInputShape op) x
+generateBC' rec sR (Unbroadcast p u' x) = Unbroadcast p u' <$> rec (p :* sR) x
+generateBC' rec _ (DirectBroadcast s0 s1 s2 s3 x) = DirectBroadcast s0 s1 s2 s3 <$> (rec (s0 .+. s2) x)
+generateBC' rec _ (ReshapeFrom s0 x) = ReshapeFrom s0 <$> rec s0 x
+generateBC' rec _ (Transpose s0 t x) = Transpose s0 t <$> (rec s0 x)
+generateBC' rec _ (Concat s0 s1 xs) = Concat s0 s1 <$> hTraverse (\(Catable m x) -> Catable m <$> (rec (s0 .+. m :* s1) x)) xs
+generateBC' rec _ (Gather is s0 m s1 x ix) = Gather is s0 m s1 <$> (rec (s0 .+. m :* s1) x) <*> rec is ix
+generateBC' rec _ (GatherND cs es is x ix) = GatherND cs es is <$> (rec (cs .+. es) x) <*> (rec (is *: sListLenAsNat cs) ix)
+generateBC' rec _ (MatMul s0 a b c x y) = MatMul s0 a b c <$> (rec (s0 .+. a :* b :* Unit) x) <*> (rec (s0 .+. b :* c :* Unit) y)
+generateBC' rec sR (Where cond x y) = Where <$> rec sR cond <*> rec sR x <*> rec sR y
+generateBC' rec sR (If cond x y) = If <$> rec Unit cond <*> rec sR x <*> rec sR y
+generateBC' rec _ (Convolution bs@Sat inChans outChans filterShape s0 x filters) = Convolution bs inChans outChans filterShape s0 <$> (rec (bs :* (s0 *: inChans)) x) <*> (rec (filterShape .+. inChans :* outChans :* Unit) filters)
+generateBC' rec _ (Pool bs@Sat window pt numChans outSpatial x) = Pool bs window pt numChans outSpatial <$> rec (bs :* (zipWithMulSShapes window outSpatial *: numChans)) x
+generateBC' rec _ (Softmax bs n x) = Softmax bs n <$> (rec (bs :* n :* Unit) x)
+
+
+generateBC :: forall s t. KnownTyp t => KnownShape s => T s t -> G (T s t)
+generateBC x = do
+  let sn = unsafePerformIO $ makeStableName x
+  mv <- snMap22Lookup sn <$> gets gsTable
+  case mv of
+    Just v -> return v
+    Nothing -> do
+      v <- generateBC' (\s x' -> knownSShape s ?> generateBC x') typeSShape x
+      modify (\g -> g {gsTable = snMap22Insert (KV sn v) (gsTable g)})
+      return v
+
 
 broadcast :: forall n s t proxy. KnownTyp t => KnownShape s => KnownNat n
   => Unique -> Bool -> proxy n -> T s t -> T (n : s) t
@@ -73,6 +136,7 @@ broadcast u varyNoise n x = result
 
 protoFinished :: Unique -> Bool -> (forall s' t'. T s' t' -> Bool) -> T s t -> Bool
 protoFinished u varyNoise rec = \case
+  MapT _ s f x -> rec x && rec (f (T (Variable (Ref 0 s typeSTyp))))
   Softmax _ _ x -> rec x
   DirectBroadcast _ _ _ _ x -> rec x
   GatherND _ _ _ x y -> rec x && rec y
@@ -91,23 +155,18 @@ protoFinished u varyNoise rec = \case
   Convolution _bs _inChans _outChans _filterShape _s x filters -> rec x && rec filters
   Pool _ _ _ _ _ x  -> rec x
 
-class Batched (f :: [Shape] -> Type) where
-  -- | Applying an expansion function to all the tensors in the given structure.
-  batchify :: forall n r. KnownNat n => All KnownShape r
-    => Proxy n -> (forall s t. KnownTyp t => KnownShape s => T s t -> T (n:s) t)
-    -> f r  -> f (Ap (FMap (Cons n)) r)
-
-batchifyHTV :: forall n r ty. KnownTyp ty => KnownNat n => All KnownShape r => Proxy n -> (forall s t. KnownTyp t => KnownShape s => T s t -> T (n:s) t)
-  -> HTV ty r  -> HTV ty (Ap (FMap (Cons n)) r)
-batchifyHTV _ _ Unit = Unit
-batchifyHTV n bc (F x :* xs) = F (bc x) :* batchifyHTV n bc xs
-
 instance KnownTyp ty => Batched (HTV ty) where
   batchify = batchifyHTV
 
--- | Perform broadcast on all the tensors in the given structure
-broadcastGen  :: KnownNat n => Batched f => All KnownShape r => Unique -> Bool -> Proxy n -> f r -> f (Ap (FMap (Cons n)) r)
-broadcastGen u varyNoise n = batchify n (broadcast u varyNoise n)
+
+batchifyHTV :: forall n r ty. KnownTyp ty => KnownNat n => All KnownShape r => Proxy n -> (forall s t. KnownTyp t => KnownShape s => T s t -> G (T (n:s) t))
+  -> HTV ty r  -> G (HTV ty (Ap (FMap (Cons n)) r))
+batchifyHTV _ _ Unit = pure Unit
+batchifyHTV n bc (F x :* xs) = do
+  x' <- (bc x)
+  xs' <-  batchifyHTV n bc xs
+  return (F x' :* xs')
+
 
 
 -- | Turns a tensor of indices in a container into a tensor of indices
@@ -182,6 +241,7 @@ protoBroadcast :: forall n s t.
 protoBroadcast u varyNoise n@(Sat) rec finished ty s tensor
   | finished tensor = simpleBC
   | otherwise = knownTyp ty $ case tensor of
+  MapT _ _ _ _ -> error "MapT case remaining, this should have been dealt with by generateBC"
   Softmax bs@Sat m@Sat x -> prodAssocS n bs m #> reshapeAuto (Softmax (satMul n bs) m ((reshapeAuto (rec (typeSShape) x))))
   DirectBroadcast s0 s1 s2 s3 x -> DirectBroadcast (n :* s0) s1 s2 s3 (rec (s0 .+. s2) x)
   GatherND cs es is x ix
@@ -207,6 +267,7 @@ protoBroadcast u varyNoise n@(Sat) rec finished ty s tensor
         Nothing -> UnOp (error "panic.unbroadcast.unit") Unit x
         Just Refl -> x
     | otherwise -> knownSShape s ?> Unbroadcast p u' (transpose01 (rec (p :* s) x))
+      -- An uncomplete broadcast (in another dimension).
   MatMul Unit a@Sat b@Sat c@Sat x y
      -- this optimisation is absolutely critical to implement dense
      -- layers efficiently (at least with TF 1.3). (about 10x performance increase)
@@ -657,6 +718,9 @@ transposeN01 = Transpose (typeSShape @s .+. typeSShape @'[m,n]) (permN01 (typeSL
 sequenceMask :: forall maxlen. KnownNat maxlen => Tensor '[] Int32 -> Tensor '[maxlen] TFBool
 sequenceMask lens = mapT (lens `lessThan`) (range @maxlen)
 
+uniqueFor :: a
+uniqueFor = error "TODO: finish implementing BC"
+
 -- | simple broadcasting of a tensor
 broadcastT :: forall n s t. KnownShape s => KnownNat n => KnownTyp t => KnownLen s => T s t ->  T (n ': s) t
 broadcastT x = broadcast u False (Proxy @n) x
@@ -670,10 +734,9 @@ broadcastTT x = prodHomo @a @s #>
                 reshape (broadcastT @(Product a) x)
 
 -- | Map a function along the first dimension of a tensor
-mapT :: forall n s r t u. KnownShape r => KnownNat n => KnownTyp u => KnownLen r => KnownLen s
+mapT :: forall n s r t u. KnownShape s => KnownNat n => KnownTyp t => KnownLen r => KnownLen s
      => (T s t -> T r u) ->  T (n ': s) t -> T (n ': r) u
-mapT f x = broadcast u False (Proxy @n) (f (Unbroadcast (natSat @n) u x))
-  where u = uniqueFor x
+mapT f x = MapT Sat typeSShape f x
 
 -- | Map a function along the few first dimensions of a tensor, given by the first type parameter
 mapTT :: forall a s t r u. KnownShape r => KnownShape a => KnownTyp u => KnownLen r => KnownShape s => KnownTyp t
@@ -877,7 +940,4 @@ maxPool1D :: forall window width channels t.
              KnownNat width => KnownNat channels => (KnownNat window,KnownBits t) =>
              T '[window*width,channels] (Flt t) -> T '[width,channels] (Flt t)
 maxPool1D x = squeeze0 (Pool (natSat @1) (typeSShape @'[window]) MaxPool (natSat @channels) (typeSShape @'[width]) (expandDim0 x))
-
-
-
 

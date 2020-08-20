@@ -35,11 +35,9 @@ Stability   : experimental
 module TypedFlow.Learn where
 
 import Data.Proxy
-import System.IO.Unsafe
-import Data.Unique
 import TypedFlow.Types
 import TypedFlow.Types.Proofs (knownAppend, knownAppendS, (?>))
-import TypedFlow.Abstract (Batched(..),broadcastGen,defaultT)
+import TypedFlow.Abstract (Batched(..),defaultT,G(..),runBC,broadcastGen)
 import TypedFlow.TF
 import Prelude hiding (RealFrac(..))
 import GHC.TypeLits
@@ -72,8 +70,6 @@ modelBoth (ModelOutput y1 l1 c1 n1) (ModelOutput y2 l2 c2 _) = ModelOutput arst 
 -- | First type argument is the number of classes.  @categorical
 -- logits gold@ return (prediction, accuraccy, loss)
 
-
-
 sparseCategorical :: forall nCat. KnownNat nCat => Model '[nCat] Float32 '[] '[] '[] Int32
 sparseCategorical logits y =
   let y_ = argmax0 logits
@@ -104,7 +100,7 @@ sparseCategoricalDensePredictions logits y =
 -- accuraccy, loss) accuracy is reported as predicting the same class
 -- as the input 'winning' class.
 categoricalDistribution :: forall nCat. KnownNat nCat => Model '[nCat] Float32 '[nCat] '[nCat] '[] Float32
-categoricalDistribution logits y = 
+categoricalDistribution logits y =
   ModelOutput{modelY = softmax0 logits
              ,modelCorrect = cast (equal (argmax0 @'B32 logits) (argmax0 y))
              ,modelLoss = softmaxCrossEntropyWithLogits y logits
@@ -172,15 +168,19 @@ unpairStateAndOutput (StateAndOutput _ a b) = (a,b)
 
 instance (KnownTyp t, KnownShape ps) => Batched (StateAndOutput t ps) where
   batchify :: forall n r. KnownNat n => All KnownShape r
-    => Proxy n -> (forall s u. KnownTyp u => KnownShape s => T s u -> T (n:s) u)
-    -> (StateAndOutput t ps) r  -> (StateAndOutput t ps) (Ap (FMap (Cons n)) r)
-  batchify n f (StateAndOutput s ms xs) = StateAndOutput (n :* s) (fromF (h s (F ms)))  -- (hmapK @KnownShape (h s) ms)
-                                                                  (batchify n f xs)
-    where h :: forall x s. KnownShape s => KnownShape x => SList s -> F (ModelOutput t) s x -> F (ModelOutput t) (n ': s) x
-          h s' (F ModelOutput{..}) = F ModelOutput{modelLoss = f modelLoss
-                                                  ,modelY = knownAppendS s' (Proxy @x) ?> f modelY
-                                                  ,modelName = modelName
-                                                  ,modelCorrect = f modelCorrect}
+    => Proxy n -> (forall s u. KnownTyp u => KnownShape s => T s u -> G (T (n:s) u))
+    -> (StateAndOutput t ps) r  -> G ((StateAndOutput t ps) (Ap (FMap (Cons n)) r))
+  batchify n f (StateAndOutput s ms xs) = StateAndOutput (n :* s) <$> (fromF <$> (h s (F ms)))  -- (hmapK @KnownShape (h s) ms)
+                                                                  <*> (batchify n f xs)
+    where h :: forall x s. KnownShape s => KnownShape x => SList s -> F (ModelOutput t) s x -> G (F (ModelOutput t) (n ': s) x)
+          h s' (F ModelOutput{..}) = do
+            modelLoss' <- f modelLoss
+            modelY' <- knownAppendS s' (Proxy @x) ?> f modelY
+            modelCorrect' <- f modelCorrect
+            return $ F ModelOutput{modelLoss = modelLoss'
+                         ,modelY = modelY'
+                         ,modelName = modelName
+                         ,modelCorrect = modelCorrect'}
 
 -- | Name of a placeholder of a given shape and type.
 data HolderName (st :: (Symbol,Shape,Typ)) = HolderName String
@@ -283,14 +283,14 @@ batchModel' :: forall batchSize shapesAndTypes resShapes ty_ stateShapes f.
            (KnownNat batchSize, KnownLen shapesAndTypes, All KnownPlaceholder shapesAndTypes, KnownLen stateShapes,
             All KnownShape stateShapes, KnownTyp ty_, All KnownShape resShapes, Batched f)
          => Gen (Placeholders shapesAndTypes -> HTV ty_ stateShapes -> f resShapes)
-         -> Gen (HTV ty_ (Ap (FMap (Cons batchSize)) stateShapes) -> f (Ap (FMap (Cons batchSize)) resShapes))
+         -> Gen (HTV ty_ (Ap (FMap (Cons batchSize)) stateShapes) -> (f (Ap (FMap (Cons batchSize)) resShapes)))
 batchModel' fGen =
-  let u = unsafePerformIO newUnique -- unique identifier for the batch dimension
+  let u = -777 -- unique identifier for the batch dimension
       unbroadcastStates :: forall ss. SList ss -> HTV ty_ (Ap (FMap (Cons batchSize)) ss) -> HTV ty_ ss
       unbroadcastStates Unit Unit = Unit
       unbroadcastStates (_ :* ss) (F x :* xs) = F (Unbroadcast batchSize u x) :* unbroadcastStates ss xs
   in do xs <- genBatchedPlaceholders u batchSize (typeSList @shapesAndTypes)
         f <- fGen
-        return $ \stateVars -> broadcastGen u True (Proxy @batchSize) (f xs (unbroadcastStates (typeSList) stateVars))
+        return $ \stateVars -> runBC u (broadcastGen u True (Proxy @batchSize) (f xs (unbroadcastStates (typeSList) stateVars)))
  where batchSize = natSat @batchSize
 
