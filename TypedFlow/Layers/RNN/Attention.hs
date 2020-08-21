@@ -7,13 +7,13 @@ Maintainer  : jean-philippe.bernardy@gu.se
 Stability   : experimental
 -}
 
+{-# OPTIONS_GHC -fplugin GHC.TypeLits.KnownNat.Solver #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE ViewPatterns #-}
 {-# LANGUAGE TypeInType #-}
-{-# OPTIONS_GHC -fplugin GHC.TypeLits.KnownNat.Solver #-}
 {-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DeriveFoldable #-}
@@ -131,10 +131,10 @@ data AdditiveScoringP sz keySize valueSize t = AdditiveScoringP
   (Tensor '[keySize, sz]   ('Typ 'Float t))
   (Tensor '[valueSize, sz] ('Typ 'Float t))
 
-instance (KnownNat n, KnownNat k, KnownNat v, KnownBits t) => KnownTensors (AdditiveScoringP k v n t) where
-  travTensor f s (AdditiveScoringP x y z) = AdditiveScoringP <$> travTensor f (s<>"_v") x <*> travTensor f (s<>"_w1") y <*> travTensor f (s<>"_w2") z
+-- instance (KnownNat n, KnownNat k, KnownNat v, KnownBits t) => KnownTensors (AdditiveScoringP k v n t) where
+--   travTensor f s (AdditiveScoringP x y z) = AdditiveScoringP <$> travTensor f (s<>"_v") x <*> travTensor f (s<>"_w1") y <*> travTensor f (s<>"_w2") z
 instance (KnownNat n, KnownNat k, KnownNat v, KnownBits t) => ParamWithDefault (AdditiveScoringP k v n t) where
-  defaultInitializer = AdditiveScoringP <$> glorotUniform <*> glorotUniform <*> glorotUniform
+  defaultInitializer f s = AdditiveScoringP <$> f (s<>"_v") glorotUniform <*> f (s<>"_w1") glorotUniform <*> f (s<>"_w2") glorotUniform
 
 -- | An additive scoring function. See https://arxiv.org/pdf/1412.7449.pdf
 additiveScoring :: forall sz keySize valueSize t. KnownNat valueSize => KnownNat sz => KnownNat keySize => KnownBits t =>

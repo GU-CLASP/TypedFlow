@@ -72,8 +72,8 @@ data DenseP t a b = DenseP {denseWeights :: Tensor '[a,b] (Flt t)
 -- | Parameters for the embedding layers
 newtype EmbeddingP numObjects embeddingSize t = EmbeddingP (Tensor '[numObjects, embeddingSize] ('Typ 'Float t))
 
-instance (KnownNat numObjects, KnownBits b, KnownNat embeddingSize) => KnownTensors (EmbeddingP numObjects embeddingSize b) where
-  travTensor f s (EmbeddingP p) = EmbeddingP <$> travTensor f s p
+-- instance (KnownNat numObjects, KnownBits b, KnownNat embeddingSize) => KnownTensors (EmbeddingP numObjects embeddingSize b) where
+--   travTensor f s (EmbeddingP p) = EmbeddingP <$> travTensor f s p
 
 instance (KnownNat numObjects, KnownBits b, KnownNat embeddingSize) => ParamWithDefault (EmbeddingP numObjects embeddingSize b) where
   defaultInitializer f n = EmbeddingP <$> f n (noise $ UniformD (-0.05) 0.05)
@@ -84,8 +84,8 @@ embedding :: ∀ embeddingSize numObjects t. KnownNat embeddingSize => KnownNat 
 embedding (EmbeddingP param) input = gather param input
 
 
-instance (KnownNat a, KnownNat b, KnownBits t) => KnownTensors (DenseP t a b) where
-  travTensor f s (DenseP x y) = DenseP <$> travTensor f (s<>"_w") x <*> travTensor f (s<>"_bias") y
+-- instance (KnownNat a, KnownNat b, KnownBits t) => KnownTensors (DenseP t a b) where
+--   travTensor f s (DenseP x y) = DenseP <$> travTensor f (s<>"_w") x <*> travTensor f (s<>"_bias") y
 
 instance (KnownNat n, KnownNat m, KnownBits b) => ParamWithDefault (DenseP b n m) where
   defaultInitializer f s = DenseP <$> f (s<>"_w") glorotUniform <*> f (s<>"_bias") (noise $ TruncatedNormalD 0.1)
@@ -154,10 +154,10 @@ instance (KnownNat outChannels,KnownNat inChannels, KnownShape filterSpatialShap
     where i :: Gen (T '[Product filterSpatialShape*inChannels,outChannels] (Flt t))
           i = knownProduct @filterSpatialShape ?> glorotUniform
 
-instance (KnownNat outChannels,KnownNat inChannels, KnownShape filterSpatialShape, KnownBits t) =>
-  KnownTensors (ConvP t outChannels inChannels filterSpatialShape) where
-  travTensor f s (ConvP x y) = knownAppend @filterSpatialShape @'[inChannels,outChannels] ?>
-          (ConvP <$> travTensor f (s<>"_filters") x <*> travTensor f (s <> "_biases") y)
+-- instance (KnownNat outChannels,KnownNat inChannels, KnownShape filterSpatialShape, KnownBits t) =>
+--   KnownTensors (ConvP t outChannels inChannels filterSpatialShape) where
+--   travTensor f s (ConvP x y) = knownAppend @filterSpatialShape @'[inChannels,outChannels] ?>
+--           (ConvP <$> travTensor f (s<>"_filters") x <*> travTensor f (s <> "_biases") y)
 
 -- | Size-preserving convolution layer
 conv' :: forall s outChannels filterSpatialShape inChannels t.

@@ -52,19 +52,9 @@ main = do
   putStrLn "done!"
 
 -- >>> main
--- Parameters (total 112796):
--- dense_bias: T [12] tf.float32
--- dense_w: T [160,12] tf.float32
--- w1_o_bias: T [160] tf.float32
--- w1_o_w: T [172,160] tf.float32
--- w1_c_bias: T [160] tf.float32
--- w1_c_w: T [172,160] tf.float32
--- w1_i_bias: T [160] tf.float32
--- w1_i_w: T [172,160] tf.float32
--- w1_f_bias: T [160] tf.float32
--- w1_f_w: T [172,160] tf.float32
--- embs: T [12,12] tf.float32
--- done!
+-- <interactive>:1144:2-5: error:
+--     • Variable not in scope: main
+--     • Perhaps you meant ‘min’ (imported from Prelude)
 
 
 (|>) :: ∀ a b. a -> b -> (a, b)
