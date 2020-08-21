@@ -262,6 +262,7 @@ generatePure' rec sR = knownSShape sR ?> \case
   Noise noiseId s0 s1 x -> do
     return $ (genDistr x s0 s1) <+> (text "# " <> integer noiseId)
   T op -> return $ case op of
+    Magic v -> text v
     Variable v -> pyVarRepr v
     (Constant c) -> funcall "tf.constant" [pretty @t c, named "shape" (showSShape sR), named "dtype" (showTyp @t)]
     (Range n@Sat) -> (func "tf.range" [] [("start",integer 0),

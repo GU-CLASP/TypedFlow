@@ -10,13 +10,13 @@ Stability   : experimental
 #if __GLASGOW_HASKELL__ >= 806
 {-# LANGUAGE NoStarIsType #-}
 #endif
+{-# OPTIONS_GHC -fplugin GHC.TypeLits.KnownNat.Solver #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE ViewPatterns #-}
 {-# LANGUAGE TypeInType #-}
-{-# OPTIONS_GHC -fplugin GHC.TypeLits.KnownNat.Solver #-}
 {-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE ApplicativeDo #-}
 {-# LANGUAGE DataKinds #-}
@@ -56,7 +56,7 @@ import TypedFlow.TF
 import TypedFlow.Types
 import TypedFlow.Types.Proofs
 import TypedFlow.Abstract
-import Control.Monad.State (gets)
+-- import Control.Monad.State (gets)
 import Data.Monoid ((<>))
 ---------------------
 -- Linear functions
