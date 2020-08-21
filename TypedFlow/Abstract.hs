@@ -85,6 +85,13 @@ mkBC ::  forall s t. KnownTyp t => KnownShape s => Integer -> T s t -> T s t
 mkBC u x = fst $ runState (generateBC x) GS { gsUnique = u, gsTable = mempty}
 
 generateBC' :: forall s t. KnownTyp t => (forall s' t'. KnownTyp t' => SShape s' -> T s' t' -> G (T s' t')) -> SShape s -> T s t -> G (T s t)
+generateBC' rec (n@Sat :* sR) (ZipT _ s1 s2 f x y) = knownSShape sR ?> do
+  u <- gets ((1+) . gsUnique)
+  modify $ \GS {..} -> GS {gsUnique = u,..}
+  x' <- rec (n :* s1) x
+  y' <- rec (n :* s2) y
+  a' <- rec sR (f (Unbroadcast n u x') (Unbroadcast n u y'))
+  return (broadcast u False n a')
 generateBC' rec (n@Sat :* sR) (MapT _ s' f x) = knownSShape sR ?> do
   u <- gets ((1+) . gsUnique)
   modify $ \GS {..} -> GS {gsUnique = u,..}
@@ -766,13 +773,12 @@ mapTT f x = prodHomo @a @r #>
 
 -- | zip  a function along the first dimension of two tensors tensors
 zipWithT :: forall (n :: Nat) (s :: [Nat]) (t :: Typ) (s1 :: [Nat]) (t1 :: Typ) (s2 :: Shape)  (t2 :: Typ).
-            KnownShape s2 => KnownNat n => KnownTyp t2
+            KnownShape s => KnownShape s1 => KnownNat n=> KnownTyp t => KnownTyp t1
             => (T s t -> T s1 t1 -> T s2 t2)
             -> Tensor (n ': s) t
             -> Tensor (n ': s1) t1
             -> Tensor (n ': s2) t2
-zipWithT f x y = broadcast u False (Proxy @n) (f (Unbroadcast (natSat @n) u x) (Unbroadcast (natSat @n) u y))
-  where u = uniqueFor x
+zipWithT f x y = ZipT Sat typeSShape typeSShape f x y
 
 -- | zip  a function along the few first dimensions of a tensor, given by the first type parameter
 zipWithTT :: forall a (s :: [Nat]) (s1 :: [Nat]) (s2 :: Shape) (t :: Typ) (t1 :: Typ)  (t2 :: Typ).
