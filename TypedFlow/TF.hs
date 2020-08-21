@@ -116,7 +116,7 @@ module TypedFlow.TF (
   varianceScaling, glorotUniform,
 
   -- ** Heterogeneous vectors
-  repeatT, KnownTensors(..),
+  repeatT,
 
   -- ** Heterogeneous heterogeneous vectors
   repeatHT

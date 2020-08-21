@@ -1,7 +1,3 @@
-{-# LANGUAGE TupleSections #-}
-{-# LANGUAGE ConstraintKinds #-}
-{-# LANGUAGE UndecidableSuperClasses #-}
-{-# LANGUAGE InstanceSigs #-}
 {-|
 Module      : TypedFlow.Learn
 Description : Loss functions and optimization strategies
@@ -10,26 +6,30 @@ License     : LGPL-3
 Maintainer  : jean-philippe.bernardy@gu.se
 Stability   : experimental
 -}
-{-# LANGUAGE ApplicativeDo #-}
-{-# LANGUAGE RecordWildCards #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# OPTIONS_GHC -fplugin GHC.TypeLits.KnownNat.Solver #-}
 {-# LANGUAGE AllowAmbiguousTypes #-}
+{-# LANGUAGE ApplicativeDo #-}
+{-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DeriveFoldable #-}
 {-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE DeriveTraversable #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE GADTs #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE InstanceSigs #-}
 {-# LANGUAGE MagicHash #-}
 {-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE TupleSections #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeInType #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE UndecidableSuperClasses #-}
 {-# LANGUAGE UnicodeSyntax #-}
 
 module TypedFlow.Learn where
@@ -228,7 +228,7 @@ batchModel :: forall batchSize shapesAndTypes sy_ ty_ stateShapes ps.
          -> (NP (Sat KnownShape) (Ap (FMap (Cons batchSize)) stateShapes),
              Gen (HTV ty_ (Ap (FMap (Cons batchSize)) stateShapes), -- the state variables
                   HTV ty_ (Ap (FMap (Cons batchSize)) stateShapes) -> (ModelOutput ty_ ps (batchSize ': sy_), HTV ty_ (Ap (FMap (Cons batchSize)) stateShapes)) ))
-batchModel f = let batchedShapesKnown = mapFMap @(Cons batchSize) knownCons (allKnown @KnownShape @stateShapes typeSList)
+batchModel f = let batchedShapesKnown = mapFMap @(Cons batchSize) knownCons (allKnown @KnownShape @stateShapes)
                in knownAll batchedShapesKnown
                   (batchedShapesKnown,precompile (batchModel' @batchSize f))
 
@@ -241,7 +241,7 @@ precompile :: forall ps sy ty stateShapes.
            => (Gen (HTV ty stateShapes -> StateAndOutput ty ps (sy ': stateShapes)))
            -> (Gen (HTV ty stateShapes,HTV ty stateShapes -> (ModelOutput ty ps sy, HTV ty stateShapes) ))
 precompile f = do
-  (stateVars :: HTV ty stateShapes) <- travTensor (persistent False) "state" (repeatT defaultT)
+  (stateVars :: HTV ty stateShapes) <- defaultInitializer (\nm _ -> persistent False nm (pure defaultT)) "state"
   f' <- fmap (unpairStateAndOutput . ) f
   return (stateVars,f')
 
