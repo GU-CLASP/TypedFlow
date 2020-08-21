@@ -1,3 +1,4 @@
+{-# LANGUAGE ApplicativeDo #-}
 {-# LANGUAGE ViewPatterns #-}
 {-# LANGUAGE AllowAmbiguousTypes #-}
 {-# OPTIONS_GHC -fplugin GHC.TypeLits.KnownNat.Solver #-}
@@ -13,6 +14,7 @@ module Main where
 
 import TypedFlow
 import TypedFlow.Python
+import qualified GHC.Int as GHC
 
 onFST :: (Tensor s1 t -> Tensor s t) -> HTV t '[s1, s'] -> HTV t '[s, s']
 onFST f (VecPair h c) = (VecPair (f h) c)
@@ -26,7 +28,7 @@ mkLSTM pName dropProb = do
   return (timeDistribute drp1 .-. onStates (onFST rdrp1) (lstm params))
 
 model :: forall (vocSize::Nat) (len::Nat). KnownNat len => KnownNat vocSize =>
-   Gen (T '[len] Int32 -> T '[len] Int32 -> ModelOutput Float32 '[vocSize] '[len])
+   Gen (T '[len] Int32 -> T '[len] Int32 -> ModelOutput Float32 '[len,vocSize] '[])
 model = do
   embs <- parameterDefault "embs"
   let dropProb = DropProb 0.10
@@ -43,7 +45,7 @@ model = do
           (repeatT zeros, input)
       in timedCategorical masks predictions gold
 
-padding :: Int
+padding :: GHC.Int32
 padding = 10
 
 main :: IO ()
@@ -52,9 +54,21 @@ main = do
   putStrLn "done!"
 
 -- >>> main
--- <interactive>:1144:2-5: error:
---     • Variable not in scope: main
---     • Perhaps you meant ‘min’ (imported from Prelude)
+-- Parameters (total 134300):
+-- dense_bias: T [12] tf.float32
+-- dense_w: T [160,12] tf.float32
+-- w1_o_b: T [160] tf.float32
+-- w1_o_w: T [172,160] tf.float32
+-- w1_c_b: T [160] tf.float32
+-- w1_c_w: T [172,160] tf.float32
+-- w1_i_b: T [160] tf.float32
+-- w1_i_w: T [172,160] tf.float32
+-- w1_f_b: T [160] tf.float32
+-- w1_f_w: T [172,160] tf.float32
+-- embs: T [12,12] tf.float32
+-- y: T [512,21] tf.int32
+-- x: T [512,21] tf.int32
+-- done!
 
 
 (|>) :: ∀ a b. a -> b -> (a, b)
