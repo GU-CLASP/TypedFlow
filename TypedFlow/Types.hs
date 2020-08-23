@@ -613,10 +613,9 @@ initialGstate = (GState {nextVar = 0
                         ,genRegularizers=[]
                         })
 
-extractVars :: Gen a -> RWS String () GState a
+extractVars :: Gen a -> RWS () () GState a
 extractVars (GPReturn x) = return x
 extractVars (GPState f) = state f
-extractVars (GPLocal f a) = local f (extractVars a)
 extractVars GPId = do
   GState {..} <- get
   put GState {nextVar=nextVar+1,..}
@@ -624,14 +623,11 @@ extractVars GPId = do
 extractVars (GPVariable trainable name initial) = do
   i <- mapM extractVars initial
   GState {..} <- get
-  varScope <- ask
   let r = Ref (fromIntegral nextVar) typeSShape typeSTyp
-  put GState {genVars = VarInfo trainable (varScope++name) r i : genVars,nextVar = nextVar+1,..}
+  put GState {genVars = VarInfo trainable name r i : genVars,nextVar = nextVar+1,..}
   return r
 extractVars (GPApp a b) = do f <- extractVars a; x <- extractVars b; return (f x)
 
-withScope :: [Char] -> Gen a -> Gen a
-withScope s = GPLocal (++ s)
 
 data Gen a where
   GPId :: Gen Integer
@@ -639,7 +635,6 @@ data Gen a where
   GPModify :: (KnownShape s,KnownTyp t) => Ref s t -> T s t -> Gen (T s t)
   GPReturn :: a -> Gen a
   GPState :: (GState -> (a,GState)) -> Gen a
-  GPLocal :: (String -> String) -> Gen a -> Gen a
   GPApp :: (Gen (a -> b)) -> Gen a -> Gen b
 
 genGets :: (GState -> a) -> Gen a
