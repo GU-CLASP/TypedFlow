@@ -41,7 +41,7 @@ module TypedFlow.Python (compile, compileGen, generateFile) where
 
 import Data.Char (toLower)
 import Data.Proxy
-import Data.List (genericReplicate, isPrefixOf)
+import Data.List (genericReplicate, isPrefixOf,partition)
 import GHC.TypeLits
 import Control.Monad.State
 import Control.Monad.RWS (runRWS)
@@ -452,12 +452,13 @@ compileAlreadyBatched Options{..} model = knownAppend @sy @ps ?> do
       model' = fmap (fst . apply') model -- model run on state variables.
       -- FIXME: run state updates
       (ModelOutput {..},finalState,genVars) = doExtractVars model'
+      (parameters,placeHolders) = partition varTrainable genVars
   genFun "mkModel" [] $ do
-    generateVars genVars
+    generateVars parameters
     gen (text "return " <> dict [("batch_size", (showDim @ bs))
-                                ,("parameters",list (map pyVarInfoRepr genVars))])
+                                ,("parameters",list (map pyVarInfoRepr parameters))])
 
-  genFun "runModel" [] $ do
+  genFun "runModel" (map pyVarInfoRepr placeHolders) $ do
     loss <- generatePure (reduceSumAll modelLoss + sum (genRegularizers finalState))
     y_ <- generatePure modelY
     accuracy <- generatePure (modelCorrect)
@@ -466,11 +467,6 @@ compileAlreadyBatched Options{..} model = knownAppend @sy @ps ?> do
                 ,("accuracy", accuracy)
                 ,("y_", y_)]
     gen (text "return " <> dict peeks)
-
--- paramToPeek :: VarInfo -> Python (String,UntypedExpression)
--- paramToPeek (VarInfo name s t x) = do
---   x' <- knownSShape s ?> (knownTyp t $ generatePure x)
---   return (name,x')
 
 -- untypedExprs :: All KnownShape xs => KnownTyp t =>  HTV t xs -> Python [DOC]
 -- untypedExprs Unit = return []
