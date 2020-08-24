@@ -241,7 +241,7 @@ precompile :: forall ps sy ty stateShapes.
            => (Gen (HTV ty stateShapes -> StateAndOutput ty ps (sy ': stateShapes)))
            -> (Gen (HTV ty stateShapes,HTV ty stateShapes -> (ModelOutput ty ps sy, HTV ty stateShapes) ))
 precompile f = do
-  (stateVars :: HTV ty stateShapes) <- defaultInitializer (\nm _ -> persistent False nm (pure defaultT)) "state"
+  (stateVars :: HTV ty stateShapes) <- travTensor (persistent False) "state" (repeatT defaultT)
   f' <- fmap (unpairStateAndOutput . ) f
   return (stateVars,f')
 

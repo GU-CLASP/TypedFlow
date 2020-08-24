@@ -1,4 +1,3 @@
-{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE ViewPatterns #-}
 {-# LANGUAGE AllowAmbiguousTypes #-}
 {-# OPTIONS_GHC -fplugin GHC.TypeLits.KnownNat.Solver #-}
@@ -42,27 +41,24 @@ import Data.Monoid ((<>))
 --------------------------------------
 -- Cells
 
-recurrentKernelInitialiser :: forall t n x. KnownNat x => KnownNat n => KnownBits t => Gen (T '[n + x, n] ('Typ 'Float t))
-recurrentKernelInitialiser = (concat0 <$> recurrentInitializer <*> kernelInitializer) where
-        recurrentInitializer :: Gen (Tensor '[n, n] ('Typ 'Float t))
+-- | Standard RNN gate initializer. (The recurrent kernel is
+-- orthogonal to avoid divergence; the input kernel is glorot)
+cellInitializerBit :: ∀ n x t. (KnownNat n, KnownNat x, KnownBits t) => Gen (DenseP t (n + x) n)
+cellInitializerBit = DenseP <$> (concat0 <$> recurrentInitializer <*> kernelInitializer) <*> biasInitializer
+  where recurrentInitializer :: Gen (Tensor '[n, n] ('Typ 'Float t))
         recurrentInitializer = noise $ OrthogonalD
         kernelInitializer :: Gen (Tensor '[x, n] ('Typ 'Float t))
         kernelInitializer = glorotUniform
-
--- | Standard RNN gate initializer. (The recurrent kernel is
--- orthogonal to avoid divergence; the input kernel is glorot)
-cellInitializerBit :: forall n x t. (KnownNat n, KnownNat x, KnownBits t) =>
-                      (forall s t. (KnownTyp t,KnownShape s) => String -> Gen (T s t) -> Gen (T s t)) -> String -> Gen (DenseP t (n + x) n)
-cellInitializerBit f s = DenseP <$> f (s <> "_w") recurrentKernelInitialiser <*> f (s <> "_b") (pure zeros)
+        biasInitializer = pure zeros
 
 -- | Parameter for an LSTM
 data LSTMP t n x = LSTMP (DenseP t (n+x) n) (DenseP t (n+x) n) (DenseP t (n+x) n) (DenseP t (n+x) n)
 
--- instance (KnownNat n, KnownNat x, KnownBits t) => KnownTensors (LSTMP t n x) where
---   travTensor f s (LSTMP x y z w) = LSTMP <$> travTensor f (s<>"_f") x <*> travTensor f (s<>"_i") y <*> travTensor f (s<>"_c") z <*> travTensor f (s<>"_o") w
+instance (KnownNat n, KnownNat x, KnownBits t) => KnownTensors (LSTMP t n x) where
+  travTensor f s (LSTMP x y z w) = LSTMP <$> travTensor f (s<>"_f") x <*> travTensor f (s<>"_i") y <*> travTensor f (s<>"_c") z <*> travTensor f (s<>"_o") w
 instance (KnownNat n, KnownNat x, KnownBits t) => ParamWithDefault (LSTMP t n x) where
-  defaultInitializer f s  = LSTMP <$> forgetInit <*> cellInitializerBit f (s<>"_i") <*> cellInitializerBit f (s<>"_c") <*> cellInitializerBit f (s<>"_o")
-    where forgetInit = DenseP <$> f (s<>"_f_w") recurrentKernelInitialiser <*> f (s<>"_f_b") (pure ones)
+  defaultInitializer = LSTMP <$> forgetInit <*> cellInitializerBit <*> cellInitializerBit <*> cellInitializerBit
+    where forgetInit = DenseP <$> (denseWeights <$> cellInitializerBit) <*> pure ones
 
 -- | Standard LSTM
 lstm :: ∀ n x t. KnownNat x => KnownNat n => KnownBits t
@@ -80,10 +76,10 @@ lstm (LSTMP wf wi wc wo) input = C $ \(VecPair ht1 ct1) ->
 -- | Parameter for a GRU
 data GRUP t n x = GRUP (T [n+x,n] ('Typ 'Float t)) (T [n+x,n] ('Typ 'Float t)) (T [n+x,n] ('Typ 'Float t))
 
--- instance (KnownNat n, KnownNat x, KnownBits t) => KnownTensors (GRUP t n x) where
---   travTensor f s (GRUP x y z) = GRUP <$> travTensor f (s<>"_z") x <*> travTensor f (s<>"_r") y <*> travTensor f (s<>"_w") z
+instance (KnownNat n, KnownNat x, KnownBits t) => KnownTensors (GRUP t n x) where
+  travTensor f s (GRUP x y z) = GRUP <$> travTensor f (s<>"_z") x <*> travTensor f (s<>"_r") y <*> travTensor f (s<>"_w") z
 instance (KnownNat n, KnownNat x, KnownBits t) => ParamWithDefault (GRUP t n x) where
-  defaultInitializer f s = GRUP <$> (f (s<>"_z") recurrentKernelInitialiser) <*> (f (s<>"_r") recurrentKernelInitialiser) <*> (f (s<>"_w") recurrentKernelInitialiser)
+  defaultInitializer = GRUP <$> (denseWeights <$> cellInitializerBit) <*> (denseWeights <$> cellInitializerBit) <*> (denseWeights <$> cellInitializerBit)
 
 
 -- | Standard GRU cell
@@ -100,15 +96,15 @@ gru (GRUP wz wr w) xt = C $ \(VecSing ht1) ->
 
 data StackP w n = StackP (DenseP w (n + n) 3)
 
--- defStackP :: KnownNat n => KnownBits w => Gen (StackP w n)
--- defStackP = StackP <$> defaultInitializer
+defStackP :: KnownNat n => KnownBits w => Gen (StackP w n)
+defStackP = StackP <$> defaultInitializer
   -- (DenseP glorotUniform (stack0 (V [zeros, constant (-1), zeros]) )) -- demote popping a bit 
 
--- instance (KnownNat n, KnownBits w) => KnownTensors (StackP w n) where
---   travTensor f s (StackP d) = StackP <$> travTensor f s d
+instance (KnownNat n, KnownBits w) => KnownTensors (StackP w n) where
+  travTensor f s (StackP d) = StackP <$> travTensor f s d
 
 instance (KnownNat n, KnownBits w) => (ParamWithDefault (StackP w n)) where
-  defaultInitializer f s = StackP <$> defaultInitializer f s
+  defaultInitializer = defStackP
 
 -- | A stack recurrent unit. The input has two purposes: 1. it is
 -- saved in a stack. 2. it controls (a dense layer which gives) the

@@ -388,19 +388,6 @@ defaultT = case typeSTyp @t of
                  STyp SInt _ _ -> zeros
                  STyp SBool _ _ -> constant False
 
-defaultHTV :: KnownTyp t' => Int -> NP (Sat KnownShape) ys -> (forall s t. (KnownTyp t,KnownShape s) => String -> Gen (T s t) -> Gen (T s t)) -> String -> Gen (HTV t' ys)
-defaultHTV i ss f nm = case ss of
-  (Sat :* ss') -> do
-    x <- f (nm <> show i) (pure defaultT)
-    xs <- defaultHTV (i+1) ss' f nm
-    return (F x :* xs)
-  Unit -> pure Unit
-
-instance (KnownTyp t, All KnownShape ys, KnownLen ys) => ParamWithDefault (HTV t ys) where
-  defaultInitializer = defaultHTV 0 allKnown
-
-class ParamWithDefault p where
-  defaultInitializer :: (forall s t. (KnownTyp t,KnownShape s) => String -> Gen (T s t) -> Gen (T s t)) -> String -> Gen p
 
 -- | Ones
 ones :: ∀ t (shape :: Shape). KnownShape shape => KnownNumeric t => (T shape t)

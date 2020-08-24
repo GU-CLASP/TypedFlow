@@ -10,15 +10,14 @@ Stability   : experimental
 #if __GLASGOW_HASKELL__ >= 806
 {-# LANGUAGE NoStarIsType #-}
 #endif
-{-# OPTIONS_GHC -fplugin GHC.TypeLits.KnownNat.Solver #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE ViewPatterns #-}
 {-# LANGUAGE TypeInType #-}
+{-# OPTIONS_GHC -fplugin GHC.TypeLits.KnownNat.Solver #-}
 {-# LANGUAGE AllowAmbiguousTypes #-}
-{-# LANGUAGE ApplicativeDo #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DeriveFoldable #-}
 {-# LANGUAGE DeriveFunctor #-}
@@ -56,7 +55,7 @@ import TypedFlow.TF
 import TypedFlow.Types
 import TypedFlow.Types.Proofs
 import TypedFlow.Abstract
--- import Control.Monad.State (gets)
+import Control.Monad.State (gets)
 import Data.Monoid ((<>))
 ---------------------
 -- Linear functions
@@ -72,11 +71,11 @@ data DenseP t a b = DenseP {denseWeights :: Tensor '[a,b] (Flt t)
 -- | Parameters for the embedding layers
 newtype EmbeddingP numObjects embeddingSize t = EmbeddingP (Tensor '[numObjects, embeddingSize] ('Typ 'Float t))
 
--- instance (KnownNat numObjects, KnownBits b, KnownNat embeddingSize) => KnownTensors (EmbeddingP numObjects embeddingSize b) where
---   travTensor f s (EmbeddingP p) = EmbeddingP <$> travTensor f s p
+instance (KnownNat numObjects, KnownBits b, KnownNat embeddingSize) => KnownTensors (EmbeddingP numObjects embeddingSize b) where
+  travTensor f s (EmbeddingP p) = EmbeddingP <$> travTensor f s p
 
 instance (KnownNat numObjects, KnownBits b, KnownNat embeddingSize) => ParamWithDefault (EmbeddingP numObjects embeddingSize b) where
-  defaultInitializer f n = EmbeddingP <$> f n (noise $ UniformD (-0.05) 0.05)
+  defaultInitializer = EmbeddingP <$> (noise $ UniformD (-0.05) 0.05)
 
 -- | embedding layer
 embedding :: ∀ embeddingSize numObjects t. KnownNat embeddingSize => KnownNat numObjects =>
@@ -84,11 +83,12 @@ embedding :: ∀ embeddingSize numObjects t. KnownNat embeddingSize => KnownNat 
 embedding (EmbeddingP param) input = gather param input
 
 
--- instance (KnownNat a, KnownNat b, KnownBits t) => KnownTensors (DenseP t a b) where
---   travTensor f s (DenseP x y) = DenseP <$> travTensor f (s<>"_w") x <*> travTensor f (s<>"_bias") y
+
+instance (KnownNat a, KnownNat b, KnownBits t) => KnownTensors (DenseP t a b) where
+  travTensor f s (DenseP x y) = DenseP <$> travTensor f (s<>"_w") x <*> travTensor f (s<>"_bias") y
 
 instance (KnownNat n, KnownNat m, KnownBits b) => ParamWithDefault (DenseP b n m) where
-  defaultInitializer f s = DenseP <$> f (s<>"_w") glorotUniform <*> f (s<>"_bias") (noise $ TruncatedNormalD 0.1)
+  defaultInitializer = DenseP <$> glorotUniform <*> (noise $ TruncatedNormalD 0.1)
 
 -- | Dense layer (Apply a linear function)
 (#), dense :: ∀m n t. KnownNat n => KnownNat m => KnownBits t => DenseP t n m -> Tensor '[n] (Flt t) -> Tensor '[m] (Flt t)
@@ -113,8 +113,9 @@ mkDropout d = (⊙) <$> mkMask d
 mkMask :: forall s t. KnownShape s => KnownBits t => DropProb -> Gen (Tensor s (Flt t))
 mkMask (DropProb dropProb) = do
   let keepProb = 1 - dropProb
+  let isTraining = genTrainingPlaceholder
   r <- noise $ UniformD keepProb (1 + keepProb)
-  return $ if_ genTrainingPlaceholder
+  return $ if_ isTraining
                (floor r ⊘ constant (knownFloating @t $ realToFrac keepProb))
                ones
 
@@ -125,7 +126,7 @@ mkDropouts :: KnownBits t => KnownLen shapes => All KnownShape shapes => DropPro
 mkDropouts d = appEndoTensor <$> mkDropouts' typeSList where
    mkDropouts' :: forall shapes t. KnownBits t => All KnownShape shapes =>
                   SList shapes -> Gen (NP (EndoTensor ('Typ 'Float t)) shapes)
-   mkDropouts' Unit = pure Unit
+   mkDropouts' Unit = return Unit
    mkDropouts' (_ :* rest) = do
      x <- mkDropout d
      xs <- mkDropouts' rest
@@ -145,19 +146,18 @@ data ConvP t outChannels inChannels filterSpatialShape
 
 instance (KnownNat outChannels,KnownNat inChannels, KnownShape filterSpatialShape, KnownBits t) =>
   ParamWithDefault (ConvP t outChannels inChannels filterSpatialShape) where
-  defaultInitializer f s
-    = prodHomo @filterSpatialShape @'[inChannels, outChannels] #>
-      prodAssoc @(Product filterSpatialShape) @inChannels @outChannels #>
-      knownAppend @filterSpatialShape @'[inChannels,outChannels] ?>
-      knownProduct @filterSpatialShape ?>
-      ConvP <$> f (s<>"_filters") (reshape <$> i) <*> f (s <> "_biases") (pure (knownFloating @t (constant 0.1)))
+  defaultInitializer = prodHomo @filterSpatialShape @'[inChannels, outChannels] #>
+                       prodAssoc @(Product filterSpatialShape) @inChannels @outChannels #>
+                       knownAppend @filterSpatialShape @'[inChannels,outChannels] ?>
+                       knownProduct @filterSpatialShape ?>
+                       ConvP <$> (reshape <$> i) <*> pure (knownFloating @t (constant 0.1))
     where i :: Gen (T '[Product filterSpatialShape*inChannels,outChannels] (Flt t))
           i = knownProduct @filterSpatialShape ?> glorotUniform
 
--- instance (KnownNat outChannels,KnownNat inChannels, KnownShape filterSpatialShape, KnownBits t) =>
---   KnownTensors (ConvP t outChannels inChannels filterSpatialShape) where
---   travTensor f s (ConvP x y) = knownAppend @filterSpatialShape @'[inChannels,outChannels] ?>
---           (ConvP <$> travTensor f (s<>"_filters") x <*> travTensor f (s <> "_biases") y)
+instance (KnownNat outChannels,KnownNat inChannels, KnownShape filterSpatialShape, KnownBits t) =>
+  KnownTensors (ConvP t outChannels inChannels filterSpatialShape) where
+  travTensor f s (ConvP x y) = knownAppend @filterSpatialShape @'[inChannels,outChannels] ?>
+          (ConvP <$> travTensor f (s<>"_filters") x <*> travTensor f (s <> "_biases") y)
 
 -- | Size-preserving convolution layer
 conv' :: forall s outChannels filterSpatialShape inChannels t.

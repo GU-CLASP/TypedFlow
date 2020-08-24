@@ -149,9 +149,9 @@ repeatHT f = zs (typeSList @ss)
 parameter' :: ∀ (shape :: Shape) t. (KnownTyp t,KnownShape shape) => String -> (T shape t) -> Gen (T shape t)
 parameter' = persistent True
 
--- -- | Create a parameter.
--- parameter :: forall p. KnownTensors p => String -> Gen p -> Gen p
--- parameter s p = travTensor (\s' -> parameter' (s ++ s')) s p
+-- | Create a parameter.
+parameter :: forall p. KnownTensors p => String -> Gen p -> Gen p
+parameter s p = travTensor (\s' -> parameter' (s ++ s')) s =<< p
 
 -- | Declare variable which persists between calls to session.run.
 persistent :: ∀ (shape :: Shape) t. (KnownTyp t,KnownShape shape) => Bool -> String -> (T shape t) -> Gen (T shape t)
@@ -263,7 +263,7 @@ normalize v = mapT (/ (norm v + epsilon)) v
 
 -- | Create a parameter and initialize it with a suitable default for its type. Control the exact initializer using 'parameter'.
 parameterDefault :: forall p. ParamWithDefault p => String -> Gen p
-parameterDefault name = defaultInitializer parameter' name
+parameterDefault name = parameter name defaultInitializer
 
 
 -- flattenHTV :: KnownTyp t => All KnownShape xs => HTV t xs -> Tensor '[Sum (Ap (FMap CProduct) xs)] t

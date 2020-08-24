@@ -604,12 +604,10 @@ data VarInfo = forall s t. VarInfo {varTrainable :: Bool,
                                     varInitial :: Maybe (T s t)} 
 
 data GState = GState {nextVar :: Integer, -- ^ next free variable
-                      -- genVars :: [VarInfo], -- ^ optimizable parameters
                       genRegularizers :: [Scalar Float32] -- ^ accumulated regularizers
                      }
 initialGstate :: GState
 initialGstate = (GState {nextVar = 0
-                        -- ,genVars=[]
                         ,genRegularizers=[]
                         })
 
@@ -628,9 +626,6 @@ data Gen a where
 
 genGets :: (GState -> a) -> Gen a
 genGets f = GPState  (\s -> (f s, s))
-
-
-
 
 instance Applicative Gen where
   (<*>) = GPApp
@@ -803,42 +798,43 @@ data Permutation (s :: [k]) (t :: [k]) where
 
 deriving instance Show (Permutation s t)
 
+class KnownTensors p where -- TODO: delete
+  -- | traverse all the tensors contained in p.
+  travTensor :: Applicative m => (forall s t. (KnownTyp t, KnownShape s) => String -> (T s t) -> m (T s t)) -> String -> p -> m p
 
--- class KnownTensors p where -- TODO: delete
---   -- | traverse all the tensors contained in p.
---   travTensor :: Applicative m => (forall s t. (KnownTyp t, KnownShape s) => String -> (T s t) -> m (T s t)) -> String -> p -> m p
+instance (KnownTyp t, KnownShape shape) => KnownTensors (T shape t) where
+  travTensor f = f
 
--- instance (KnownTyp t, KnownShape shape) => KnownTensors (T shape t) where
---   travTensor f = f
+instance (All KnownPair ys) => KnownTensors (HHTV ys) where
+  travTensor :: forall m. Applicative m => (forall s t'. (KnownTyp t', KnownShape s) => String -> T s t' -> m (T s t')) -> String -> HHTV ys -> m (HHTV ys)
+  travTensor f s = ttr 0
+    where ttr :: forall xs. All KnownPair xs => Int -> HHTV xs -> m (HHTV xs)
+          ttr _ Unit = pure Unit
+          ttr n (Uncurry x :* xs) = do
+            x' <- f (s <> "_" <> show n) x
+            xs' <- ttr (n + 1) xs
+            return (Uncurry x' :* xs')
 
--- instance (All KnownPair ys) => KnownTensors (HHTV ys) where
---   travTensor :: forall m. Applicative m => (forall s t'. (KnownTyp t', KnownShape s) => String -> T s t' -> m (T s t')) -> String -> HHTV ys -> m (HHTV ys)
---   travTensor f s = ttr 0
---     where ttr :: forall xs. All KnownPair xs => Int -> HHTV xs -> m (HHTV xs)
---           ttr _ Unit = pure Unit
---           ttr n (Uncurry x :* xs) = do
---             x' <- f (s <> "_" <> show n) x
---             xs' <- ttr (n + 1) xs
---             return (Uncurry x' :* xs')
+instance (KnownTyp t, All KnownShape ys) => KnownTensors (HTV t ys) where
+  travTensor :: forall m. Applicative m => (forall s t'. (KnownTyp t', KnownShape s) => String -> T s t' -> m (T s t')) -> String -> (HTV t ys) -> m (HTV t ys)
+  travTensor f s = ttr 0
+    where ttr :: forall xs. All KnownShape xs => Int -> HTV t xs -> m (HTV t xs)
+          ttr _ Unit = pure Unit
+          ttr n (F x :* xs) = do
+            x' <- f (s <> "_" <> show n) x
+            xs' <- ttr (n + 1) xs
+            return (F x' :* xs')
 
--- instance (KnownTyp t, All KnownShape ys) => KnownTensors (HTV t ys) where
---   travTensor :: forall m. Applicative m => (forall s t'. (KnownTyp t', KnownShape s) => String -> T s t' -> m (T s t')) -> String -> (HTV t ys) -> m (HTV t ys)
---   travTensor f s = ttr 0
---     where ttr :: forall xs. All KnownShape xs => Int -> HTV t xs -> m (HTV t xs)
---           ttr _ Unit = pure Unit
---           ttr n (F x :* xs) = do
---             x' <- f (s <> "_" <> show n) x
---             xs' <- ttr (n + 1) xs
---             return (F x' :* xs')
+instance (KnownTensors p, KnownTensors q) => KnownTensors (p,q) where
+  travTensor f s (x,y) = (,) <$> travTensor f (s<>"_fst") x <*> travTensor f (s<>"_snd") y
 
--- instance (KnownTensors p, KnownTensors q) => KnownTensors (p,q) where
---   travTensor f s (x,y) = (,) <$> travTensor f (s<>"_fst") x <*> travTensor f (s<>"_snd") y
+instance (KnownTensors p1, KnownTensors p2, KnownTensors p3) => KnownTensors (p1,p2,p3) where
+  travTensor f s (x,y,z) = (,,) <$> travTensor f (s<>"_1") x <*> travTensor f (s<>"_2") y <*> travTensor f (s<>"_3") z
 
--- instance (KnownTensors p1, KnownTensors p2, KnownTensors p3) => KnownTensors (p1,p2,p3) where
---   travTensor f s (x,y,z) = (,,) <$> travTensor f (s<>"_1") x <*> travTensor f (s<>"_2") y <*> travTensor f (s<>"_3") z
+instance (KnownTensors p1, KnownTensors p2, KnownTensors p3, KnownTensors p4) => KnownTensors (p1,p2,p3,p4) where
+  travTensor f s (x,y,z,w) = (,,,) <$> travTensor f (s<>"_1") x <*> travTensor f (s<>"_2") y <*> travTensor f (s<>"_3") z <*> travTensor f (s<>"_4") w
 
--- instance (KnownTensors p1, KnownTensors p2, KnownTensors p3, KnownTensors p4) => KnownTensors (p1,p2,p3,p4) where
---   travTensor f s (x,y,z,w) = (,,,) <$> travTensor f (s<>"_1") x <*> travTensor f (s<>"_2") y <*> travTensor f (s<>"_3") z <*> travTensor f (s<>"_4") w
-
+class KnownTensors p => ParamWithDefault p where
+  defaultInitializer :: Gen p
 
 
