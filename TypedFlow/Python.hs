@@ -454,24 +454,17 @@ compileAlreadyBatched Options{..} model = knownAppend @sy @ps ?> do
       (ModelOutput {..},finalState,genVars) = doExtractVars model'
   genFun "mkModel" [] $ do
     generateVars genVars
-    gen (text "return " <> dict [("batch_size", (showDim @ bs)), ("")])
+    gen (text "return " <> dict [("batch_size", (showDim @ bs))
+                                ,("parameters",list (map pyVarInfoRepr genVars))])
 
   genFun "runModel" [] $ do
     loss <- generatePure (reduceSumAll modelLoss + sum (genRegularizers finalState))
     y_ <- generatePure modelY
     accuracy <- generatePure (modelCorrect)
     modify $ \PyState{..} -> PyState{genPyVars=genVars,..}
-    trainStep <- assignAny $ case maxGradientNorm of
-       Nothing -> funcall "optimizer.minimize" [loss]
-                                 -- FIXME: traverse the loss to see what parameters are, or use the tensorflow tape object.
-                                 -- Just clip -> funcall "optimizer.apply_gradients"
-                                 --                [funcall "zip" [clipByGlobalNorm clip (grad loss params),params]]
-    let peeks = [("optimizer", (text "optimizer"))
-                ,("train", trainStep)
-                ,("loss", loss)
+    let peeks = [("loss", loss)
                 ,("accuracy", accuracy)
-                ,("y_", y_)
-                ,]
+                ,("y_", y_)]
     gen (text "return " <> dict peeks)
 
 -- paramToPeek :: VarInfo -> Python (String,UntypedExpression)

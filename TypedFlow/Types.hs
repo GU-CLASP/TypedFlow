@@ -636,6 +636,9 @@ instance Applicative Gen where
   (<*>) = GPApp
   pure = GPReturn
 
+instance Monad Gen where
+  (>>=) = GPBind
+
 instance Functor Gen where
   fmap f = (pure f <*>)
 

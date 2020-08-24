@@ -146,7 +146,7 @@ repeatHT f = zs (typeSList @ss)
         zs (_ :* n) = Uncurry f :* zs n
 
 -- | Declare a parameter to optimize.
-parameter' :: ∀ (shape :: Shape) t. (KnownTyp t,KnownShape shape) => String -> Gen (T shape t) -> Gen (T shape t)
+parameter' :: ∀ (shape :: Shape) t. (KnownTyp t,KnownShape shape) => String -> (T shape t) -> Gen (T shape t)
 parameter' = persistent True
 
 -- -- | Create a parameter.
@@ -154,7 +154,7 @@ parameter' = persistent True
 -- parameter s p = travTensor (\s' -> parameter' (s ++ s')) s p
 
 -- | Declare variable which persists between calls to session.run.
-persistent :: ∀ (shape :: Shape) t. (KnownTyp t,KnownShape shape) => Bool -> String -> Gen (T shape t) -> Gen (T shape t)
+persistent :: ∀ (shape :: Shape) t. (KnownTyp t,KnownShape shape) => Bool -> String -> (T shape t) -> Gen (T shape t)
 persistent trainable name initial = do
   T . Variable <$> GPVariable trainable name (Just initial)
 
