@@ -41,12 +41,11 @@ module TypedFlow.Python (compile, compileGen, generateFile) where
 
 import Data.Char (toLower)
 import Data.Proxy
-import Data.List (genericReplicate, isPrefixOf,partition)
+import Data.List (genericReplicate, partition)
 import GHC.TypeLits
 import Control.Monad.State
-import Control.Monad.RWS (runRWS)
 import TypedFlow.Types
-import TypedFlow.Abstract (permToFun,unopInputShape,mkBC,reduceSumAll,extractVars,doExtractVars)
+import TypedFlow.Abstract (permToFun,unopInputShape,reduceSumAll,doExtractVars)
 import TypedFlow.Types.Proofs
 import TypedFlow.Memo
 import Text.PrettyPrint.Compact hiding (All,Last,Product,Sum,Options)
@@ -66,7 +65,7 @@ paramDType (VarInfo {varRef = Ref _ _ t}) = sTypTyp t
 paramName :: VarInfo -> String
 paramName (VarInfo {..}) = varName
 
-generateFile :: String -> Python () -> IO ()
+generateFile :: String -> Python [VarInfo] -> IO ()
 generateFile fname g = do
   putStrLn ("Parameters (total " ++ show (sum [product (paramShape' p) | p <- params]) ++ "):")
   forM_ params printParam
@@ -205,13 +204,12 @@ assignAny x = do
   v <-- x
   return (pyVarRepr v)
 
-generate :: Python () -> (String,[VarInfo])
+generate :: Python [VarInfo] -> (String,[VarInfo])
 generate s = (renderWith (PP.Options 92 (const id)) genText, genPyVars)
-  where PyState{..} = execState s initPyState
+  where (genPyVars,PyState{..}) = runState s initPyState
         initPyState = PyState {genPureTable = mempty
                               ,genAssignTable = mempty
                               ,genText = mempty
-                              ,genPyVars = mempty
                               ,genId = 12345}
 
 generatePure :: forall s t. KnownTyp t => KnownShape s => T s t -> Python DOC
@@ -228,9 +226,9 @@ generatePure x = do
 
 genDistr :: forall s s0 t. KnownTyp t => Distribution s t -> SShape s0 -> SShape s -> DOC
 genDistr d sh s1 = case d of
-  TruncatedNormalD stddev -> funcall "tf.truncated_normal"
+  TruncatedNormalD stddev -> funcall "tf.random.truncated_normal"
     [showSShape (sh .+. s1), named "stddev" (float stddev), named "dtype" (showTyp @t)]
-  UniformD low high -> funcall "tf.random_uniform" [showSShape (sh .+. s1)
+  UniformD low high -> funcall "tf.random.uniform" [showSShape (sh .+. s1)
                                 ,named "minval" (float low)
                                 ,named "maxval" (float high)
                                 ,named "dtype" (showTyp @t)]
@@ -424,7 +422,7 @@ compile :: forall batchSize sx tx sy ty sy_ ty_ p
         .  (KnownNat batchSize, KnownShape sx, KnownTyp tx, KnownShape sy, KnownTyp ty, KnownShape sy_, KnownTyp ty_, KnownShape p, KnownLen p)
         => Options
         -> Gen (Tensor sx tx -> Tensor sy ty -> ModelOutput  ty_ p sy_)
-        -> Python ()
+        -> Python [VarInfo]
 compile options fGen = compileGen @batchSize options (simpleModel <$> fGen)
 
 -- | Batchify and compile a model with generic  input to output mapping and states
@@ -434,7 +432,7 @@ compileGen :: forall batchSize shapesAndTypes sy_ ty_ ps stateShapes.
             All KnownShape stateShapes, KnownShape sy_, KnownTyp ty_, KnownShape ps, KnownLen ps)
          => Options
          -> Gen (Placeholders shapesAndTypes -> HTV ty_ stateShapes -> StateAndOutput ty_ ps (sy_ ': stateShapes))
-         -> Python ()
+         -> Python [VarInfo]
 compileGen options fGen = knownAll known (compileAlreadyBatched @batchSize options batched)
   where (known,batched) = batchModel @batchSize fGen
 
@@ -445,7 +443,7 @@ compileAlreadyBatched :: forall bs ty stateShapes sy ps. KnownNat bs
            => KnownShape ps
            => All KnownShape stateShapes
            => Options
-           -> (Gen (HTV ty stateShapes,HTV ty stateShapes -> (ModelOutput ty ps sy, HTV ty stateShapes))) -> Python ()
+           -> (Gen (HTV ty stateShapes,HTV ty stateShapes -> (ModelOutput ty ps sy, HTV ty stateShapes))) -> Python [VarInfo]
 compileAlreadyBatched Options{..} model = knownAppend @sy @ps ?> do
   gen (text "import tensorflow as tf")
   let apply' (x,f) = f x
@@ -454,6 +452,7 @@ compileAlreadyBatched Options{..} model = knownAppend @sy @ps ?> do
       (ModelOutput {..},finalState,genVars) = doExtractVars model'
       (parameters,placeHolders) = partition varTrainable genVars
   genFun "mkModel" [] $ do
+    gen (text "global " <> sep (punctuate comma (map pyVarInfoRepr parameters)))
     generateVars parameters
     gen (text "return " <> dict [("batch_size", (showDim @ bs))
                                 ,("parameters",list (map pyVarInfoRepr parameters))])
@@ -461,12 +460,12 @@ compileAlreadyBatched Options{..} model = knownAppend @sy @ps ?> do
   genFun "runModel" (text "isTraining":map pyVarInfoRepr placeHolders) $ do
     loss <- generatePure (reduceSumAll modelLoss + sum (genRegularizers finalState))
     y_ <- generatePure modelY
-    accuracy <- generatePure (modelCorrect)
-    modify $ \PyState{..} -> PyState{genPyVars=genVars,..}
-    let peeks = [("loss", loss)
-                ,("accuracy", accuracy)
-                ,("y_", y_)]
-    gen (text "return " <> dict peeks)
+    accuracy <- generatePure modelCorrect
+    let returns = [("loss", loss)
+                  ,("accuracy", accuracy)
+                  ,("y_", y_)]
+    gen (text "return " <> dict returns)
+  return parameters
 
 -- untypedExprs :: All KnownShape xs => KnownTyp t =>  HTV t xs -> Python [DOC]
 -- untypedExprs Unit = return []
@@ -485,7 +484,6 @@ pretty = case kindVal @(TypKind t) of
 data PyState = PyState {
                        genId :: Integer
                        ,genText :: DOC
-                       ,genPyVars :: [VarInfo]
                        ,genPureTable :: SSNMap2 Shape Typ T DOC
                        -- ^ Table mapping pointers to their
                        -- interpretations, so that sharing in the data

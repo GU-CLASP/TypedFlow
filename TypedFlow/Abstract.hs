@@ -74,6 +74,7 @@ protoFreevars rec = \case
   Where cond x y -> rec cond <> rec x <> rec y
   If cond x y ->  rec cond <> rec x <> rec y
   T (Variable (Ref i _ _)) -> [i]
+  T _ -> []
   Unbroadcast _p _u x -> rec x
   UnOp _op _ x -> rec x
   MatMul _ _ _ _ x y -> rec x <> rec y
