@@ -42,6 +42,7 @@ tensor operations. It is not normally imported directly by users.
 
 module TypedFlow.Abstract where
 
+import Control.Monad.RWS (RWS(..), local, ask, tell, runRWS)
 import Control.Monad.State
 import Data.Kind (Type,)
 import Data.Proxy
@@ -56,12 +57,33 @@ import TypedFlow.Types (T(..))
 import TypedFlow.Types hiding (T)
 import TypedFlow.Types.Proofs
 
--- {-# NOINLINE uniqueFor #-}
--- uniqueFor :: T n s -> Unique
--- uniqueFor s = s `seq` unsafePerformIO newUnique
+freeVarsT :: forall s t. KnownTyp t => KnownShape s
+  => T s t -> [Int]
+freeVarsT x = result
+  where f :: forall s' t'. T s' t' -> [Int]
+        f = memo (protoFreevars f)
+        result = f x
 
--- doIt :: T s t -> T s t
--- doIt = mapT f x
+protoFreevars :: (forall s' t'. T s' t' -> [Int]) -> T s t -> [Int]
+protoFreevars rec = \case
+  MapT _ s f x -> rec x <> rec (f (T (Variable (Ref (-789) s typeSTyp))))
+  Softmax _ _ x -> rec x
+  DirectBroadcast _ _ _ _ x -> rec x
+  GatherND _ _ _ x y -> rec x <> rec y
+  Noise _ _ _ _ -> []
+  Where cond x y -> rec cond <> rec x <> rec y
+  If cond x y ->  rec cond <> rec x <> rec y
+  T (Variable (Ref i _ _)) -> [i]
+  Unbroadcast _p _u x -> rec x
+  UnOp _op _ x -> rec x
+  MatMul _ _ _ _ x y -> rec x <> rec y
+  BinOp _op _ _ _ _ _ x y -> rec x <> rec y
+  Gather _is _s0 _m _s1 x ix -> rec x <> rec ix
+  Transpose _ _t x -> rec x
+  ReshapeFrom _s x -> rec x
+  Concat _s0  _s1 xs -> mconcat $ htoList $ hmap (\(Catable _ x) -> K (rec x)) xs
+  Convolution _bs _inChans _outChans _filterShape _s x filters -> rec x <> rec filters
+  Pool _ _ _ _ _ x  -> rec x
 
 data GS = GS { gsUnique :: Integer,
                gsTable :: SNMap22 Shape Typ T T}
@@ -963,3 +985,28 @@ maxPool1D :: forall window width channels t.
              T '[window*width,channels] (Flt t) -> T '[width,channels] (Flt t)
 maxPool1D x = squeeze0 (Pool (natSat @1) (typeSShape @'[window]) MaxPool (natSat @channels) (typeSShape @'[width]) (expandDim0 x))
 
+
+doExtractVars :: Gen a -> (a, GState, [VarInfo])
+doExtractVars p = runRWS (extractVars p) () initialGstate
+
+extractVars :: Gen a -> RWS () [VarInfo] GState a
+extractVars (GPState f) = state f
+extractVars GPId = do
+  GState {..} <- get
+  put GState {nextVar=nextVar+1,..}
+  return nextVar
+extractVars (GPVariable trainable name i) = do
+  -- i <- mapM extractVars initial
+  case i of
+    Nothing -> return ()
+    Just i' -> when (not (null (freeVarsT i'))) $ error "aaaaaaaaarrrrghhh"
+  GState {..} <- get
+  let r = Ref (fromIntegral nextVar) typeSShape typeSTyp
+  tell [VarInfo trainable name r i]
+  put GState {nextVar = nextVar+1,..}
+  return r
+extractVars (GPApp a b) = do f <- extractVars a; x <- extractVars b; return (f x)
+extractVars (GPBind a f) = do
+  a' <- extractVars a
+  extractVars (f a')
+extractVars (GPReturn x) = return x

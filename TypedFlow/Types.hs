@@ -38,7 +38,7 @@ module TypedFlow.Types where
 import GHC.TypeLits 
 import Data.Proxy
 import Control.Monad.State
-import Control.Monad.RWS (RWS(..), local, ask)
+import Control.Monad.RWS (RWS(..), local, ask, tell)
 import Data.Kind (Constraint,Type)
 import qualified Data.Int as Hask
 import Data.Type.Equality
@@ -604,38 +604,27 @@ data VarInfo = forall s t. VarInfo {varTrainable :: Bool,
                                     varInitial :: Maybe (T s t)} 
 
 data GState = GState {nextVar :: Integer, -- ^ next free variable
-                      genVars :: [VarInfo], -- ^ optimizable parameters
+                      -- genVars :: [VarInfo], -- ^ optimizable parameters
                       genRegularizers :: [Scalar Float32] -- ^ accumulated regularizers
                      }
 initialGstate :: GState
 initialGstate = (GState {nextVar = 0
-                        ,genVars=[]
+                        -- ,genVars=[]
                         ,genRegularizers=[]
                         })
 
-extractVars :: Gen a -> RWS () () GState a
-extractVars (GPReturn x) = return x
-extractVars (GPState f) = state f
-extractVars GPId = do
-  GState {..} <- get
-  put GState {nextVar=nextVar+1,..}
-  return nextVar
-extractVars (GPVariable trainable name initial) = do
-  i <- mapM extractVars initial
-  GState {..} <- get
-  let r = Ref (fromIntegral nextVar) typeSShape typeSTyp
-  put GState {genVars = VarInfo trainable name r i : genVars,nextVar = nextVar+1,..}
-  return r
-extractVars (GPApp a b) = do f <- extractVars a; x <- extractVars b; return (f x)
 
 
+  
 data Gen a where
   GPId :: Gen Integer
-  GPVariable :: forall (shape :: Shape) t. (KnownTyp t,KnownShape shape) => Bool -> String -> Maybe (Gen (T shape t)) -> Gen (Ref shape t) 
+  GPVariable :: forall (shape :: Shape) t. (KnownTyp t,KnownShape shape) => Bool -> String -> Maybe (T shape t) -> Gen (Ref shape t) 
   GPModify :: (KnownShape s,KnownTyp t) => Ref s t -> T s t -> Gen (T s t)
   GPReturn :: a -> Gen a
   GPState :: (GState -> (a,GState)) -> Gen a
   GPApp :: (Gen (a -> b)) -> Gen a -> Gen b
+  GPBind :: Gen a -> (a -> Gen b) -> Gen b
+
 
 genGets :: (GState -> a) -> Gen a
 genGets f = GPState  (\s -> (f s, s))

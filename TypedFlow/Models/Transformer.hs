@@ -154,5 +154,6 @@ encoderStack :: forall h n e. KnownNat h => KnownNat n => KnownNat e
   => Int -> Gen (T '[n,e] Float32 -> T '[n,e] Float32)
 encoderStack n = do
   p <- positionalModuleLearned
-  encoders <- mapM (\i -> encoderModule @h ("enc" ++ show i) p) [1..n]
+  let ps = zip (repeat p) [1..n]
+  encoders <- traverse (\(p,i) -> encoderModule @h ("enc" ++ show i) p) ps
   return (foldr (.) id encoders) -- n-ary function composition

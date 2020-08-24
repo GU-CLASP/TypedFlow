@@ -46,7 +46,7 @@ import GHC.TypeLits
 import Control.Monad.State
 import Control.Monad.RWS (runRWS)
 import TypedFlow.Types
-import TypedFlow.Abstract (permToFun,unopInputShape,mkBC,reduceSumAll)
+import TypedFlow.Abstract (permToFun,unopInputShape,mkBC,reduceSumAll,extractVars,doExtractVars)
 import TypedFlow.Types.Proofs
 import TypedFlow.Memo
 import Text.PrettyPrint.Compact hiding (All,Last,Product,Sum,Options)
@@ -366,12 +366,10 @@ generatePure' rec sR = knownSShape sR ?> \case
 
 type Python a = State PyState a
 
-
-generateVars :: Gen a -> Python (GState,a)
-generateVars p = do
+generateVars :: [VarInfo] -> Python ()
+generateVars genVars = do
   -- generate variables
-  let (x,finalState,()) = runRWS (extractVars p) "" initialGstate
-  forM_ (genVars finalState) $ \v -> case v of
+  forM_ genVars $ \v -> case v of
       VarInfo {..} -> case varRef of
         Ref _refId shap typ -> do
           ii <- case varInitial of
@@ -382,7 +380,6 @@ generateVars p = do
               return [named "initial_value" iiii]
           varRef <-- funcall "tf.Variable" ([named "name" (string (show (varName))), named "trainable" (bool varTrainable)] ++ ii)
           return ()
-  return (finalState,x)
 
 -- interpGen :: Gen a -> Python a
 -- interpGen (GPReturn x) = return x
@@ -451,14 +448,19 @@ compileAlreadyBatched :: forall bs ty stateShapes sy ps. KnownNat bs
            -> (Gen (HTV ty stateShapes,HTV ty stateShapes -> (ModelOutput ty ps sy, HTV ty stateShapes))) -> Python ()
 compileAlreadyBatched Options{..} model = knownAppend @sy @ps ?> do
   gen (text "import tensorflow as tf")
-  genFun "mkModel" [text "optimizer"] $ do
-    let apply' (x,f) = f x
-        model' = fmap (fst . apply') model -- FIXME: run state updates
-    (finalState,ModelOutput {..}) <- generateVars model'
+  let apply' (x,f) = f x
+      model' = fmap (fst . apply') model -- model run on state variables.
+      -- FIXME: run state updates
+      (ModelOutput {..},finalState,genVars) = doExtractVars model'
+  genFun "mkModel" [] $ do
+    generateVars genVars
+    gen (text "return " <> dict [("batch_size", (showDim @ bs)), ("")])
+
+  genFun "runModel" [] $ do
     loss <- generatePure (reduceSumAll modelLoss + sum (genRegularizers finalState))
     y_ <- generatePure modelY
     accuracy <- generatePure (modelCorrect)
-    modify $ \PyState{..} -> PyState{genPyVars=genVars finalState,..}
+    modify $ \PyState{..} -> PyState{genPyVars=genVars,..}
     trainStep <- assignAny $ case maxGradientNorm of
        Nothing -> funcall "optimizer.minimize" [loss]
                                  -- FIXME: traverse the loss to see what parameters are, or use the tensorflow tape object.
@@ -469,7 +471,7 @@ compileAlreadyBatched Options{..} model = knownAppend @sy @ps ?> do
                 ,("loss", loss)
                 ,("accuracy", accuracy)
                 ,("y_", y_)
-                ,("batch_size", (showDim @ bs))]
+                ,]
     gen (text "return " <> dict peeks)
 
 -- paramToPeek :: VarInfo -> Python (String,UntypedExpression)
