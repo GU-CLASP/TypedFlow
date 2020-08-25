@@ -111,13 +111,12 @@ def initialize_params (session,model):
     session.run(tf.local_variables_initializer())
     session.run(tf.global_variables_initializer())
 
-def train (session, model,
+def train (optimizer, model_static, model_fn,
            train_generator=bilist_generator(([],[])),
            valid_generator=bilist_generator(([],[])),
            epochs=100,
            callbacks=[],
-           extraVectors=[],
-           modelPrefix=""):
+           extraVectors=[]):
     '''
     Train the given model.
 
@@ -139,7 +138,8 @@ def train (session, model,
      - "val" and "train": dictionaries with
         - "loss", "accuracy", "error_rate", time", "start_time", "end_time"
     '''
-    batch_size = model["batch_size"]
+    batch_size = model_static["batch_size"]
+    train_vars = model_static["parameters"]
     stats = []
     def halfEpoch(isTraining):
         totalAccur = 0
@@ -150,15 +150,15 @@ def train (session, model,
         for inputs in train_generator(batch_size) if isTraining else valid_generator(batch_size):
             print(".",end="")
             sys.stdout.flush()
-            maybeTrain = [model[modelPrefix+"train"]] if isTraining else []
-            results = session.run([model[modelPrefix+"loss"],model[modelPrefix+"accuracy"]] + maybeTrain + extraVectors + [model["update"]],
-                                  feed_dict=dict([(model["training_phase"],isTraining)] +
-                                                 [(model[k],inputs[k]) for k in inputs]))
-            loss = results[0]
-            accur = results[1]
-            n+=1
-            totalLoss += loss
-            totalAccur += accur
+            with tf.GradientTape() as tape:
+                results = model_fn(isTraining, inputs['x'], inputs['y'])
+                loss = results["loss"]
+                accur = results["accuracy"]
+                grads = tape.gradient(loss, train_vars)
+                optimizer.apply_gradients(zip(grads, train_vars))
+                n+=1
+                totalLoss += loss
+                totalAccur += accur
         end_time = time()
         if n > 0:
             avgLoss = totalLoss / float(n)
