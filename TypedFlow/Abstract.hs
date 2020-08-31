@@ -42,7 +42,7 @@ tensor operations. It is not normally imported directly by users.
 
 module TypedFlow.Abstract where
 
-import Control.Monad.RWS (RWS(..), local, ask, tell, runRWS)
+import Control.Monad.RWS (RWS, tell, runRWS)
 import Control.Monad.State
 import Data.Kind (Type,)
 import Data.Proxy
@@ -101,6 +101,7 @@ class Batched (f :: [Shape] -> Type) where
 broadcastGen  :: KnownNat n => Batched f => All KnownShape r => Unique -> Bool -> Proxy n -> f r -> G (f (Ap (FMap (Cons n)) r))
 broadcastGen u varyNoise n = batchify n (\x -> broadcast u varyNoise n <$> generateBC x)
 
+runBC :: Integer -> State GS a -> a
 runBC u a = fst $ runState a GS { gsUnique = u, gsTable = mempty}
 
 -- | implement map, zipWith, etc. as broadcasting.
