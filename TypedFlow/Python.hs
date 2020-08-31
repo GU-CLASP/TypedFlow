@@ -356,7 +356,7 @@ generatePure' rec sR = knownSShape sR ?> \case
      rx <- rec ((:*) bs (zipWithMulSShapes window outSpatial .+. (:*) numChans Unit)) x
      return (func "tf.nn.pool"
                   [rx, showSShape window, typ']
-                  [("strides", showSShape window)
+                  [("strides", showSShape window),
                    ("padding",text (show ("SAME" :: String)))])
    where typ' = text $ (show $ case typ of MaxPool -> "MAX"; AvgPool -> "AVG" :: String)
   Softmax _ _ x -> do
