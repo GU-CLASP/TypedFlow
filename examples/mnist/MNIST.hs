@@ -42,17 +42,15 @@ main = do
   putStrLn "done!"
 
 -- >>> main
--- Parameters (total 3354034):
--- w2_bias: T [10] tf.float32
--- w2_w: T [1024,10] tf.float32
--- w1_bias: T [1024] tf.float32
--- w1_w: T [3136,1024] tf.float32
--- f2_biases: T [64] tf.float32
--- f2_filters: T [5,5,32,64] tf.float32
--- f1_biases: T [32] tf.float32
--- f1_filters: T [5,5,1,32] tf.float32
--- y: T [100,10] tf.float32
--- x: T [100,784] tf.float32
+-- Parameters (total 3274634):
+-- f1f1_filters: T [5,5,1,32] tf.float32
+-- f1f1_biases: T [32] tf.float32
+-- f2f2_filters: T [5,5,32,64] tf.float32
+-- f2f2_biases: T [64] tf.float32
+-- w1w1_w: T [3136,1024] tf.float32
+-- w1w1_bias: T [1024] tf.float32
+-- w2w2_w: T [1024,10] tf.float32
+-- w2w2_bias: T [10] tf.float32
 -- done!
 
 

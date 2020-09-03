@@ -162,7 +162,10 @@ newPyVar = do
   return $ Ref (fromIntegral n) typeSShape typeSTyp
 
 pyVarInfoRepr :: VarInfo -> DOC
-pyVarInfoRepr (VarInfo {varRef = r}) = pyVarRepr r
+pyVarInfoRepr (VarInfo {..}) =
+  if varTrainable
+  then pyVarRepr varRef
+  else text varName -- use user-provided names for placeholders
 
 pyVarRepr :: Ref s t -> DOC
 pyVarRepr (Ref n _ _) = text ("var" <> show n)
@@ -457,9 +460,12 @@ compileAlreadyBatched Options{..} model = knownAppend @sy @ps ?> do
     generateVars parameters
     gen (text "return " <> dict [("batch_size", (showDim @ bs))
                                 ,("parameters",list (map pyVarInfoRepr parameters))
-                                ,("placeholders",list (map pyVarInfoRepr placeHolders))])
+                                ,("placeholderNames",list (map (text . show . varName) placeHolders))])
 
   genFun "runModel" (text "isTraining":map pyVarInfoRepr placeHolders) $ do
+    forM_ placeHolders $ \VarInfo{..} ->
+      varRef <-- case varRef of
+        Ref _ _shap typ -> funcall "tf.cast" [text varName,showSTyp typ]  -- load variables with python names into variables with internal names and correct types
     loss <- generatePure (reduceSumAll modelLoss + sum (genRegularizers finalState))
     y_ <- generatePure modelY
     accuracy <- generatePure modelCorrect

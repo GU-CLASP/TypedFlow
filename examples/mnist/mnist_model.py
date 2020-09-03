@@ -41,20 +41,22 @@ def mkModel():
   #[10]
   var12357=tf.random.truncated_normal([10], stddev=0.1, dtype=tf.float32) # 13
   var15=tf.Variable(name="w2w2_bias", trainable=True, initial_value=var12357)
-  return {"batch_size":100,"parameters":[var3,var4,var6,var7,var10,var11,var14,var15]}
-def runModel(isTraining, var0, var1):
+  return {"batch_size":100
+         ,"parameters":[var3,var4,var6,var7,var10,var11,var14,var15]
+         ,"placeholderNames":["x","y"]}
+def runModel(isTraining, x, y):
   
+  var0=tf.cast(x, tf.float32)
+  var1=tf.cast(y, tf.float32)
   #[100,10]
   var12358=var1
   #[100,784]
-  var12359=var0 # tf.cast(var0,dtype=tf.float32)
+  var12359=var0
   #[100,28,28,1]
   var12360=tf.reshape(var12359, [100,28,28,1])
   #[5,5,1,32]
   var12361=var3
   #[100,28,28,32]
-  print((var12360.dtype))
-  print((var12361.dtype))
   var12362=tf.nn.convolution(var12360, var12361, padding="SAME", data_format="NHWC")
   #[100,784,32]
   var12363=tf.reshape(var12362, [100,784,32])
@@ -73,7 +75,7 @@ def runModel(isTraining, var0, var1):
   #[100,28,28,32]
   var12370=tf.reshape(var12369, [100,28,28,32])
   #[100,14,14,32]
-  var12371=tf.nn.pool(var12370, [2,2], "MAX", padding="SAME", strides=[2,2])
+  var12371=tf.nn.pool(var12370, [2,2], "MAX", strides=[2,2], padding="SAME")
   #[100,14,14,32]
   var12372=tf.reshape(var12371, [100,14,14,32])
   #[5,5,32,64]
@@ -97,7 +99,7 @@ def runModel(isTraining, var0, var1):
   #[100,14,14,64]
   var12382=tf.reshape(var12381, [100,14,14,64])
   #[100,7,7,64]
-  var12383=tf.nn.pool(var12382, [2,2], "MAX", padding="SAME", strides=[2,2])
+  var12383=tf.nn.pool(var12382, [2,2], "MAX", strides=[2,2], padding="SAME")
   #[100,3136]
   var12384=tf.reshape(var12383, [100,3136])
   #[3136,1024]
