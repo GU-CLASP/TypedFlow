@@ -456,7 +456,8 @@ compileAlreadyBatched Options{..} model = knownAppend @sy @ps ?> do
     gen (text "global " <> sep (punctuate comma (map pyVarInfoRepr parameters)))
     generateVars parameters
     gen (text "return " <> dict [("batch_size", (showDim @ bs))
-                                ,("parameters",list (map pyVarInfoRepr parameters))])
+                                ,("parameters",list (map pyVarInfoRepr parameters))
+                                ,("placeholders",list (map pyVarInfoRepr placeHolders))])
 
   genFun "runModel" (text "isTraining":map pyVarInfoRepr placeHolders) $ do
     loss <- generatePure (reduceSumAll modelLoss + sum (genRegularizers finalState))
