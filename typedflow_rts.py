@@ -225,11 +225,11 @@ def Save(sess,saver,ckptfile):
 ################################################################################################
 # Prediction and evaluation
 
-def predict (session, model, xs, result="y_",modelPrefix=""):
+def predict (model_static, model_fn, xs, result="y_",modelPrefix=""):
     '''Evaluate the model for given input and result.
     Input is given as a dictionary of lists to pass to session.run'''
-    bs = int(model[modelPrefix+result].shape[0])
-    k0 = next (iter (xs.keys())) # at least one key is needed
+    bs = model_static["batch_size"]
+    k0 = 'x' # in the future we may want to support several inputs.
     total_len = len(xs[k0])
     zeros = dict((k,np.zeros_like(xs[k][0])) for k in xs) # at least one example is needed
     results = []
@@ -243,9 +243,8 @@ def predict (session, model, xs, result="y_",modelPrefix=""):
             else:
                 origLen = bs
             # print (".")
-            yield (session.run(model[modelPrefix+result],
-                               dict([(model["training_phase"],False)] +
-                                    [(model[k],chunks[k]) for k in xs])))[:origLen]
+            results =model_fn(False, chunks[k0], None) 
+            yield results[result][:origLen]
     return np.concatenate(list(run()))
 
 def beam_translate(session, model, k, x, xlen, start_symbol, stop_symbol, debug=None):
