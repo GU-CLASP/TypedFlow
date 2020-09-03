@@ -151,7 +151,7 @@ def train (optimizer, model_static, model_fn,
             print(".",end="")
             sys.stdout.flush()
             with tf.GradientTape() as tape:
-                results = model_fn(isTraining, inputs['x'], inputs['y'])
+                results = model_fn(isTraining, **inputs)
                 loss = results["loss"]
                 accur = results["accuracy"]
                 grads = tape.gradient(loss, train_vars)
@@ -229,7 +229,7 @@ def predict (model_static, model_fn, xs, result="y_",modelPrefix=""):
     '''Evaluate the model for given input and result.
     Input is given as a dictionary of lists to pass to session.run'''
     bs = model_static["batch_size"]
-    k0 = 'x' # in the future we may want to support several inputs.
+    k0 = next (iter (model_static["placeholders"])) # at least one placeholder is needed
     total_len = len(xs[k0])
     zeros = dict((k,np.zeros_like(xs[k][0])) for k in xs) # at least one example is needed
     results = []
@@ -242,8 +242,9 @@ def predict (model_static, model_fn, xs, result="y_",modelPrefix=""):
                     chunks[k] = list(chunks[k]) + [zeros[k]] * (bs - origLen) # pad the last chunk
             else:
                 origLen = bs
+            chunks["y"] = None
             # print (".")
-            results =model_fn(False, chunks[k0], None) 
+            results =model_fn(False, **chunks) 
             yield results[result][:origLen]
     return np.concatenate(list(run()))
 
