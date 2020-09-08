@@ -462,6 +462,7 @@ compileAlreadyBatched Options{..} model = knownAppend @sy @ps ?> do
                                 ,("parameters",list (map pyVarInfoRepr parameters))
                                 ,("placeholderNames",list (map (text . show . varName) placeHolders))])
 
+  gen (text "@tf.function")
   genFun "runModel" (text "isTraining":map pyVarInfoRepr placeHolders) $ do
     forM_ placeHolders $ \VarInfo{..} ->
       varRef <-- case varRef of
