@@ -242,7 +242,7 @@ def predict (model_static, model_fn, xs, result="y_",modelPrefix=""):
                     chunks[k] = list(chunks[k]) + [zeros[k]] * (bs - origLen) # pad the last chunk
             else:
                 origLen = bs
-            chunks["y"] = None
+            chunks["y"] = tf.zeros(model_static["placeholders"]["y"]["shape"])
             # print (".")
             results =model_fn(False, **chunks) 
             yield results[result][:origLen]

@@ -460,7 +460,8 @@ compileAlreadyBatched Options{..} model = knownAppend @sy @ps ?> do
     generateVars parameters
     gen (text "return " <> dict [("batch_size", (showDim @ bs))
                                 ,("parameters",list (map pyVarInfoRepr parameters))
-                                ,("placeholderNames",list (map (text . show . varName) placeHolders))])
+                                ,("placeholders",dict [(varName, dict [("shape",case varRef of Ref _id s _t -> showSShape s)]) | VarInfo {..} <- placeHolders] )
+                                ])
 
   gen (text "@tf.function")
   genFun "runModel" (text "isTraining":map pyVarInfoRepr placeHolders) $ do
