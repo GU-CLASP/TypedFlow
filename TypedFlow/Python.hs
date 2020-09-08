@@ -456,7 +456,7 @@ compileAlreadyBatched Options{..} model = knownAppend @sy @ps ?> do
       (ModelOutput {..},finalState,genVars) = doExtractVars model'
       (parameters,placeHolders) = partition varTrainable genVars
   genFun "mkModel" [] $ do
-    gen (text "global " <> sep (punctuate comma (map pyVarInfoRepr parameters)))
+    gen (text "global " <> mconcat (punctuate comma (map pyVarInfoRepr parameters)))
     generateVars parameters
     gen (text "return " <> dict [("batch_size", (showDim @ bs))
                                 ,("parameters",list (map pyVarInfoRepr parameters))
