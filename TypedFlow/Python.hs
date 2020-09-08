@@ -469,7 +469,7 @@ compileAlreadyBatched Options{..} model = knownAppend @sy @ps ?> do
         Ref _ _shap typ -> funcall "tf.cast" [text varName,showSTyp typ]  -- load variables with python names into variables with internal names and correct types
     loss <- generatePure (reduceSumAll modelLoss + sum (genRegularizers finalState))
     y_ <- generatePure modelY
-    accuracy <- generatePure modelCorrect
+    accuracy <- generatePure (reduceSumAll modelCorrect)
     let returns = [("loss", loss)
                   ,("accuracy", accuracy)
                   ,("y_", y_)]
