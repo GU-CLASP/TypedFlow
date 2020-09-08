@@ -229,7 +229,7 @@ def predict (model_static, model_fn, xs, result="y_",modelPrefix=""):
     '''Evaluate the model for given input and result.
     Input is given as a dictionary of lists to pass to session.run'''
     bs = model_static["batch_size"]
-    k0 = next (iter (model_static["placeholderNames"])) # at least one placeholder is needed
+    k0 = next (iter (model_static["placeholders"].keys())) # at least one placeholder is needed
     total_len = len(xs[k0])
     zeros = dict((k,np.zeros_like(xs[k][0])) for k in xs) # at least one example is needed
     results = []
