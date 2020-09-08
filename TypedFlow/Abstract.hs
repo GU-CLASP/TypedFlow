@@ -109,6 +109,14 @@ mkBC ::  forall s t. KnownTyp t => KnownShape s => Integer -> T s t -> T s t
 mkBC u x = fst $ runState (generateBC x) GS { gsUnique = u, gsTable = mempty}
 
 generateBC' :: forall s t. KnownTyp t => (forall s' t'. KnownTyp t' => SShape s' -> T s' t' -> G (T s' t')) -> SShape s -> T s t -> G (T s t)
+generateBC' rec (n@Sat :* sR) (Zip3T _ s1 s2 s3 f x y z) = knownSShape sR ?> do
+  u <- gets ((1+) . gsUnique)
+  modify $ \GS {..} -> GS {gsUnique = u,..}
+  x' <- rec (n :* s1) x
+  y' <- rec (n :* s2) y
+  z' <- rec (n :* s3) z
+  a' <- rec sR (f (Unbroadcast n u x') (Unbroadcast n u y') (Unbroadcast n u z'))
+  return (broadcast u False n a')
 generateBC' rec (n@Sat :* sR) (ZipT _ s1 s2 f x y) = knownSShape sR ?> do
   u <- gets ((1+) . gsUnique)
   modify $ \GS {..} -> GS {gsUnique = u,..}
@@ -808,16 +816,14 @@ zipWithTT f x y =
             knownAppend @a @s ?>
             reshape (zipWithT @(Product a) f (reshape x) (reshape y))
 
-zipWith3T :: forall (n :: Nat) (s :: [Nat]) (t :: Typ) (s1 :: [Nat]) (t1 :: Typ) (s2 :: Shape) (t2 :: Typ) (s3 :: Shape)  (t3 :: Typ).
-            KnownShape s3 => KnownNat n => KnownTyp t3
+zipWith3T :: forall (n :: Nat) (s :: [Nat]) (t :: Typ) (s1 :: [Nat]) (t1 :: Typ) (s2 :: Shape)  (t2 :: Typ) (s3 :: Shape)  (t3 :: Typ).
+             KnownShape s => KnownShape s1 => KnownShape s2 => KnownShape s3 => KnownNat n => KnownTyp t3 => KnownTyp t => KnownTyp t1 => KnownTyp t2
             => (T s t -> T s1 t1 -> T s2 t2 -> T s3 t3)
             -> Tensor (n ': s) t
             -> Tensor (n ': s1) t1
             -> Tensor (n ': s2) t2
             -> Tensor (n ': s3) t3
-zipWith3T f x y z = broadcast u False (Proxy @n) (f (Unbroadcast (natSat @n) u x) (Unbroadcast (natSat @n) u y) (Unbroadcast (natSat @n) u z))
-  where u = uniqueFor x
-
+zipWith3T = Zip3T Sat typeSShape typeSShape typeSShape
 
 -- | Size-preserving convolution operation.
 convolution :: forall outputChannels filterSpatialShape inChannels s t.

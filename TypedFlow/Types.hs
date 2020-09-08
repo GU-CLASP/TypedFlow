@@ -669,6 +669,7 @@ type Unique = Integer
 data T (s :: Shape) (t :: Typ) where
   MapT :: KnownTyp t => Sat KnownNat n -> SShape s -> (T s t -> T r u) ->  T (n ': s) t -> T (n ': r) u
   ZipT :: (KnownTyp t, KnownTyp u) => Sat KnownNat n -> SShape s -> SShape r -> (T s t -> T r u -> T q v) ->  T (n ': s) t -> T (n ': r) u -> T (n ': q) v
+  Zip3T :: (KnownTyp t, KnownTyp u, KnownTyp v) => Sat KnownNat n -> SShape s -> SShape r -> SShape q -> (T s t -> T r u -> T q v -> T p w) ->  T (n ': s) t -> T (n ': r) u -> T (n ': q) v -> T (n ': p) w
   T :: NilOp s t -> T s t
   Noise :: Integer -> -- this is the unique noise identifier, preventing two different noises to ever be re-shared.
            SShape s0 -> SShape s1 ->
