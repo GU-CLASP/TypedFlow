@@ -129,12 +129,13 @@ feedForwardModule nm = do
   w2 <- parameterDefault (nm ++ "w2")
   return $ \x -> normalizer (x + (w2 # relu (w1 # x)))
 
-encoderModule :: forall h n e. KnownNat n => KnownNat h => KnownNat e
-  => String -> T '[n,e] Float32 -> Gen (T '[n,e] Float32 -> T '[n,e] Float32)
-encoderModule nm positionalTensor = do
+encoderModule :: forall h n e. KnownNat n => KnownNat h => KnownNat e => DropProb 
+  -> String -> T '[n,e] Float32 -> Gen (T '[n,e] Float32 -> T '[n,e] Float32)
+encoderModule dropProb nm positionalTensor = do
+  drp <- mkDropout dropProb
   selfAtt <- multiheadSelfAttentionModule @h (nm ++ "mh")
   ff <- feedForwardModule (nm ++ "ff")
-  return (mapT ff . selfAtt . (+ positionalTensor))
+  return (mapT ff . selfAtt . (+ positionalTensor) . drp)
 
 positionalModuleSinCos :: forall n e. KnownNat e => KnownNat n => T '[n,e] Float32
 positionalModuleSinCos = sin (transpose01 (broadcastT pos) * (broadcastT omega) + broadcastT phase)
@@ -150,8 +151,8 @@ positionalModuleLearned = do
   return $ let EmbeddingP x = e in x
 
 encoderStack :: forall h n e. KnownNat h => KnownNat n => KnownNat e
-  => Int -> Gen (T '[n,e] Float32 -> T '[n,e] Float32)
-encoderStack n = do
+  => DropProb -> Int -> Gen (T '[n,e] Float32 -> T '[n,e] Float32)
+encoderStack dropProb n = do
   p <- positionalModuleLearned
-  encoders <- mapM (\i -> encoderModule @h ("enc" ++ show i) p) [1..n]
+  encoders <- mapM (\i -> encoderModule @h dropProb ("enc" ++ show i) p) [1..n]
   return (foldr (.) id encoders) -- n-ary function composition
