@@ -151,7 +151,7 @@ def train (optimizer, model_static, model_fn,
             print(".",end="")
             sys.stdout.flush()
             with tf.GradientTape() as tape:
-                results = model_fn(isTraining, **inputs)
+                results = model_fn(tf.constant(isTraining, shape=[]), **inputs)
                 loss = results["loss"]
                 accur = results["accuracy"]
                 grads = tape.gradient(loss, train_vars)
@@ -244,7 +244,7 @@ def predict (model_static, model_fn, xs, result="y_",modelPrefix=""):
                 origLen = bs
             chunks["y"] = tf.zeros(model_static["placeholders"]["y"]["shape"])
             # print (".")
-            results =model_fn(False, **chunks) 
+            results =model_fn(tf.constant(False, shape=[]), **chunks) 
             yield results[result][:origLen]
     return np.concatenate(list(run()))
 
