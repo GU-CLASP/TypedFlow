@@ -464,7 +464,7 @@ compileAlreadyBatched Options{..} model = knownAppend @sy @ps ?> do
                                 ])
 
   gen (text "@tf.function")
-  genFun "runModel" (text "isTraining":map pyVarInfoRepr placeHolders) $ do
+  genFun "runModel" (text "training_placeholder":map pyVarInfoRepr placeHolders) $ do
     forM_ placeHolders $ \VarInfo{..} ->
       varRef <-- case varRef of
         Ref _ _shap typ -> funcall "tf.cast" [text varName,showSTyp typ]  -- load variables with python names into variables with internal names and correct types
