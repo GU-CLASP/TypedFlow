@@ -245,7 +245,7 @@ generatePure' rec sR = knownSShape sR ?> \case
     rc <- rec typeSShape c
     rx <- rec typeSShape x
     ry <- rec typeSShape y
-    return (func "tf.cond" [rc] [("true_fn", lambda0 rx) ,("false_fn", lambda0 ry) ,("strict","True")])
+    return (func "tf.cond" [rc] [("true_fn", lambda0 rx) ,("false_fn", lambda0 ry)])
     where lambda0 z = text "lambda: " <> z
   -- if broadcast_to is broken: https://github.com/tensorflow/tensorflow/issues/21901
   -- DirectBroadcast s0 s1 s2 s3 x -> do
