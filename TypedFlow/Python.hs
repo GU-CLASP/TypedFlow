@@ -236,7 +236,7 @@ genDistr d sh s1 = case d of
                                 ,named "maxval" (float high)
                                 ,named "dtype" (showTyp @t)]
   OrthogonalD ->
-    funcall' (funcall "tf.orthogonal_initializer" [named "dtype" (showTyp @t)]) [named "shape" (showSShape (sh .+. s1))]
+    funcall' (funcall "tf.keras.initializers.orthogonal" []) [named "dtype" (showTyp @t), named "shape" (showSShape (sh .+. s1))]
 
 generatePure' :: forall s t. KnownTyp t => (forall s' t'. KnownTyp t' => SShape s' -> T s' t' -> Python DOC) -> SShape s -> T s t -> Python DOC
 generatePure' rec sR = knownSShape sR ?> \case
