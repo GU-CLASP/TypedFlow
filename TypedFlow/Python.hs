@@ -463,6 +463,7 @@ compileAlreadyBatched Options{..} model = knownAppend @sy @ps ?> do
                                 ,("placeholders",dict [(varName, dict [("shape",case varRef of Ref _id s _t -> showSShape s)]) | VarInfo {..} <- placeHolders] )
                                 ])
 
+  modify $ \PyState {..} -> PyState {genAssignTable = M.empty,..} -- we can't re-use intermediate computations from initialisers
   gen (text "@tf.function")
   genFun "runModel" (text "training_placeholder":map pyVarInfoRepr placeHolders) $ do
     forM_ placeHolders $ \VarInfo{..} ->
