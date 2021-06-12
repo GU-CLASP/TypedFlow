@@ -158,6 +158,7 @@ persistent :: ∀ (shape :: Shape) t. (KnownTyp t,KnownShape shape) => Bool -> S
 persistent trainable name initial = do
   T . Variable <$> GPVariable trainable name (Just initial)
 
+-- | DO NOT USE
 placeholder :: ∀ (shape :: Shape) t. (KnownTyp t,KnownShape shape) => String -> Gen (T shape t)
 placeholder name = T . Variable <$> GPVariable False name Nothing
 
