@@ -2,7 +2,7 @@
 
  }:
 let nixpkgs_source =
-fetchTarball "https://github.com/NixOS/nixpkgs-channels/archive/nixos-20.03.tar.gz";
+fetchTarball "https://github.com/NixOS/nixpkgs/archive/nixos-21.05.tar.gz";
   nixpkgs' = (import nixpkgs_source){};
 in with nixpkgs'.pkgs;
 let hp = haskellPackages.override{
@@ -16,9 +16,9 @@ let hp = haskellPackages.override{
             x = f (builtins.intersectAttrs (builtins.functionArgs f)
                                                (ps // 
                                                 nixpkgs'.pkgs) # can also depend on non-haskell packages
-                   // {stdenv = stdenv; mkDerivation = gatherDeps;});
+                   // {lib = lib; mkDerivation = gatherDeps;});
         in x;
-ghc = hp.ghcWithPackages (ps: with ps; stdenv.lib.lists.subtractLists
+ghc = hp.ghcWithPackages (ps: with ps; lib.lists.subtractLists
 [typedflow]
 ([ cabal-install 
 QuickCheck hscolour
@@ -30,6 +30,5 @@ pkgs.stdenv.mkDerivation {
   shellHook = ''
  export LANG=en_US.UTF-8
  eval $(egrep ^export ${ghc}/bin/ghc)
- export LOCALE_ARCHIVE=/usr/lib/locale/locale-archive
 '';
 }

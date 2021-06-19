@@ -9,4 +9,4 @@ nix-deps:
 nixpkgs:
   # commit: 80812af9e46167e3104038f2af6de251f90823a8
   # sha256: 0b718zkn5lhy71pyp0klbz7w872zck0ljqfk17f0b56k3rlvp1sy
-  url: https://github.com/NixOS/nixpkgs-channels/archive/nixos-20.03.tar.gz
+  url: https://github.com/NixOS/nixpkgs/archive/nixos-21.05.tar.gz

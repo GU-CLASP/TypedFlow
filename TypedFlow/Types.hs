@@ -59,7 +59,7 @@ pattern Sat = Comp Dict
 instance (Show (Sat a b)) where
   show _ = "Sat"
 
-proxySat :: forall (b::k) (a :: k -> Constraint) proxy. a b => proxy b -> Sat a b
+proxySat :: forall k (b::k) (a :: k -> Constraint) proxy. a b => proxy b -> Sat a b
 proxySat _ = Sat
 
 natSat :: forall n. KnownNat n => Sat KnownNat n
