@@ -55,7 +55,7 @@ decoder prefix = do
   projs <- parameterDefault (prefix++"proj")
   lstm1 <- mkLSTM (prefix++"lstm1")
   embs <- parameterDefault "embs"
-  w1 <- parameter (prefix++"att1") glorotUniform
+  w1 <- parameter' (prefix++"att1") =<< glorotUniform
   return $ \ lens hs thoughtVectors targetInput ->
     let attn = uniformAttn (multiplicativeScoring w1) lens hs -- NOTE: attention on the left-part of the input.
         (_sFinal,outFinal) = simpleRnn
@@ -76,7 +76,7 @@ seq2seq :: forall (vocSize :: Nat) (n :: Nat).
                         '("src_len", '[],  Int32),
                         '("tgt_in", '[n], Int32),
                         '("tgt_out", '[n], Int32)] ->
-                OneOutput Float32 '[n, vocSize] '[])
+                ModelOutput Float32 '[n, vocSize] '[])
 seq2seq  = do
   enc <- encoder @256 @vocSize "enc"
   dec <- decoder "dec"
