@@ -280,6 +280,7 @@ generatePure' rec sR = knownSShape sR ?> \case
     Diag _ -> funcall "tf.matrix_diag" [recx]
     Cast -> funcall "tf.cast" [recx,showTyp @t]
     StopGradient -> funcall "tf.stop_gradient" [recx]
+    ExpM _  -> funcall "tf.linalg.expm" [recx]
     Axis1Op op' ->
        let (op,args) = case op' of
                          OneHot depth _ -> ("tf.one_hot",[("dtype",showTyp @t), ("depth", showDimS depth)])

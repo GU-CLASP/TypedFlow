@@ -761,6 +761,7 @@ data Float1Op
 data Num1Op = Square | Negate | Abs | Sign
   deriving Show
 data UnOp (s1 :: Shape) (t :: Typ) (s2 :: Shape) (u :: Typ) where
+  ExpM :: Sat KnownNat n -> UnOp '[n,n] (Flt w) '[n,n] (Flt w)
   Diag :: Sat KnownNat n -> UnOp '[n] t '[n,n] t
   StopGradient :: UnOp '[] t '[] t
   Cast :: UnOp '[] t '[] u

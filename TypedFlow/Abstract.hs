@@ -268,6 +268,7 @@ unopInputShape StopGradient = Unit
 unopInputShape (Num1Op _) = Unit
 unopInputShape (Float1Op _) = Unit
 unopInputShape (SliceOp _ n s _ _) = n :* s
+unopInputShape (ExpM n) = n :* n :* Unit
 
 protoBroadcast :: forall n s t.
   Unique -- unique identifier marking the variable tensor which will be marking inputs (not to broadcast).
@@ -409,6 +410,9 @@ eye = diag 1
 
 diag :: ∀ n t. KnownTyp t => KnownNat n => T '[n] t ->  T '[n,n] t
 diag = UnOp (Diag Sat) Unit
+
+expm :: ∀ n t. KnownBits t => KnownNat n => T '[n,n] (Flt t) ->  T '[n,n] (Flt t)
+expm = UnOp (ExpM Sat) Unit
 
 -- | range[i] = i
 range :: forall n w. KnownNat n => KnownBits w => T '[n] ('Typ 'Int w)
