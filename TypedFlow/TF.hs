@@ -152,7 +152,7 @@ parameter' = persistent True
 
 -- | Create a parameter.
 parameter :: forall p. KnownTensors p => String -> Gen p -> Gen p
-parameter s p = travTensor (\s' -> parameter' (s ++ s')) s =<< p
+parameter s p = travTensor parameter' s =<< p
 
 -- | Declare variable which persists between calls to session.run.
 persistent :: ∀ (shape :: Shape) t. (KnownTyp t,KnownShape shape) => Bool -> String -> (T shape t) -> Gen (T shape t)
