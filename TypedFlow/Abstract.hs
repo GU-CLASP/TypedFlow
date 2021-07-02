@@ -47,7 +47,6 @@ import Control.Monad.State
 import Data.Kind (Type,)
 import Data.Proxy
 import Data.Type.Equality
--- import Data.Unique
 import GHC.TypeLits
 import Prelude hiding (RealFrac(..))
 import System.IO.Unsafe

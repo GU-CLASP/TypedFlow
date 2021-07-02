@@ -100,6 +100,7 @@ module TypedFlow.TF (
   stopGradient,
   cast,
   oneHot0, oneHot1,
+  expm,
   -- ** Testing conditions
   if_, where_, lessThan,
   -- * Contrib

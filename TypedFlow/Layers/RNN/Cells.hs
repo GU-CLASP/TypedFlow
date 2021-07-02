@@ -36,7 +36,6 @@ import TypedFlow.Types.Proofs
 import GHC.TypeLits
 import TypedFlow.Layers.Core (DenseP(..),(#))
 import Prelude hiding (RealFrac(..))
-import Data.Monoid ((<>))
 
 --------------------------------------
 -- Cells
@@ -80,6 +79,7 @@ instance (KnownNat n, KnownNat x, KnownBits t) => KnownTensors (GRUP t n x) wher
   travTensor f s (GRUP x y z) = GRUP <$> travTensor f (s<>"_z") x <*> travTensor f (s<>"_r") y <*> travTensor f (s<>"_w") z
 instance (KnownNat n, KnownNat x, KnownBits t) => ParamWithDefault (GRUP t n x) where
   defaultInitializer = GRUP <$> (denseWeights <$> cellInitializerBit) <*> (denseWeights <$> cellInitializerBit) <*> (denseWeights <$> cellInitializerBit)
+
 
 
 -- | Standard GRU cell
