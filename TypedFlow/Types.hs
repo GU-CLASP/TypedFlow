@@ -777,6 +777,8 @@ data UnOp (s1 :: Shape) (t :: Typ) (s2 :: Shape) (u :: Typ) where
   Diag :: Sat KnownNat n -> UnOp '[n] t '[n,n] t
   StopGradient :: UnOp '[] t '[] t
   Cast :: UnOp '[] t '[] u
+  Conjugate :: UnOp '[] ('Typ 'Cmplx w) '[] ('Typ 'Cmplx w)
+  RealPart  :: UnOp '[] ('Typ 'Cmplx w) '[] ('Typ 'Float w)
   Num1Op :: KnownNumeric t => Num1Op -> UnOp '[] t '[] t
   Float1Op :: Float1Op -> UnOp '[] (Flt w) '[] (Flt w)
   SliceOp :: forall m n s t proxy. proxy m -> Sat KnownNat n -> SShape s -> Integer -> Integer -> UnOp (n ': s) t (m ': s) t

@@ -100,7 +100,8 @@ module TypedFlow.TF (
   stopGradient,
   cast,
   oneHot0, oneHot1,
-  expm,
+  -- ** complex numbers
+  expm, conjugate, realPart,
   -- ** Testing conditions
   if_, where_, lessThan,
   -- * Contrib

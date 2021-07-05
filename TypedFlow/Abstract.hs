@@ -413,6 +413,7 @@ diag = UnOp (Diag Sat) Unit
 expm :: ∀ n t. KnownNat n => KnownNumeric t => T '[n,n] t ->  T '[n,n] t
 expm = UnOp (ExpM Sat) Unit
 
+
 -- | range[i] = i
 range :: forall n w. KnownNat n => KnownBits w => T '[n] ('Typ 'Int w)
 range = T (Range (natSat @n))
@@ -545,6 +546,12 @@ unFlOp op = appRUnit @s #> UnOp (Float1Op op) (typeSShape @s)
 
 binOp :: forall s t u. KnownShape s => KnownTyp t => Simple2Op t u -> T s t -> T s t -> T s u
 binOp op = appRUnit @s #> BinOp (Simple2Op op) (typeSShape @s) Unit typeSTyp Unit typeSTyp
+
+conjugate :: ∀ s w. KnownShape s => KnownBits w => T s ('Typ 'Cmplx w) ->  T s ('Typ 'Cmplx w)
+conjugate = appRUnit @s #> UnOp Conjugate (typeSShape @s)
+
+realPart :: ∀ s w. KnownShape s => KnownBits w => T s ('Typ 'Cmplx w) ->  T s ('Typ 'Float w)
+realPart = appRUnit @s #> UnOp RealPart (typeSShape @s)
 
 sigmoid, relu, square, round, floor, hardSigmoid
    :: ∀ s t. (KnownShape s, KnownBits t)
