@@ -90,6 +90,8 @@ showSTyp t = knownTyp t $ showTyp @t
 
 showT :: Typ -> [Char]
 showT (Typ Bool _) = "tf.bool"
+showT (Typ Cmplx B32) = "tf.complex64"
+showT (Typ Cmplx B64) = "tf.complex128"
 showT (Typ k l) = "tf." ++ map toLower (show k) ++ drop 1 (show l)
 
 showShape' ::  [Integer] -> DOC
