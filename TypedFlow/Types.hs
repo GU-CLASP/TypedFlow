@@ -37,12 +37,13 @@ module TypedFlow.Types where
 
 import GHC.TypeLits 
 import Data.Proxy
-import Control.Monad.State
-import Control.Monad.RWS (RWS(..), local, ask, tell)
+-- import Control.Monad.State
+-- import Control.Monad.RWS (RWS(..), local, ask, tell)
 import Data.Kind (Constraint,Type)
 import qualified Data.Int as Hask
 import Data.Type.Equality
 import Data.Monoid hiding (Sum,Product,Last,All,Ap)
+import Data.Complex
 
 newtype (∘) f (g :: k -> k2) (a::k) where
   Comp :: forall f g a. f (g a) -> (f ∘ g) a
@@ -118,6 +119,7 @@ type SList' = NP
 infixr 5 .+.
 infixr 5 *:
 infixr 5 :*
+
 (*:) :: forall x xs f. NP f xs -> f x -> NP f (xs ++ '[x])
 xs *: x = appSList xs (x :* Unit)
 
@@ -368,9 +370,10 @@ type family At n xs where
 --   At 'Zero (x ': xs) = x
 --   At ('Succ n) (x ': xs) = At n xs
 
-data Kind = Float | Int | Bool deriving (Show,Eq,Ord)
+data Kind = Float | Cmplx | Int | Bool deriving (Show,Eq,Ord)
 data SKind (s::Kind) where
   SFloat :: SKind 'Float
+  SCmplx :: SKind 'Cmplx
   SInt :: SKind 'Int
   SBool :: SKind 'Bool
 
@@ -390,6 +393,7 @@ type KnownFloating t = (TypKind t ~ 'Float, KnownBits (TypBits t), t ~ 'Typ 'Flo
 
 class KnownKind t => NumericKind t where
 instance NumericKind 'Float
+instance NumericKind 'Cmplx
 instance NumericKind 'Int
 
 kVal :: SKind t1 -> Kind
@@ -418,6 +422,7 @@ data STyp t where
 
 type Flt t = 'Typ 'Float t
 type Float32 = 'Typ 'Float 'B32
+type Complex32 = 'Typ 'Cmplx 'B32
 type Int32 = 'Typ 'Int 'B32
 type Int64 = 'Typ 'Int 'B64
 type TFBool = 'Typ 'Bool 'B32
@@ -438,6 +443,8 @@ typeSTyp = STyp (kindVal @(TypKind t)) (bitsVal @(TypBits t)) Refl
 type family HaskType t where
   HaskType Float32 = Float
   HaskType ('Typ 'Float 'B64) = Double
+  HaskType ('Typ 'Cmplx 'B32) = Complex Float
+  HaskType ('Typ 'Cmplx 'B64) = Complex Double
   HaskType ('Typ 'Int 'B64) = Hask.Int64
   HaskType ('Typ 'Int 'B32) = Hask.Int32
   HaskType ('Typ 'Bool w) = Bool
@@ -461,6 +468,7 @@ knownKind :: SKind t -> (KnownKind t => k) -> k
 knownKind SFloat k = k
 knownKind SInt k = k
 knownKind SBool k = k
+knownKind SCmplx k = k
 
 knownTyp :: STyp t -> (KnownTyp t => k) -> k
 knownTyp (STyp k b Refl) r = knownKind k $ knownBits b r
@@ -473,6 +481,9 @@ knownNum k = case kindVal @(TypKind t) of
   SFloat -> case bitsVal @(TypBits t) of
     SB32 -> k
     SB64 -> k
+  SCmplx -> case bitsVal @(TypBits t) of
+    SB32 -> k
+    SB64 -> k
   SBool -> error "KnownNumeric bug"
   SInt -> case bitsVal @(TypBits t) of
     SB32 -> k
@@ -480,6 +491,7 @@ knownNum k = case kindVal @(TypKind t) of
 
 class KnownKind t where kindVal :: SKind t
 instance KnownKind 'Bool where kindVal = SBool
+instance KnownKind 'Cmplx where kindVal = SCmplx
 instance KnownKind 'Float where kindVal = SFloat
 instance KnownKind 'Int where kindVal = SInt
 
@@ -761,7 +773,7 @@ data Float1Op
 data Num1Op = Square | Negate | Abs | Sign
   deriving Show
 data UnOp (s1 :: Shape) (t :: Typ) (s2 :: Shape) (u :: Typ) where
-  ExpM :: Sat KnownNat n -> UnOp '[n,n] (Flt w) '[n,n] (Flt w)
+  ExpM :: KnownNumeric t => Sat KnownNat n -> UnOp '[n,n] t '[n,n] t
   Diag :: Sat KnownNat n -> UnOp '[n] t '[n,n] t
   StopGradient :: UnOp '[] t '[] t
   Cast :: UnOp '[] t '[] u
