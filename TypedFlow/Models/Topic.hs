@@ -152,7 +152,7 @@ mkTdlmTopic separationConstant (TopicP topicInput topicOutput) = do
 -- external information source (eg. topic representation).  Described
 -- 'Topically Driven Neural Language Model' by Lau, Baldwin and Cohn;
 -- formula (3)
-tdlmGatingUnit :: KnownNat n => KnownBits t => KnownNat m => (GRUP t m n) -> T '[n] (Flt t) -> T '[m] (Flt t) -> (T '[m] (Flt t))
+tdlmGatingUnit :: KnownNat n => KnownFloating t => KnownNat m => (GRUP t m n) -> T '[n] t -> T '[m] t -> (T '[m] t)
 tdlmGatingUnit (GRUP wz wr w) s h = 
   let x = concat0 h s
       z = sigmoid (wz ∙ x)

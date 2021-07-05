@@ -62,8 +62,8 @@ import Data.Monoid ((<>))
 
 
 -- | A dense layer is a linear function form a to b: a transformation matrix and a bias.
-data DenseP t a b = DenseP {denseWeights :: Tensor '[a,b] (Flt t)
-                           ,denseBiases  :: Tensor '[b] (Flt t)}
+data DenseP t a b = DenseP {denseWeights :: Tensor '[a,b] t
+                           ,denseBiases  :: Tensor '[b] t}
 
 -----------------------
 -- Feed-forward layers
@@ -84,14 +84,14 @@ embedding (EmbeddingP param) input = gather param input
 
 
 
-instance (KnownNat a, KnownNat b, KnownBits t) => KnownTensors (DenseP t a b) where
+instance (KnownNat a, KnownNat b, KnownTyp t) => KnownTensors (DenseP t a b) where
   travTensor f s (DenseP x y) = DenseP <$> travTensor f (s<>"_w") x <*> travTensor f (s<>"_bias") y
 
-instance (KnownNat n, KnownNat m, KnownBits b) => ParamWithDefault (DenseP b n m) where
+instance (KnownNat n, KnownNat m, KnownFloating b) => ParamWithDefault (DenseP b n m) where
   defaultInitializer = DenseP <$> glorotUniform <*> (noise $ TruncatedNormalD 0.1)
 
 -- | Dense layer (Apply a linear function)
-(#), dense :: ∀m n t. KnownNat n => KnownNat m => KnownBits t => DenseP t n m -> Tensor '[n] (Flt t) -> Tensor '[m] (Flt t)
+(#), dense :: ∀m n t. KnownNat n => KnownNat m => KnownNumeric t => DenseP t n m -> Tensor '[n] t -> Tensor '[m] t
 (DenseP weightMatrix bias) # v = (weightMatrix ∙ v) + bias
 
 dense = (#)

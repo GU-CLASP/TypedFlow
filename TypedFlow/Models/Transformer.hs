@@ -125,7 +125,7 @@ multiheadSelfAttentionModuleDecoder nm = do
 feedForwardModule :: forall e. KnownNat e
   => String -> Gen (T '[e] Float32 -> T '[e] Float32)
 feedForwardModule nm = do
-  w1 :: DenseP 'B32 e e <- parameterDefault (nm ++ "w1")
+  w1 :: DenseP Float32 e e <- parameterDefault (nm ++ "w1")
   w2 <- parameterDefault (nm ++ "w2")
   return $ \x -> normalizer (x + (w2 # relu (w1 # x)))
 

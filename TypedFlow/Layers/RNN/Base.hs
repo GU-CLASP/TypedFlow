@@ -70,7 +70,7 @@ import TypedFlow.Types.Proofs
 -- pattern. This is not a simple monad, because the indexing over
 -- states is non-uniform; see 'BindC'.
 newtype Component t (states::[Shape]) a
-  = C {runC :: HTV (Flt t) states -> (HTV (Flt t) states , a)}
+  = C {runC :: HTV t states -> (HTV t states , a)}
 -- Note: states are tensors only, because we need to index into them
 -- in the time dimension in iterateWithCull
 
@@ -101,14 +101,14 @@ type RnnCell t states input output = input -> Component t states output
 type Rnn n b state input output = RnnCell b state (V n input) (V n output) 
 
 -- | Run a cell
-runCell :: RnnCell t states input output -> (HTV (Flt t) states,input) -> (HTV (Flt t) states, output)
+runCell :: RnnCell t states input output -> (HTV t states,input) -> (HTV t states, output)
 runCell cell = uncurry (flip (runC . cell))
 
 -- | Run an RNN, using a tensor as input. @n@ is the length of the time sequence. 
 runRnn :: (KnownNat n,KnownShape s0, KnownShape s1, KnownTyp t1)
        => Rnn n t2 states (T s1 t1) (T s0 t0)
-       -> (HTV (Flt t2) states, Tensor (n ': s1) t1)
-       -> (HTV (Flt t2) states, Tensor (n ': s0) t0)
+       -> (HTV t2 states, Tensor (n ': s1) t1)
+       -> (HTV t2 states, Tensor (n ': s0) t0)
 runRnn l (s,x) =
   let x' = unstack0 x
       (s',y) = runCell l (s,x')
@@ -117,12 +117,12 @@ runRnn l (s,x) =
 -- | Run an RNN composed of a single RNN cell.
 simpleRnn :: KnownTyp t1 => KnownShape s1 => KnownShape s0 => KnownNat n
           => RnnCell t2 states (T s1 t1) (T s0 t0)
-          -> (HTV (Flt t2) states, Tensor (n : s1) t1)
-          -> (HTV (Flt t2) states, Tensor (n : s0) t0)
+          -> (HTV t2 states, Tensor (n : s1) t1)
+          -> (HTV t2 states, Tensor (n : s0) t0)
 simpleRnn = runRnn . iterateCell
 
 -- | Construct a cell from an arbitrary stateful function
-mkCell :: ((HTV (Flt t) states,input) -> (HTV (Flt t) states, output)) -> RnnCell t states input output
+mkCell :: ((HTV t states,input) -> (HTV t states, output)) -> RnnCell t states input output
 mkCell cell = C . flip (curry cell)
 
 ----------------------
@@ -159,7 +159,7 @@ infixr .++.
 (.++.) = bothRnns
 
 -- | Apply a function on the cell state(s) before running the cell itself.
-onStates ::  (HTV (Flt t) xs -> HTV (Flt t) xs) -> RnnCell t xs a b -> RnnCell t xs a b
+onStates ::  (HTV t xs -> HTV t xs) -> RnnCell t xs a b -> RnnCell t xs a b
 onStates f cell x = C $ \h -> do
   runC (cell x) (f h)
 
@@ -196,10 +196,10 @@ withBypass cell x = appRUnit @s0 #>
   returnC (concat0 x y)
 
 -- | Run the cell, and feeds its output as input to the next time-step
-withFeedback :: forall outputSize inputSize w ss.
-  KnownBits w => KnownNat outputSize => KnownNat inputSize =>
-  RnnCell w ss                    (T '[inputSize+outputSize] (Flt w)) (T '[outputSize] (Flt w)) ->
-  RnnCell w ('[outputSize] ': ss) (T '[inputSize           ] (Flt w)) (T '[outputSize] (Flt w))
+withFeedback :: forall outputSize inputSize (w :: Typ) ss.
+  KnownTyp w => KnownNat outputSize => KnownNat inputSize =>
+  RnnCell w ss                    (T '[inputSize+outputSize] w) (T '[outputSize] w) ->
+  RnnCell w ('[outputSize] ': ss) (T '[inputSize           ] w) (T '[outputSize] w)
 withFeedback cell x = C $ \(F prevoutputnVector :* s) -> 
   let (s',y) = runC (cell (concat0 x prevoutputnVector)) s
   in  (F y :* s',y)
@@ -257,7 +257,7 @@ chainForwardWithState f (s0 , (x:**xs)) =
 
 -- | RNN helper
 transposeV :: forall n xs t. All KnownShape xs => KnownNat n =>
-               SList xs -> V n (HTV (Flt t) xs) -> HTV (Flt t) (Ap (FMap (Cons n)) xs)
+               SList xs -> V n (HTV t xs) -> HTV t (Ap (FMap (Cons n)) xs)
 transposeV Unit _ = Unit
 transposeV (_ :* n) xxs  = F ys' :* yys'
   where (ys,yys) = help @(Tail xs) xxs
@@ -271,7 +271,7 @@ gatherFinalStates :: KnownShape x => KnownNat n => T '[] Int32 -> T (n ': x) t -
 gatherFinalStates dynLen states = gather states (dynLen ⊝ constant 1)
 
 gathers :: forall n xs t. All KnownShape xs => KnownNat n =>
-            SList xs -> T '[] Int32 -> HTV (Flt t) (Ap (FMap (Cons n)) xs) -> HTV (Flt t) xs
+            SList xs -> T '[] Int32 -> HTV t (Ap (FMap (Cons n)) xs) -> HTV t xs
 gathers Unit _ Unit = Unit
 gathers (_ :* n) ixs (F x :* xs) = F (gatherFinalStates ixs x) :* gathers @n n ixs xs
 
