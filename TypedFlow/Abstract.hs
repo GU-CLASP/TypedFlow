@@ -268,6 +268,8 @@ unopInputShape (Num1Op _) = Unit
 unopInputShape (Float1Op _) = Unit
 unopInputShape (SliceOp _ n s _ _) = n :* s
 unopInputShape (ExpM n) = n :* n :* Unit
+unopInputShape Conjugate = Unit
+unopInputShape RealPart = Unit
 
 protoBroadcast :: forall n s t.
   Unique -- unique identifier marking the variable tensor which will be marking inputs (not to broadcast).

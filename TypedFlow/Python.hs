@@ -281,6 +281,8 @@ generatePure' rec sR = knownSShape sR ?> \case
     Cast -> funcall "tf.cast" [recx,showTyp @t]
     StopGradient -> funcall "tf.stop_gradient" [recx]
     ExpM _  -> funcall "tf.linalg.expm" [recx]
+    Conjugate -> funcall "tf.math.conj" [recx]
+    RealPart -> funcall "tf.math.real" [recx]
     Axis1Op op' ->
        let (op,args) = case op' of
                          OneHot depth _ -> ("tf.one_hot",[("dtype",showTyp @t), ("depth", showDimS depth)])
@@ -313,6 +315,7 @@ generatePure' rec sR = knownSShape sR ?> \case
    recy <- rec (s0 .+. s2) y
    return $ case operation of
      Simple2Op sop  -> let pop = case sop of
+                                   MkComplex -> "tf.complex"
                                    Add -> "tf.add"
                                    Divide -> "tf.divide"
                                    Equal -> "tf.equal"
