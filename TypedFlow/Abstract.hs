@@ -482,12 +482,12 @@ instance (KnownNumeric t, KnownShape s) => Num (T s t) where
   (-) = (⊝)
   negate = unOp Negate
 
-instance (KnownBits b, KnownShape s) => Fractional (T s ('Typ 'Float b)) where
-  fromRational x = knownFloating @b $ constant (fromRational x :: HaskType ('Typ 'Float b))
+instance (KnownFloat b, KnownShape s) => Fractional (T s b) where
+  fromRational x = knownAlgebraic @b $ constant (fromRational x :: HaskType b)
   (/) = (⊘)
 
-instance (KnownBits b, KnownShape s) => Floating (T s ('Typ 'Float b)) where
-  pi = knownFloating @b $ constant pi
+instance (KnownFloat b, KnownShape s) => Floating (T s b) where
+  pi = knownAlgebraic @b $ constant pi
   exp = unFlOp Exp
   log = unFlOp Log
   sin = unFlOp Sin
@@ -509,7 +509,7 @@ stopGradient :: ∀ s t. KnownTyp t => KnownShape s => Tensor s t -> Tensor s t
 stopGradient = appRUnit @s #> UnOp StopGradient (typeSShape @s)
 
 -- | Divide tensors, broacasting along shape @s@
-(⊘) :: forall s t. KnownBits t => KnownShape s => T s ('Typ 'Float t) -> T s ('Typ 'Float t) -> T s ('Typ 'Float t)
+(⊘) :: forall s t. KnownAlgebraic t => KnownShape s => T s t -> T s t -> T s t
 (⊘) = binOp Divide
 
 
@@ -526,6 +526,9 @@ equal = binOp (Equal)
 maxT,minT :: ∀ (s :: Shape) t. (KnownShape s, KnownNumeric t) => Tensor s t -> Tensor s t -> Tensor s t
 maxT = binOp Maximum
 minT = binOp Minimum
+
+mkComplex :: KnownBits w => KnownShape s => Tensor s (Flt w) -> Tensor s (Flt w) -> Tensor s ('Typ 'Cmplx w)
+mkComplex = binOp MkComplex
 
 lessThan :: ∀ (s :: Shape) t. (KnownShape s, KnownNumeric t) => Tensor s t -> Tensor s t -> Tensor s TFBool
 lessThan = binOp (LessThan)
@@ -838,7 +841,7 @@ zipWith3T = Zip3T Sat typeSShape typeSShape typeSShape
 -- | Size-preserving convolution operation.
 convolution :: forall outputChannels filterSpatialShape inChannels s t.
                KnownShape s => KnownNat inChannels => KnownNat outputChannels => KnownShape filterSpatialShape
-            => KnownFloating t
+            => KnownAlgebraic t
             => Length filterSpatialShape <= 3
             => Length s ~ Length filterSpatialShape
             => T (s ++ '[inChannels]) t -- ^ input tensor
@@ -932,13 +935,13 @@ sparseSoftmaxCrossEntropyWithLogits  =
   BinOp SparseSoftmaxCrossEntropyWithLogits Unit Unit typeSTyp (typeSShape @ '[numClasses]) typeSTyp
 
 -- | One hot vector along axis 0
-oneHot0 :: forall numClasses w s t. KnownNat numClasses => KnownBits t => KnownBits w =>
+oneHot0 :: forall numClasses w s t. KnownNat numClasses => KnownNumeric t => KnownBits w =>
   (KnownShape s) =>
-  Tensor s ('Typ 'Int w) -> Tensor (numClasses ': s) (Flt t)
+  Tensor s ('Typ 'Int w) -> Tensor (numClasses ': s) t
 oneHot0 = UnOp (Axis1Op (OneHot Sat (typeSShape @s))) Unit
 
 -- | One hot vector along axis 1
-oneHot1 :: forall numClasses w s m t. KnownBits w =>KnownShape s => KnownNat numClasses => KnownNat m => KnownBits t => Tensor (m ': s) ('Typ 'Int w) -> Tensor (m ': numClasses ': s) (Flt t)
+oneHot1 :: forall numClasses w s m t. KnownBits w =>KnownShape s => KnownNat numClasses => KnownNat m => KnownNumeric t => Tensor (m ': s) ('Typ 'Int w) -> Tensor (m ': numClasses ': s) t
 oneHot1 = mapT oneHot0
 
 -- | Generate a random tensor whose distribution is given. A new noise

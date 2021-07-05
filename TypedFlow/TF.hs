@@ -40,6 +40,7 @@ module TypedFlow.TF (
   -- * Variables, Parameters
   -- ** Parameters
   parameter',
+  parameter,
   parameterDefault,
   ParamWithDefault(..),
   -- getParameters,
@@ -148,7 +149,7 @@ repeatHT f = zs (typeSList @ss)
         zs (_ :* n) = Uncurry f :* zs n
 
 -- | Declare a parameter to optimize.
-parameter' :: ∀ (shape :: Shape) t. (KnownTyp t,KnownShape shape) => String -> (T shape t) -> Gen (T shape t)
+parameter' :: ∀ (shape :: Shape) t. (KnownTyp t,KnownShape shape) => String -> T shape t -> Gen (T shape t)
 parameter' = persistent True
 
 -- | Create a parameter.
@@ -156,7 +157,7 @@ parameter :: forall p. KnownTensors p => String -> Gen p -> Gen p
 parameter s p = travTensor parameter' s =<< p
 
 -- | Declare variable which persists between calls to session.run.
-persistent :: ∀ (shape :: Shape) t. (KnownTyp t,KnownShape shape) => Bool -> String -> (T shape t) -> Gen (T shape t)
+persistent :: ∀ (shape :: Shape) t. (KnownTyp t,KnownShape shape) => Bool -> String -> T shape t -> Gen (T shape t)
 persistent trainable name initial = do
   T . Variable <$> GPVariable trainable name (Just initial)
 
@@ -202,8 +203,8 @@ data VarianceScaleMode = VSFanIn | VSFanOut | VSAvg
 data Distrib = NormalDistr | UniformDistr
 
 -- | Random tensor with variance scaling according to deeplearning lore.
-varianceScaling :: forall inDim outDim t. KnownNat inDim => (KnownNat outDim, KnownBits t) =>
-   Float -> VarianceScaleMode -> Distrib -> Gen (Tensor '[inDim,outDim] ('Typ 'Float t))
+varianceScaling :: forall inDim outDim t. KnownNat inDim => (KnownNat outDim, KnownFloat t) =>
+   Float -> VarianceScaleMode -> Distrib -> Gen (Tensor '[inDim,outDim] t)
 varianceScaling factor mode distr = noise $ case distr of
                                    UniformDistr -> UniformD (-limit) limit
                                    NormalDistr -> TruncatedNormalD limit

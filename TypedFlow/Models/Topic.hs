@@ -51,8 +51,8 @@ tdlmDocsummary :: forall
   (filterSize :: Nat) -- size of the convolution filter
   (t :: NBits) -- size of floats
   .  KnownNat vocSize => KnownNat filterSize => KnownNat e => KnownNat a => KnownNat n => KnownBits t
-  => (EmbeddingP vocSize e t)
-  -> (ConvP t a e '[filterSize])
+  => (EmbeddingP vocSize e (Flt t))
+  -> (ConvP (Flt t) a e '[filterSize])
   -> DropProb
   -> Gen (T '[n] Int32 -> T '[a] (Flt t))
 tdlmDocsummary embs filters dropProb = do
@@ -73,8 +73,8 @@ tdlmDocsummary' :: forall
   proxy
   .  KnownNat vocSize => KnownNat (Ap Frst' spec) => KnownNat e => KnownNat (Ap Scnd' spec) => KnownNat n => KnownBits t
   => proxy spec
-  -> (EmbeddingP vocSize e t)
-  -> (ConvP t (Ap Scnd' spec) e '[(Ap Frst' spec)])
+  -> (EmbeddingP vocSize e (Flt t))
+  -> (ConvP (Flt t) (Ap Scnd' spec) e '[(Ap Frst' spec)])
   -> DropProb
   -> Gen (T '[n] Int32 -> T '[Ap Scnd' spec] (Flt t))
 tdlmDocsummary' _proxy  = tdlmDocsummary
@@ -152,7 +152,7 @@ mkTdlmTopic separationConstant (TopicP topicInput topicOutput) = do
 -- external information source (eg. topic representation).  Described
 -- 'Topically Driven Neural Language Model' by Lau, Baldwin and Cohn;
 -- formula (3)
-tdlmGatingUnit :: KnownNat n => KnownFloating t => KnownNat m => (GRUP t m n) -> T '[n] t -> T '[m] t -> (T '[m] t)
+tdlmGatingUnit :: KnownNat n => KnownFloat t => KnownNat m => (GRUP t m n) -> T '[n] t -> T '[m] t -> (T '[m] t)
 tdlmGatingUnit (GRUP wz wr w) s h = 
   let x = concat0 h s
       z = sigmoid (wz ∙ x)

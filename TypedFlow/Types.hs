@@ -388,18 +388,23 @@ type family TypKind (t :: Typ) where TypKind ('Typ k b)  = k
 type family TypBits (t :: Typ) where TypBits ('Typ k b)  = b
 
 type KnownNumeric t = (NumericKind (TypKind t), KnownBits (TypBits t), t ~ 'Typ (TypKind t) (TypBits t))
-type KnownFloating t = (TypKind t ~ 'Float, KnownBits (TypBits t), t ~ 'Typ 'Float (TypBits t))
+type KnownFloat t = (TypKind t ~ 'Float, KnownBits (TypBits t), t ~ 'Typ 'Float (TypBits t))
+type KnownAlgebraic t = (AlgebraicKind (TypKind t), KnownBits (TypBits t), t ~ 'Typ (TypKind t) (TypBits t))
 
 
 class KnownKind t => NumericKind t where
 instance NumericKind 'Float
 instance NumericKind 'Cmplx
 instance NumericKind 'Int
+class NumericKind t => AlgebraicKind t where
+instance AlgebraicKind 'Float
+instance AlgebraicKind 'Cmplx
 
 kVal :: SKind t1 -> Kind
 kVal SFloat = Float
 kVal SInt = Int
 kVal SBool = Bool
+kVal SCmplx = Cmplx
 
 instance Eq (SKind t) where x == y = kVal x == kVal y
 instance Ord (SKind t) where compare x y = compare (kVal x) (kVal y)
@@ -473,8 +478,15 @@ knownKind SCmplx k = k
 knownTyp :: STyp t -> (KnownTyp t => k) -> k
 knownTyp (STyp k b Refl) r = knownKind k $ knownBits b r
 
-knownFloating :: forall w k. KnownBits w => (Fractional (HaskType ('Typ 'Float w)) => Floating (HaskType ('Typ 'Float w)) => k) -> k
-knownFloating = knownBits (bitsVal @w) 
+knownAlgebraic :: forall t k. KnownAlgebraic t => ((Fractional (HaskType t), Floating (HaskType t)) => k) -> k
+knownAlgebraic k = case kindVal @(TypKind t) of
+  SFloat -> case bitsVal @(TypBits t) of
+    SB32 -> k
+    SB64 -> k
+  SCmplx -> case bitsVal @(TypBits t) of
+    SB32 -> k
+    SB64 -> k
+  _ -> error "KnownAlgebraic bug"
 
 knownNum :: forall t k. KnownNumeric t => (KnownTyp t => Num (HaskType t) => k) -> k
 knownNum k = case kindVal @(TypKind t) of
@@ -702,7 +714,7 @@ data T (s :: Shape) (t :: Typ) where
   MatMul :: forall s m n o t. KnownNumeric t => SShape s -> Sat KnownNat n -> Sat KnownNat  o -> Sat KnownNat m -> T (s ++ '[n,o]) t -> T (s ++ [o,m]) t -> T (s ++ [n,m]) t
   Where :: T s TFBool  -> T s t -> T s t -> T s t
   If :: Scalar TFBool -> T s t -> T s t -> T s t
-  Convolution :: KnownFloating t => Sat KnownNat bs -> Sat KnownNat inChannels -> Sat KnownNat outChannels -> SShape filterSpatialShape -> SShape s
+  Convolution :: KnownAlgebraic t => Sat KnownNat bs -> Sat KnownNat inChannels -> Sat KnownNat outChannels -> SShape filterSpatialShape -> SShape s
             -> T (bs ': s ++ '[inChannels]) t -- input tensor (batched)
             -> T (filterSpatialShape ++ '[inChannels,outChannels]) t -- filters
             -> T (bs ': s ++ '[outChannels]) t
@@ -786,7 +798,7 @@ data UnOp (s1 :: Shape) (t :: Typ) (s2 :: Shape) (u :: Typ) where
              -- deriving Show
 
 data Simple2Op t u where
-  Divide :: Simple2Op (Flt w) (Flt w)
+  Divide :: KnownAlgebraic t => Simple2Op t t
   Equal :: KnownTyp t => Simple2Op t TFBool
   Subtract :: KnownNumeric t => Simple2Op t t
   Multiply :: KnownNumeric t => Simple2Op t t
@@ -795,13 +807,14 @@ data Simple2Op t u where
   Maximum :: KnownNumeric t => Simple2Op t t
   FloorMod :: KnownNumeric t => Simple2Op t t
   LessThan :: KnownNumeric t => Simple2Op t TFBool
+  MkComplex :: Simple2Op (Flt w) ('Typ 'Cmplx w)
 
 -- deriving instance Show (Simple2Op t u)
 
 data BinOp s1 t1 s2 t2 s3 t3 where
   Simple2Op :: Simple2Op t u -> BinOp '[] t '[] t '[] u
-  SigmoidCrossEntropyWithLogits :: KnownFloating t => BinOp '[] t '[] t '[] t
-  SoftmaxCrossEntropyWithLogits :: KnownFloating t => BinOp '[n] t '[n] t '[] t
+  SigmoidCrossEntropyWithLogits :: KnownFloat t => BinOp '[] t '[] t '[] t
+  SoftmaxCrossEntropyWithLogits :: KnownFloat t => BinOp '[n] t '[n] t '[] t
   SparseSoftmaxCrossEntropyWithLogits :: BinOp '[] Int32 '[n] (Flt w) '[] (Flt w)
 
 -- deriving instance Show (BinOp a b c d e f)

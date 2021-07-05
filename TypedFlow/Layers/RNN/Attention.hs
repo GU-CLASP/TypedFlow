@@ -68,7 +68,7 @@ type AttentionFunction t keySize valueSize =
 -- | @attnExample1 θ h st@ combines each element of the vector h with
 -- s, and applies a dense layer with parameters θ. The "winning"
 -- element of h (using softmax) is returned.
-uniformAttn :: ∀ valueSize m keySize t. KnownNat valueSize => KnownNat m => KnownFloating t
+uniformAttn :: ∀ valueSize m keySize t. KnownNat valueSize => KnownNat m => KnownFloat t
        => AttentionScoring t keySize valueSize -- ^ scoring function
        -> T '[] Int32 -- ^ length of the input
        -> T '[m,valueSize] t -- ^ input (what we're attending to)
@@ -105,7 +105,7 @@ attentiveWithFeedback attn cell = appRUnit @ss #> withFeedback (cell .-. timeDis
 -- https://github.com/tensorflow/nmt#background-on-the-attention-mechanism
 -- commit 75aa22dfb159f10a1a5b4557777d9ff547c1975a).
 -- Essentially a dense layer with tanh activation, on top of uniform attention.
-luongAttention :: ∀ attnSize d m e w. KnownNat e => KnownNat d => KnownNat attnSize => KnownNat m => KnownFloating w
+luongAttention :: ∀ attnSize d m e w. KnownNat e => KnownNat d => KnownNat attnSize => KnownNat m => KnownFloat w
   => Tensor '[d+e,attnSize] w     -- ^ weights for the dense layer
   -> AttentionScoring w e d -- ^ scoring function
   -> Tensor '[] Int32          -- ^ length of the input
@@ -117,7 +117,7 @@ luongAttention w scoring lens hs_ ht =
 
 -- | Multiplicative scoring function
 multiplicativeScoring :: forall valueSize keySize t.
-  KnownFloating t => KnownNat valueSize => KnownNat keySize
+  KnownFloat t => KnownNat valueSize => KnownNat keySize
   => T [keySize,valueSize] t -- ^ weights
   ->  AttentionScoring t keySize valueSize
 multiplicativeScoring w dt h = ir · h
@@ -132,11 +132,11 @@ data AdditiveScoringP sz keySize valueSize t = AdditiveScoringP
 
 instance (KnownNat n, KnownNat k, KnownNat v, KnownTyp t) => KnownTensors (AdditiveScoringP k v n t) where
   travTensor f s (AdditiveScoringP x y z) = AdditiveScoringP <$> travTensor f (s<>"_v") x <*> travTensor f (s<>"_w1") y <*> travTensor f (s<>"_w2") z
-instance (KnownNat n, KnownNat k, KnownNat v, KnownFloating t) => ParamWithDefault (AdditiveScoringP k v n t) where
+instance (KnownNat n, KnownNat k, KnownNat v, KnownFloat t) => ParamWithDefault (AdditiveScoringP k v n t) where
   defaultInitializer = AdditiveScoringP <$> glorotUniform <*> glorotUniform <*> glorotUniform
 
 -- | An additive scoring function. See https://arxiv.org/pdf/1412.7449.pdf
-additiveScoring :: forall sz keySize valueSize t. KnownNat valueSize => KnownNat sz => KnownNat keySize => KnownFloating t =>
+additiveScoring :: forall sz keySize valueSize t. KnownNat valueSize => KnownNat sz => KnownNat keySize => KnownFloat t =>
   AdditiveScoringP sz keySize valueSize t -> AttentionScoring t valueSize keySize
 additiveScoring (AdditiveScoringP v w1 w2) dt h =  r''
   where w1h :: Tensor '[sz] t
