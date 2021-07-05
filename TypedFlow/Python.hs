@@ -461,6 +461,7 @@ compileAlreadyBatched Options{..} model = knownAppend @sy @ps ?> do
     generateVars parameters
     gen (text "return " <> dict [("batch_size", (showDim @ bs))
                                 ,("parameters",list (map pyVarInfoRepr parameters))
+                                ,("paramsdict",dict [(varName, pyVarInfoRepr vi) | vi@VarInfo {..} <- parameters])
                                 ,("placeholders",dict [(varName, dict [("shape",case varRef of Ref _id s _t -> showSShape s)]) | VarInfo {..} <- placeHolders] )
                                 ])
 
