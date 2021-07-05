@@ -410,7 +410,7 @@ eye = diag 1
 diag :: ∀ n t. KnownTyp t => KnownNat n => T '[n] t ->  T '[n,n] t
 diag = UnOp (Diag Sat) Unit
 
-expm :: ∀ n t. KnownBits t => KnownNat n => T '[n,n] (Flt t) ->  T '[n,n] (Flt t)
+expm :: ∀ n t. KnownNat n => KnownNumeric t => T '[n,n] t ->  T '[n,n] t
 expm = UnOp (ExpM Sat) Unit
 
 -- | range[i] = i
