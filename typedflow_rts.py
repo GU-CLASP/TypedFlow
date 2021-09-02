@@ -140,6 +140,7 @@ def train (optimizer, model_static, model_fn,
     '''
     batch_size = model_static["batch_size"]
     train_vars = model_static["parameters"]
+    placeholders_info = model_static["placeholders"]
     stats = []
     def halfEpoch(isTraining):
         totalAccur = 0
@@ -148,10 +149,11 @@ def train (optimizer, model_static, model_fn,
         print ("Training" if isTraining else "Validation", end="")
         start_time = time()
         for inputs in train_generator(batch_size) if isTraining else valid_generator(batch_size):
+            cast_inputs = dict((k,tf.cast(inputs[k], placeholders_info[k]["dtype"])) for k in placeholders_info)
             print(".",end="")
             sys.stdout.flush()
             with tf.GradientTape() as tape:
-                results = model_fn(tf.constant(isTraining, shape=[]), **inputs)
+                results = model_fn(tf.constant(isTraining, shape=[]), **cast_inputs)
                 loss = results["loss"]
                 accur = results["accuracy"]
                 grads = tape.gradient(loss, train_vars)
