@@ -103,6 +103,8 @@ module TypedFlow.TF (
   oneHot0, oneHot1,
   -- ** complex numbers
   expm, conjugate, realPart,
+  -- ** Matrix operations
+  tril, triu,
   -- ** Testing conditions
   if_, where_, lessThan,
   -- * Contrib

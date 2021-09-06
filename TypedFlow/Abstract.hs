@@ -268,6 +268,7 @@ unopInputShape (Num1Op _) = Unit
 unopInputShape (Float1Op _) = Unit
 unopInputShape (SliceOp _ n s _ _) = n :* s
 unopInputShape (ExpM n) = n :* n :* Unit
+unopInputShape (ZeroTriangle n _ _) = n :* n :* Unit
 unopInputShape Conjugate = Unit
 unopInputShape RealPart = Unit
 
@@ -415,6 +416,12 @@ diag = UnOp (Diag Sat) Unit
 expm :: ∀ n t. KnownNat n => KnownNumeric t => T '[n,n] t ->  T '[n,n] t
 expm = UnOp (ExpM Sat) Unit
 
+-- | @k@=diagonal above which to zero elements. k = 0 is the main diagonal, k < 0 is below it and k > 0 is above.
+tril :: ∀ n t. KnownNat n => KnownNumeric t => Integer -> T '[n,n] t ->  T '[n,n] t
+tril k = UnOp (ZeroTriangle Sat Lower k) Unit
+
+triu :: ∀ n t. KnownNat n => KnownNumeric t => Integer -> T '[n,n] t ->  T '[n,n] t
+triu k = UnOp (ZeroTriangle Sat Upper k) Unit
 
 -- | range[i] = i
 range :: forall n w. KnownNat n => KnownBits w => T '[n] ('Typ 'Int w)

@@ -283,6 +283,7 @@ generatePure' rec sR = knownSShape sR ?> \case
     Cast -> funcall "tf.cast" [recx,showTyp @t]
     StopGradient -> funcall "tf.stop_gradient" [recx]
     ExpM _  -> funcall "tf.linalg.expm" [recx]
+    ZeroTriangle _ side k  -> funcall ("tf.experemental.numpy.tri" ++ case side of Upper -> "u"; Lower -> "l") [recx, integer k]
     Conjugate -> funcall "tf.math.conj" [recx]
     RealPart -> funcall "tf.math.real" [recx]
     Axis1Op op' ->

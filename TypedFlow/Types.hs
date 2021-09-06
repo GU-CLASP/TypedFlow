@@ -784,7 +784,11 @@ data Float1Op
   deriving Show
 data Num1Op = Square | Negate | Abs | Sign
   deriving Show
+
+data Side = Upper | Lower
+
 data UnOp (s1 :: Shape) (t :: Typ) (s2 :: Shape) (u :: Typ) where
+  ZeroTriangle :: KnownNumeric t => Sat KnownNat n -> Side -> Integer -> UnOp '[n,n] t '[n,n] t -- https://numpy.org/doc/1.16/reference/generated/numpy.tril.html
   ExpM :: KnownNumeric t => Sat KnownNat n -> UnOp '[n,n] t '[n,n] t
   Diag :: Sat KnownNat n -> UnOp '[n] t '[n,n] t
   StopGradient :: UnOp '[] t '[] t
