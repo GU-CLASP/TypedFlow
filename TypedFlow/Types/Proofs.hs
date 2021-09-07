@@ -45,10 +45,13 @@ class SingEq s where
 
 instance SingEq (Sat KnownNat) where
   testEq :: forall n m. Sat KnownNat n -> Sat KnownNat m -> Maybe (n :~: m)
-  testEq Sat Sat = testNatEqual (Proxy @n) (Proxy @m)
+  testEq = testNatEqual
 
-testNatEqual :: KnownNat m => KnownNat n => Proxy m -> Proxy n -> Maybe (m :~: n)
-testNatEqual m n = if natVal m == natVal n then Just (unsafeCoerce Refl) else Nothing
+natValS :: forall m. Sat KnownNat m -> Integer
+natValS Sat = natVal (Proxy @m)
+
+testNatEqual :: Sat KnownNat m -> Sat KnownNat n -> Maybe (m :~: n)
+testNatEqual m n = if natValS m == natValS n then Just (unsafeCoerce Refl) else Nothing
 
 instance SingEq f => SingEq (NP f) where
   testEq Unit Unit = Just Refl
@@ -111,6 +114,9 @@ prodAssoc = unsafeCoerce Refl
 prodAssocS :: forall x y z px py pz. px x -> py y -> pz z -> ((x * y) * z) :~: (x * (y * z))
 prodAssocS _ _ _ = prodAssoc @x @y @z
 
+prodCommS :: forall x y px py. px x -> py y -> (x * y) :~: (y * x)
+prodCommS _ _ = unsafeCoerce Refl
+
 termCancelation :: forall a b. (a + b) - b :~: a
 termCancelation = plusMinusAssoc @a @b @b #> cancelation @b #> Refl
 
@@ -169,6 +175,10 @@ type i :<: j = (i+1) :<=: j
 
 incrPos :: forall x. 1 :<=: (x+1)
 incrPos = unsafeCoerce Refl
+
+
+subIneq :: forall x k. (x - k) :<=: x
+subIneq = unsafeCoerce Refl
 
 incrCong :: forall x y. ((x+1) ~ (y+1)) => x :~: y
 incrCong = unsafeCoerce Refl
@@ -303,6 +313,95 @@ unsafePositive = unsafeCoerce Refl
 
 sucPred :: ((1 <=? n) ~ 'True) => (n - 1) + 1  :~: n
 sucPred = unsafeCoerce Refl
+
+-- data ORDEQ p a b where
+--   LT, GT :: ORDEQ a b
+--   EQ :: p -> ORDEQ a a
+
+data NatExpr n where
+  NEVar :: Int -> NatExpr n
+  (::+) ::  NatExpr m -> NatExpr n -> NatExpr (m+n)
+  (::*) ::  NatExpr m -> NatExpr n -> NatExpr (m*n)
+
+data NatSum n where
+  NSZero :: NatSum 0
+  NSAdd :: NatProd m -> NatSum n -> NatSum (m+n)
+
+data NatProd n where
+  NPUnit :: Sat KnownNat k -> NatProd k
+  NPTimes :: Sat KnownNat m -> Int -> NatProd n -> NatProd (m*n)
+
+sortProd :: NatProd n -> NatProd n
+sortProd (NPUnit k) = NPUnit k
+sortProd (NPTimes x xId y) = insertProd x xId (sortProd y)
+  where insertProd :: Sat KnownNat m -> Int -> NatProd n -> NatProd (m*n)
+        insertProd x xId rest = case rest of
+          (NPUnit k) -> NPTimes x xId rest
+          (NPTimes y yId ys) -> if xId <= yId
+                                then NPTimes x xId rest
+                                else prodAssocS x y ys #>
+                                     prodCommS x y #>
+                                     prodAssocS y x ys #>
+                                     NPTimes y yId (insertProd x xId ys)
+
+sortSum :: NatSum n -> NatSum n
+sortSum NSZero = NSZero
+sortSum (NSAdd x y) = insertTerm (sortProd x) (sortSum y)
+  where insertTerm :: NatProd m -> NatSum n -> NatSum (m+n)
+        insertTerm p rest = case rest of
+          NSZero -> NSAdd p NSZero
+          NSAdd q qs -> case compareTerms p q of
+            Right p' -> plusAssocS p q qs #> NSAdd p' qs
+            Left False -> NSAdd p rest
+            Left True -> plusAssocS p q qs #>
+                         plusCommS  p q	#>
+                         plusAssocS q p qs #>
+                         NSAdd q (insertTerm p qs)
+
+
+compareTerms :: NatProd n -> NatProd m -> Either Bool (NatProd (n+m))
+compareTerms (NPUnit Sat) (NPUnit Sat) = Right (NPUnit Sat)
+compareTerms (NPUnit _) (NPTimes _ _ _) = Left False
+compareTerms (NPTimes _ _ _) (NPUnit _)  = Left True
+compareTerms (NPTimes x xId xs) (NPTimes y yId ys) =
+  case testEq x y of
+    Nothing -> Left (natValS x <= natValS y)
+    Just Refl -> case compareTerms xs ys of
+      Left x -> Left x
+      Right p -> distrLS x xs ys #> Right (NPTimes x xId p) 
+
+  
+
+distrLS :: forall a b c px py pz. px a -> py b -> pz c ->  a * (b + c) :~: (a * b + a * c)
+distrLS = unsafeCoerce Refl
+
+distrRS :: forall a b c px py pz. px a -> py b -> pz c ->  (a + b) * c :~: ((a * c) + (b * c))
+distrRS = unsafeCoerce Refl
+
+expandProd :: NatSum m -> NatSum n -> NatSum (m*n)
+expandProd NSZero _ = NSZero
+expandProd _ NSZero = NSZero
+expandProd (NSAdd a b) c = distrRS a b c #> expandSum (expandP' a c) (expandProd b c)
+
+expandP' :: NatProd m -> NatSum n -> NatSum (m*n)
+expandP' _ NSZero = NSZero
+expandP' p (NSAdd q a) = distrLS p q a #> NSAdd (expandPP p q) (expandP' p a)
+
+expandPP :: NatProd m -> NatProd n -> NatProd (m*n)
+expandPP (NPUnit k) (x) = expandKP k x
+expandPP (NPTimes x xId y) z = prodAssocS x y z #> NPTimes x xId (expandPP y z)
+
+expandKP :: Sat KnownNat k -> NatProd n -> NatProd (k*n)
+expandKP Sat (NPUnit Sat) = NPUnit Sat
+expandKP k@Sat (NPTimes x xId y)
+  = prodAssocS k x y #>
+    prodCommS k x #>
+    prodAssocS x k y #>
+    NPTimes x xId (expandKP k y) 
+
+expandSum :: NatSum m -> NatSum n -> NatSum (m+n)
+expandSum NSZero x = x
+expandSum (NSAdd x y) z = plusAssocS x y z #> NSAdd x (expandSum y z)
 
 
 natRec :: forall (n :: Nat) (p :: Nat -> Type). KnownNat n => p 0 -> (forall (m :: Nat). p m -> p (m+1)) -> p n
