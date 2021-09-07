@@ -288,6 +288,7 @@ generatePure' rec sR = knownSShape sR ?> \case
     RealPart -> funcall "tf.math.real" [recx]
     Axis1Op op' ->
        let (op,args) = case op' of
+                         ReverseT _ _ -> ("tf.reverse",[])
                          OneHot depth _ -> ("tf.one_hot",[("dtype",showTyp @t), ("depth", showDimS depth)])
                          ArgMax{} -> ("tf.argmax",[("output_type",showTyp @t)])
                          ReduceOp _ _ r -> ("tf.reduce_" ++ rop, [])
@@ -297,7 +298,8 @@ generatePure' rec sR = knownSShape sR ?> \case
                                            Sum -> "sum"
                                            Mean -> "mean"
            axisName = if op == "tf.nn.softmax" then "dim" else "axis"  -- use dim before TF 1.5
-       in func op [recx] ((axisName,integer (sListLength s0)):args)
+           useAxisList = case op' of ReverseT _ _ -> True; _ -> False
+       in func op [recx] ((axisName,(if useAxisList then (list . (:[])) else id) (integer (sListLength s0))):args)
     Float1Op op' -> funcall op (recx:args)
        where (op,args) = case op' of
                 HardSigmoid -> ("tf.keras.backend.hard_sigmoid",[])

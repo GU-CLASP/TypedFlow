@@ -75,7 +75,7 @@ module TypedFlow.TF (
   -- clipByGlobalNorm,
   clipByValue,
   -- ** Indexing
-  last0, nth0, nth0', lookupT, gather, range,
+  last0, nth0, nth0', lookupT, gather, range, reverseT,
   -- ** Split and concatenate
   slice, slice0, slice1,
   litStack0,
@@ -263,6 +263,7 @@ normalize :: (KnownNat n, KnownBits t) =>
                    T '[n] (Flt t) -> T '[n] (Flt t)
 normalize v = mapT (/ (norm v + epsilon)) v
   where epsilon = 1.0e-8
+
 
 -------------------------
 -- Generic parameters

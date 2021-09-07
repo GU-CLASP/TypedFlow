@@ -263,6 +263,7 @@ unopInputShape (Axis1Op o) = case o of
   ArgMax n s -> n :* s
   OneHot _n s -> s
   ReduceOp n s _ -> n :* s
+  ReverseT n s -> n :* s
 unopInputShape StopGradient = Unit
 unopInputShape (Num1Op _) = Unit
 unopInputShape (Float1Op _) = Unit
@@ -942,6 +943,9 @@ sparseSoftmaxCrossEntropyWithLogits :: forall numClasses t.
   -> Tensor '[] (Flt t) 
 sparseSoftmaxCrossEntropyWithLogits  =
   BinOp SparseSoftmaxCrossEntropyWithLogits Unit Unit typeSTyp (typeSShape @ '[numClasses]) typeSTyp
+
+reverseT :: KnownTyp t => KnownNat n => T '[n] t -> T '[n] t
+reverseT = UnOp (Axis1Op (ReverseT Sat Unit)) Unit
 
 -- | One hot vector along axis 0
 oneHot0 :: forall numClasses w s t. KnownNat numClasses => KnownNumeric t => KnownBits w =>

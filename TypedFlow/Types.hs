@@ -756,6 +756,7 @@ type Tensor shape = T shape
 
 data ReduceOp = Mean | Max | Min | Sum
 data Axis1Op s1 t s2 u where
+  ReverseT :: Sat KnownNat n -> SShape s -> Axis1Op (n ': s) t (n ': s) t 
   ArgMax :: KnownNumeric t => Sat KnownNat n -> SShape s -> Axis1Op (n ': s) t s ('Typ 'Int b)
   OneHot :: KnownNumeric t => Sat KnownNat n -> SShape s -> Axis1Op s ('Typ 'Int b) (n ': s) t
   ReduceOp :: KnownNumeric t => Sat KnownNat n -> SShape s -> ReduceOp -> Axis1Op (n ': s) t s t
