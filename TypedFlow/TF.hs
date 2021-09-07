@@ -35,6 +35,7 @@ TensorFlow functions. Higher-level functions are not defined here.
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE UnicodeSyntax #-}
 {-# LANGUAGE ApplicativeDo #-}
+{-# LANGUAGE NoStarIsType #-}
 
 module TypedFlow.TF (
   -- * Variables, Parameters
@@ -264,6 +265,12 @@ normalize :: (KnownNat n, KnownBits t) =>
 normalize v = mapT (/ (norm v + epsilon)) v
   where epsilon = 1.0e-8
 
+fillTriangular :: forall n l t.
+                  (KnownNat n, KnownNat l, KnownNumeric t, (((l+l)-n) ~ (n*n)), n <= l)
+               => Tensor '[l] t -> Tensor '[n,n] t
+fillTriangular x = plusMinusAssoc @l @l @n #> tril 0 (inflate2 (concat0 x rr))
+  where rr :: Tensor '[l - n] t
+        rr = subIneq @l @n #> slice0 @0 @(l-n) (reverseT x) 
 
 -------------------------
 -- Generic parameters
