@@ -76,7 +76,7 @@ module TypedFlow.TF (
   -- clipByGlobalNorm,
   clipByValue,
   -- ** Indexing
-  last0, nth0, nth0', lookupT, gather, range, reverseT,
+  last0, nth0, nth0', lookupT, lookupManyT, gather, range, reverseT,
   -- ** Split and concatenate
   slice, slice0, slice1,
   litStack0,
@@ -104,8 +104,8 @@ module TypedFlow.TF (
   oneHot0, oneHot1,
   -- ** complex numbers
   expm, conjugate, realPart,
-  -- ** Matrix operations
-  tril, triu,
+  -- ** Triangular and band Matrices
+  tril, triu, fillTriangular, fillUpperBand, upperBandIndex,
   -- ** Testing conditions
   if_, where_, lessThan,
   -- * Contrib
@@ -130,6 +130,7 @@ module TypedFlow.TF (
 
 import Prelude hiding (RealFrac(..))
 import GHC.TypeLits
+import qualified Data.Int
 import Data.Proxy
 import TypedFlow.Types
 import TypedFlow.Types.Proofs
@@ -271,6 +272,32 @@ fillTriangular :: forall n l t.
 fillTriangular x = plusMinusAssoc @l @l @n #> tril 0 (inflate2 (concat0 x rr))
   where rr :: Tensor '[l - n] t
         rr = subIneq @l @n #> slice0 @0 @(l-n) (reverseT x) 
+
+
+lookupManyT :: forall s n t. KnownNat n => KnownShape s => (KnownNumeric t) => Scalar t -> T s Int32 -> T '[n] t -> T s t
+lookupManyT def indices array =
+  appRUnit @s #> mapTT @s (\idx -> if_ (equal idx (-1)) def (lookupT idx array)) indices
+
+-- k: number of bands
+fillUpperBand :: KnownNumeric t => KnownNat n => KnownNat l => Data.Int.Int32 -> T '[l] t -> T '[n,n] t
+fillUpperBand k x = lookupManyT zeros (upperBandIndex k) x where
+
+upperBandIndex :: forall n. KnownNat n => Data.Int.Int32 -> T '[n,n] Int32
+upperBandIndex k = zipWithTT @'[n,n]
+           (\i j -> if_ (((j - i) `greaterThan` 0) `logicAnd` ((j - i) `lessOrEqualThan` constant k))
+           (i * constant k + (j - i) - constant 1)
+           (constant (-1)))
+  range0 
+  range1 where
+
+  -- "j" index
+  range1 :: forall n m w. (KnownNat n, KnownNat m) => KnownBits w => T '[n,m] ('Typ 'Int w)
+  range1 = broadcastT range
+
+  -- "i" index
+  range0 :: forall n m w. (KnownNat n, KnownNat m) => KnownBits w => T '[n,m] ('Typ 'Int w)
+  range0 = transpose01 range1
+
 
 -------------------------
 -- Generic parameters

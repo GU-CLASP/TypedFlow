@@ -428,6 +428,7 @@ triu k = UnOp (ZeroTriangle Sat Upper k) Unit
 range :: forall n w. KnownNat n => KnownBits w => T '[n] ('Typ 'Int w)
 range = T (Range (natSat @n))
 
+
 -- | Constant
 constant :: forall s t w. KnownShape s => KnownBits w => KnownKind t => HaskType ('Typ t w) -> T s ('Typ t w)
 constant c = appRUnit @s #> broadcastTT @s (scalar c)
@@ -541,7 +542,17 @@ mkComplex :: KnownBits w => KnownShape s => Tensor s (Flt w) -> Tensor s (Flt w)
 mkComplex = binOp MkComplex
 
 lessThan :: ∀ (s :: Shape) t. (KnownShape s, KnownNumeric t) => Tensor s t -> Tensor s t -> Tensor s TFBool
-lessThan = binOp (LessThan)
+lessThan = binOp (Comparision Less)
+
+lessOrEqualThan :: ∀ (s :: Shape) t. (KnownShape s, KnownNumeric t) => Tensor s t -> Tensor s t -> Tensor s TFBool
+lessOrEqualThan = binOp (Comparision LessOrEqual)
+
+greaterThan :: ∀ (s :: Shape) t. (KnownShape s, KnownNumeric t) => Tensor s t -> Tensor s t -> Tensor s TFBool
+greaterThan = binOp (Comparision Greater)
+
+logicAnd :: ∀ (s :: Shape). (KnownShape s) => Tensor s TFBool -> Tensor s TFBool-> Tensor s TFBool
+logicAnd = binOp (Logic And)
+
 
 infixl 7 ⊙,⊘
 infixl 6 ⊕,⊝
@@ -786,7 +797,7 @@ sequenceMask lens = mapT (lens `lessThan`) (range @maxlen)
 uniqueFor :: a
 uniqueFor = error "TODO: finish implementing BC"
 
--- | simple broadcasting of a tensor
+-- | simple broadcasting of a tensor (like a zero-arity map)
 broadcastT :: forall n s t. KnownShape s => KnownNat n => KnownTyp t => KnownLen s => T s t ->  T (n ': s) t
 broadcastT x = broadcast u False (Proxy @n) x
   where u = uniqueFor x

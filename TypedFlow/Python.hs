@@ -328,7 +328,14 @@ generatePure' rec sR = knownSShape sR ?> \case
                                    Multiply -> "tf.multiply"
                                    Minimum -> "tf.minimum"
                                    Maximum -> "tf.maximum"
-                                   LessThan -> "tf.less"
+                                   Comparision op -> case op of
+                                     Less -> "tf.less"
+                                     Greater -> "tf.greater"
+                                     LessOrEqual -> "tf.less_equal"
+                                     GreaterOrEqual -> "tf.greater_equal"
+                                   Logic op -> "tf.math.logical_" ++ case op of
+                                      And -> "and"
+                                      Or -> "or"
                                    FloorMod -> "tf.math.floorMod"
                        in funcall pop [recx,recy]
      SigmoidCrossEntropyWithLogits -> func "tf.nn.sigmoid_cross_entropy_with_logits" [] [("labels",recx),("logits",recy)]

@@ -802,6 +802,9 @@ data UnOp (s1 :: Shape) (t :: Typ) (s2 :: Shape) (u :: Typ) where
   Axis1Op :: Axis1Op s1 t s2 u -> UnOp s1 t s2 u
              -- deriving Show
 
+data CompOp = Less | Greater | LessOrEqual | GreaterOrEqual
+data LogicOp = And | Or
+
 data Simple2Op t u where
   Divide :: KnownAlgebraic t => Simple2Op t t
   Equal :: KnownTyp t => Simple2Op t TFBool
@@ -811,7 +814,8 @@ data Simple2Op t u where
   Minimum :: KnownNumeric t => Simple2Op t t
   Maximum :: KnownNumeric t => Simple2Op t t
   FloorMod :: KnownNumeric t => Simple2Op t t
-  LessThan :: KnownNumeric t => Simple2Op t TFBool
+  Comparision :: KnownNumeric t => CompOp -> Simple2Op t TFBool
+  Logic :: LogicOp -> Simple2Op TFBool TFBool
   MkComplex :: Simple2Op (Flt w) ('Typ 'Cmplx w)
 
 -- deriving instance Show (Simple2Op t u)
