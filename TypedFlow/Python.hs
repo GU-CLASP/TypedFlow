@@ -328,11 +328,11 @@ generatePure' rec sR = knownSShape sR ?> \case
                                    Multiply -> "tf.multiply"
                                    Minimum -> "tf.minimum"
                                    Maximum -> "tf.maximum"
-                                   Comparision op -> case op of
-                                     Less -> "tf.less"
-                                     Greater -> "tf.greater"
-                                     LessOrEqual -> "tf.less_equal"
-                                     GreaterOrEqual -> "tf.greater_equal"
+                                   Comparision op -> "tf.math." ++ case op of
+                                     Less -> "less"
+                                     Greater -> "greater"
+                                     LessOrEqual -> "less_equal"
+                                     GreaterOrEqual -> "greater_equal"
                                    Logic op -> "tf.math.logical_" ++ case op of
                                       And -> "and"
                                       Or -> "or"
