@@ -276,7 +276,7 @@ fillTriangular x = plusMinusAssoc @l @l @n #> tril 0 (inflate2 (concat0 x rr))
 
 lookupManyT :: forall s n t. KnownNat n => KnownShape s => (KnownNumeric t) => Scalar t -> T s Int32 -> T '[n] t -> T s t
 lookupManyT def indices array =
-  appRUnit @s #> mapTT @s (\idx -> if_ (equal idx (-1)) def (lookupT idx array)) indices
+  appRUnit @s #> mapTT @s (\idx -> where_ (equal idx (-1)) def (lookupT idx array)) indices
 
 -- k: number of bands
 fillUpperBand' :: KnownNumeric t => KnownNat n => KnownNat l => Data.Int.Int32 -> T '[l] t -> T '[n,n] t
@@ -288,7 +288,7 @@ fillUpperBand  = fillUpperBand' (fromIntegral (natVal (Proxy @k)))
   
 upperBandIndex :: forall n. KnownNat n => Data.Int.Int32 -> T '[n,n] Int32
 upperBandIndex k = zipWithTT @'[n,n]
-           (\i j -> if_ (((j - i) `greaterThan` 0) `logicAnd` ((j - i) `lessOrEqualThan` constant k))
+           (\i j -> where_ (((j - i) `greaterThan` 0) `logicAnd` ((j - i) `lessOrEqualThan` constant k))
            (i * constant k + (j - i) - constant 1)
            (constant (-1)))
   range0 
