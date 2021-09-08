@@ -707,7 +707,7 @@ data T (s :: Shape) (t :: Typ) where
   Transpose :: SShape s0 -> Permutation s0 s -> T s0 t -> T s t
   Concat :: SShape s0 -> SShape s1 -> NP (Catable s0 s1 t) ns -> T (s0 ++ (Sum ns ': s1)) t
   Gather :: KnownTyp ('Typ 'Int w) => SShape indexShape -> SShape s0 -> Sat KnownNat m -> SShape s1
-    -> T (s0 ++ (m ': s1)) t -> T indexShape ('Typ 'Int w) -> T (s0 ++ indexShape ++ s1) t
+    -> T (s0 ++ (m ': s1)) t -> T (s0 ++ indexShape) ('Typ 'Int w) -> T (s0 ++ indexShape ++ s1) t
   GatherND :: KnownTyp ('Typ 'Int w) => SShape containerShape -> SShape elementShape -> SShape indexShape
     -> T (containerShape ++ elementShape) t -> IndexTensor indexShape containerShape w -> T (indexShape ++ elementShape) t
 

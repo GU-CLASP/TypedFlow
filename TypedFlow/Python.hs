@@ -356,8 +356,8 @@ generatePure' rec sR = knownSShape sR ?> \case
     return (func "tf.transpose" [rx] [("perm",list (map (integer . permToFun p) [0.. sListLength s-1]))])
   Gather indexShape s0 m s1 x ix -> do
     rx <- rec (s0 .+. ((:*) m s1)) x
-    rix <- rec indexShape ix
-    return (func "tf.gather" [rx, rix] [])
+    rix <- rec (s0 .+. indexShape) ix
+    return (func "tf.gather" [named "params" rx, named "indices" rix, named "batch_dims" (integer (sListLength s0)), named "axis" (integer (sListLength s0))] [])
   GatherND containerShape elementShape indexShape x ix -> do
     rx <- rec (containerShape .+. elementShape) x
     rix <- rec (indexShape *: (sListLenAsNat containerShape)) ix

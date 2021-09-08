@@ -138,7 +138,7 @@ generateBC' rec _ (DirectBroadcast s0 s1 s2 s3 x) = DirectBroadcast s0 s1 s2 s3 
 generateBC' rec _ (ReshapeFrom s0 x) = ReshapeFrom s0 <$> rec s0 x
 generateBC' rec _ (Transpose s0 t x) = Transpose s0 t <$> (rec s0 x)
 generateBC' rec _ (Concat s0 s1 xs) = Concat s0 s1 <$> hTraverse (\(Catable m x) -> Catable m <$> (rec (s0 .+. m :* s1) x)) xs
-generateBC' rec _ (Gather is s0 m s1 x ix) = Gather is s0 m s1 <$> (rec (s0 .+. m :* s1) x) <*> rec is ix
+generateBC' rec _ (Gather is s0 m s1 x ix) = Gather is s0 m s1 <$> (rec (s0 .+. m :* s1) x) <*> rec (s0 .+. is) ix
 generateBC' rec _ (GatherND cs es is x ix) = GatherND cs es is <$> (rec (cs .+. es) x) <*> (rec (is *: sListLenAsNat cs) ix)
 generateBC' rec _ (MatMul s0 a b c x y) = MatMul s0 a b c <$> (rec (s0 .+. a :* b :* Unit) x) <*> (rec (s0 .+. b :* c :* Unit) y)
 generateBC' rec sR (Where cond x y) = Where <$> rec sR cond <*> rec sR x <*> rec sR y
@@ -174,6 +174,7 @@ broadcast u varyNoise n x = result
 genTrainingPlaceholder :: Scalar TFBool
 genTrainingPlaceholder = T (Magic "training_placeholder")
 
+-- | True if the argument does not contain an expression which should be broadcast.
 protoFinished :: Unique -> Bool -> (forall s' t'. T s' t' -> Bool) -> T s t -> Bool
 protoFinished u varyNoise rec = \case
   MapT _ s f x -> rec x && rec (f (T (Variable (Ref 0 s typeSTyp))))
@@ -282,7 +283,7 @@ protoBroadcast :: forall n s t.
   -> STyp t -- representation of the type
   -> SShape s -- representation of the shape
   -> T s t -- tensor (expression) to broadcast
-  -> T (n ': s) t
+  -> T (n ': s) t -- return broadcated expression (on 1st position)
 protoBroadcast u varyNoise n@(Sat) rec finished ty s tensor
   | finished tensor = simpleBC
   | otherwise = knownTyp ty $ case tensor of
@@ -323,15 +324,7 @@ protoBroadcast u varyNoise n@(Sat) rec finished ty s tensor
   Gather is Unit m s1 x ix
     -- this optimisation is important to get efficient embeddings
     | finished x -> Gather (n :* is) Unit m s1 x (rec is ix)
-  Gather is s0 m s1 x ix
-    | finished ix -> Gather is (n :* s0) m s1 (rec (s0 .+. m :* s1) x) ix
-    -- otherwise, Gather is not strong enough, and we need to convert
-    -- it to GatherND before broadcasting.
-    | otherwise -> appAssocS s0 (m :* Unit) s1 #>
-                   lengthHomoS s0 (m :* Unit) #>
-                   prodHomoS is ((natSat @1) :* Unit) #>
-                   knownSShape is ?>
-                   rec s (GatherND (s0 *: m) s1 (s0 .+. is) x (broadcastIndexMany m s0 is (reshapeAuto ix)))
+  Gather is s0 m s1 x ix -> Gather is (n :* s0) m s1 (rec (s0 .+. m :* s1) x) (rec (s0 .+. is) ix)
   Transpose s0 t x -> Transpose (n :* s0) (PermSkip t) (rec s0 x)
   ReshapeFrom s0 x -> reshapeFrom (n :* s0) (rec s0 x)
   Concat s0 s1 xs -> Concat (n :* s0) s1 (hmap (\(Catable m x) -> (Catable m (rec (s0 .+. m :* s1) x))) xs)
