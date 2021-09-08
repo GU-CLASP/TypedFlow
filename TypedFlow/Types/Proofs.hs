@@ -354,7 +354,7 @@ sortSum (NSAdd x y) = insertTerm (sortProd x) (sortSum y)
             Right p' -> plusAssocS p q qs #> NSAdd p' qs
             Left False -> NSAdd p rest
             Left True -> plusAssocS p q qs #>
-                         plusCommS  p q	#>
+                         plusCommS  p q #>
                          plusAssocS q p qs #>
                          NSAdd q (insertTerm p qs)
 
