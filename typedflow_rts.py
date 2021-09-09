@@ -154,8 +154,8 @@ def train (optimizer, model_static, model_fn,
             sys.stdout.flush()
             with tf.GradientTape() as tape:
                 results = model_fn(tf.constant(isTraining, shape=[]), **cast_inputs)
-                loss = results["loss"]
-                accur = results["accuracy"]
+                loss = results["loss"] / batch_size
+                accur = results["accuracy"] / batch_size
                 grads = tape.gradient(loss, train_vars)
                 optimizer.apply_gradients(zip(grads, train_vars))
                 n+=1
