@@ -130,7 +130,6 @@ module TypedFlow.TF (
 
 import Prelude hiding (RealFrac(..))
 import GHC.TypeLits
-import qualified Data.Int
 import Data.Proxy
 import TypedFlow.Types
 import TypedFlow.Types.Proofs
@@ -281,7 +280,7 @@ lookupManyT def indices array =
 
 
 -- | A flexible upper-triangular matrix function. 
-fillUpperTriangular :: forall k n l t. KnownNat k => KnownNumeric t => KnownNat n => KnownNat l => T '[l] t -> T '[n,n] t
+fillUpperTriangular :: forall n l t. KnownNumeric t => KnownNat n => KnownNat l => T '[l] t -> T '[n,n] t
 fillUpperTriangular x =
   zipWithTT @'[n,n]
   (\i j -> let idx :: Scalar Int32
