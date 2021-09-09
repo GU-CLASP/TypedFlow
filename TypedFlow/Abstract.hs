@@ -516,6 +516,10 @@ stopGradient = appRUnit @s #> UnOp StopGradient (typeSShape @s)
 (⊘) :: forall s t. KnownAlgebraic t => KnownShape s => T s t -> T s t -> T s t
 (⊘) = binOp Divide
 
+-- | Divide tensors, broacasting along shape @s@
+floorDiv :: forall s w. KnownBits w => KnownShape s => T s ('Typ 'Int w) -> T s ('Typ 'Int w) -> T s ('Typ 'Int w)
+floorDiv = binOp IntegerDiv
+
 
 -- | Indexwise equality test.
 equal :: forall s t. (KnownShape s, KnownTyp t) => Tensor s t -> Tensor s t -> Tensor s TFBool

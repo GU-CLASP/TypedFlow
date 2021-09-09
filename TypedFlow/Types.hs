@@ -807,6 +807,7 @@ data LogicOp = And | Or
 
 data Simple2Op t u where
   Divide :: KnownAlgebraic t => Simple2Op t t
+  IntegerDiv :: Simple2Op ('Typ 'Int w) ('Typ 'Int w)
   Equal :: KnownTyp t => Simple2Op t TFBool
   Subtract :: KnownNumeric t => Simple2Op t t
   Multiply :: KnownNumeric t => Simple2Op t t

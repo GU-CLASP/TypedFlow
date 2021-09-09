@@ -323,6 +323,7 @@ generatePure' rec sR = knownSShape sR ?> \case
                                    MkComplex -> "tf.complex"
                                    Add -> "tf.add"
                                    Divide -> "tf.divide"
+                                   IntegerDiv -> "tf.math.floordiv"
                                    Equal -> "tf.equal"
                                    Subtract -> "tf.subtract"
                                    Multiply -> "tf.multiply"

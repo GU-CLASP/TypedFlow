@@ -105,7 +105,7 @@ module TypedFlow.TF (
   -- ** complex numbers
   expm, conjugate, realPart,
   -- ** Triangular and band Matrices
-  tril, triu, fillTriangular, fillUpperBand, upperBandIndex,
+  tril, triu, fillTriangular, fillUpperTriangular,
   -- ** Testing conditions
   if_, where_, lessThan,
   -- * Contrib
@@ -274,26 +274,35 @@ fillTriangular x = plusMinusAssoc @l @l @n #> tril 0 (inflate2 (concat0 x rr))
         rr = subIneq @l @n #> slice0 @0 @(l-n) (reverseT x) 
 
 
+
 lookupManyT :: forall s n t. KnownNat n => KnownShape s => (KnownNumeric t) => Scalar t -> T s Int32 -> T '[n] t -> T s t
 lookupManyT def indices array =
   appRUnit @s #> mapTT @s (\idx -> where_ (equal idx (-1)) def (lookupT idx array)) indices
 
--- k: number of bands
-fillUpperBand' :: KnownNumeric t => KnownNat n => KnownNat l => Data.Int.Int32 -> T '[l] t -> T '[n,n] t
-fillUpperBand' k x = lookupManyT zeros (upperBandIndex k) x where
 
-fillUpperBand :: forall k n l t. KnownNat k => KnownNumeric t => KnownNat n => KnownNat l => ((2 * l) ~ (k * (2 * n - k - 1))) => T '[l] t -> T '[n,n] t
-fillUpperBand  = fillUpperBand' (fromIntegral (natVal (Proxy @k)))
+-- | A flexible upper-triangular matrix function. 
+fillUpperTriangular :: forall k n l t. KnownNat k => KnownNumeric t => KnownNat n => KnownNat l => T '[l] t -> T '[n,n] t
+fillUpperTriangular x =
+  zipWithTT @'[n,n]
+  (\i j -> let idx :: Scalar Int32
+               idx = ((i * (2 * n - i - 3)) `floorDiv` 2 + j - 1)
 
+-- The index to lookup in the input array. It is computed from the formula:
+-- Output[i,j] = (j-i-1) + ∑_k^(i-1) (n-k)
+--                              
+-- The term j-i-1 is the distance from the upper diagonal.
+-- The sum is the number of elements in the previous rows
+               
+           in where_ (((j - i) `greaterThan` 0) `logicAnd` (idx `lessThan` l))
+                     (lookupT idx x)
+                     zeros)
+    range0 
+    range1 where
+
+  n, l :: Scalar Int32
+  n = constant (fromIntegral (natVal (Proxy @n)))
+  l = constant (fromIntegral (natVal (Proxy @l)))
   
-upperBandIndex :: forall n. KnownNat n => Data.Int.Int32 -> T '[n,n] Int32
-upperBandIndex k = zipWithTT @'[n,n]
-           (\i j -> where_ (((j - i) `greaterThan` 0) `logicAnd` ((j - i) `lessOrEqualThan` constant k))
-           (i * constant k + (j - i) - constant 1)
-           (constant (-1)))
-  range0 
-  range1 where
-
   -- "j" index
   range1 :: forall n m w. (KnownNat n, KnownNat m) => KnownBits w => T '[n,m] ('Typ 'Int w)
   range1 = broadcastT range
