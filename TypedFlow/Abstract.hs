@@ -172,7 +172,7 @@ broadcast u varyNoise n x = result
         result = f typeSTyp typeSShape x
 
 genTrainingPlaceholder :: Scalar TFBool
-genTrainingPlaceholder = T (Magic "training_placeholder")
+genTrainingPlaceholder = T (ExternalVar (Ref "training_placeholder" typeSShape typeSTyp))
 
 -- | True if the argument does not contain an expression which should be broadcast.
 protoFinished :: Unique -> Bool -> (forall s' t'. T s' t' -> Bool) -> T s t -> Bool
@@ -1030,9 +1030,8 @@ extractVars (GPVariable trainable name i) = do
     Nothing -> return ()
     Just i' -> when (not (null (freeVarsT i'))) $ error "aaaaaaaaarrrrghhh"
   GState {..} <- get
-  let r = Ref (fromIntegral nextVar) typeSShape typeSTyp
-  tell [VarInfo trainable name r i]
-  put GState {nextVar = nextVar+1,..}
+  let r = Ref name typeSShape typeSTyp
+  tell [VarInfo trainable r i]
   return r
 extractVars (GPApp a b) = do f <- extractVars a; x <- extractVars b; return (f x)
 extractVars (GPBind a f) = do

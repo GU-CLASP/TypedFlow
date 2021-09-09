@@ -49,7 +49,7 @@ module TypedFlow.TF (
   persistent,
   modifyPersistent,
   -- ** Placeholders and outputs
-  placeholder,
+  -- placeholder,
   -- peekAt,
   -- peekAtMany,
   -- * Operations
@@ -162,11 +162,8 @@ parameter s p = travTensor parameter' s =<< p
 -- | Declare variable which persists between calls to session.run.
 persistent :: ∀ (shape :: Shape) t. (KnownTyp t,KnownShape shape) => Bool -> String -> T shape t -> Gen (T shape t)
 persistent trainable name initial = do
-  T . Variable <$> GPVariable trainable name (Just initial)
+  T . ExternalVar <$> GPVariable trainable name (Just initial)
 
--- | DO NOT USE
-placeholder :: ∀ (shape :: Shape) t. (KnownTyp t,KnownShape shape) => String -> Gen (T shape t)
-placeholder name = T . Variable <$> GPVariable False name Nothing
 
 -- | Modify a mutable tensor. Attention: for the assignment to happen,
 -- the resulting tensor must be evaluated!

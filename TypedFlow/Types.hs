@@ -623,9 +623,11 @@ type None = 514229 --  fibonnaci prime.
 -- Generation Effects (TODO: move to other module)
 
 data VarInfo = forall s t. VarInfo {varTrainable :: Bool,
-                                    varName :: String,
-                                    varRef :: Ref s t,
+                                    varRef :: Ref String s t,
                                     varInitial :: Maybe (T s t)} 
+
+varName :: VarInfo -> String
+varName VarInfo {varRef =  Ref {..}} = refName
 
 data GState = GState {nextVar :: Integer, -- ^ next free variable
                       genRegularizers :: [Scalar Float32] -- ^ accumulated regularizers
@@ -640,8 +642,8 @@ initialGstate = (GState {nextVar = 0
   
 data Gen a where
   GPId :: Gen Integer
-  GPVariable :: forall (shape :: Shape) t. (KnownTyp t,KnownShape shape) => Bool -> String -> Maybe (T shape t) -> Gen (Ref shape t) 
-  GPModify :: (KnownShape s,KnownTyp t) => Ref s t -> T s t -> Gen (T s t)
+  GPVariable :: forall (shape :: Shape) t. (KnownTyp t,KnownShape shape) => Bool -> String -> Maybe (T shape t) -> Gen (Ref String shape t) 
+  GPModify :: (KnownShape s,KnownTyp t) => Ref Int s t -> T s t -> Gen (T s t)
   GPReturn :: a -> Gen a
   GPState :: (GState -> (a,GState)) -> Gen a
   GPApp :: (Gen (a -> b)) -> Gen a -> Gen b
@@ -676,11 +678,13 @@ data Distribution (s :: Shape) (t :: Typ) where
   UniformD :: Float -> Float -> Distribution s ('Typ 'Float w)
   OrthogonalD  :: Distribution '[m,n] ('Typ 'Float w)
 
-data Ref s t = Ref Int (SShape s) (STyp t)
+data Ref r s t = Ref {refName :: r,
+                      refShape :: SShape s,
+                      refTyp :: STyp t}
 
 data NilOp s t where
-  Magic :: String -> NilOp s t
-  Variable :: Ref s t -> NilOp s t
+  ExternalVar :: Ref String s t -> NilOp s t
+  Variable :: Ref Int s t -> NilOp s t
   Constant :: HaskType t -> NilOp '[] t
   Range :: KnownBits w => Sat KnownNat n -> NilOp '[n] ('Typ 'Int w)
 

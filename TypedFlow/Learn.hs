@@ -192,9 +192,13 @@ genBatchedPlaceholders :: All KnownPlaceholder shapesAndTypes
   => Unique -> Sat KnownNat n -> SList shapesAndTypes -> Gen (Placeholders shapesAndTypes)
 genBatchedPlaceholders _ _ Unit = pure Unit
 genBatchedPlaceholders u n@Sat (name :* names) = do
-  x <- placeholder (holderName name)
+  x <- placeholderInternal (holderName name)
   xs <- genBatchedPlaceholders u n names
   return (PHT (Unbroadcast n u x) :* xs)
+
+
+placeholderInternal :: ∀ (shape :: Shape) t. (KnownTyp t,KnownShape shape) => String -> Gen (T shape t)
+placeholderInternal name = T . ExternalVar <$> GPVariable False name Nothing
 
 
 knownCons :: KnownNat x => Sat KnownShape s -> Sat KnownShape (x ': s)

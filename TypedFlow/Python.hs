@@ -63,7 +63,7 @@ paramDType ::  VarInfo -> Typ
 paramDType (VarInfo {varRef = Ref _ _ t}) = sTypTyp t
 
 paramName :: VarInfo -> String
-paramName (VarInfo {..}) = varName
+paramName (VarInfo {varRef = Ref {..}}) = refName
 
 generateFile :: String -> Python [VarInfo] -> IO ()
 generateFile fname g = do
@@ -131,7 +131,7 @@ gen s = modify $ \PyState{..} -> PyState {genText=genText $$ s,..}
 setGen :: DOC -> Python ()
 setGen d = modify $ \PyState{..} -> PyState {genText=d,..}
 
-(<--) :: Ref s t -> UntypedExpression -> Python ()
+(<--) :: Ref Int s t -> UntypedExpression -> Python ()
 x <-- y = gen (pyVarRepr x <> text "=" <>  y)
 
 -- | save an intermediate result to a variable and save it to
@@ -149,7 +149,7 @@ cache x = do
       modify $ (\g -> g {genAssignTable = M.insert x' (pyVarRepr v) (genAssignTable g)})
       return (pyVarRepr v)
 
-newPyVar' :: forall s t. SShape s -> STyp t -> Python (Ref s t)
+newPyVar' :: forall s t. SShape s -> STyp t -> Python (Ref Int s t)
 newPyVar' s t = knownSShape s ?> (knownTyp t $ newPyVar @s @t)
 
 newId :: Python Integer
@@ -158,18 +158,15 @@ newId = do
   modify $ \PyState{..} -> PyState {genId=genId+1,..}
   return n
 
-newPyVar :: forall s t. KnownShape s => KnownTyp t => Python (Ref s t)
+newPyVar :: forall s t. KnownShape s => KnownTyp t => Python (Ref Int s t)
 newPyVar = do
   n <- newId
   return $ Ref (fromIntegral n) typeSShape typeSTyp
 
 pyVarInfoRepr :: VarInfo -> DOC
-pyVarInfoRepr (VarInfo {..}) =
-  if varTrainable
-  then pyVarRepr varRef
-  else text varName -- use user-provided names for placeholders
+pyVarInfoRepr i = text (varName i)
 
-pyVarRepr :: Ref s t -> DOC
+pyVarRepr :: Ref Int s t -> DOC
 pyVarRepr (Ref n _ _) = text ("var" <> show n)
 
 tuple :: [DOC] -> DOC
@@ -203,11 +200,11 @@ withDOC f g = do
   setGen (before $$ f after)
   return x
 
-assignAny :: UntypedExpression -> Python UntypedExpression
-assignAny x = do
-  v <- newPyVar @'[] @Float32
-  v <-- x
-  return (pyVarRepr v)
+-- assignAny :: UntypedExpression -> Python UntypedExpression
+-- assignAny x = do
+--   v <- newPyVar @'[] @Float32
+--   v <-- x
+--   return (pyVarRepr v)
 
 generate :: Python [VarInfo] -> (String,[VarInfo])
 generate s = (renderWith (PP.Options 92 (const id)) genText, genPyVars)
@@ -265,7 +262,7 @@ generatePure' rec sR = knownSShape sR ?> \case
   Noise noiseId s0 s1 x -> do
     return $ (genDistr x s0 s1) <+> (text "# " <> integer noiseId)
   T op -> return $ case op of
-    Magic v -> text v
+    ExternalVar (Ref v _ _) -> text v
     Variable v -> pyVarRepr v
     (Constant c) -> funcall "tf.constant" [pretty @t c, named "shape" (showSShape sR), named "dtype" (showTyp @t)]
     (Range n@Sat) -> (func "tf.range" [] [("start",integer 0),
@@ -385,20 +382,21 @@ generatePure' rec sR = knownSShape sR ?> \case
 
 type Python a = State PyState a
 
-generateVars :: [VarInfo] -> Python ()
-generateVars genVars = do
+generateParameters :: [VarInfo] -> Python [DOC]
+generateParameters genVars = do
   -- generate variables
-  forM_ genVars $ \v -> case v of
+  forM genVars $ \v -> case v of
       VarInfo {..} -> case varRef of
-        Ref _refId shap typ -> do
+        Ref refId shap typ -> do
           ii <- case varInitial of
             Nothing -> return []
             Just iii -> do
               iiii <- case knownSShape shap of
                 Sat -> knownTyp typ $ generatePure iii
               return [named "initial_value" iiii]
-          varRef <-- funcall "tf.Variable" ([named "name" (string (show (varName))), named "trainable" (bool varTrainable)] ++ ii)
-          return ()
+          var <- newPyVar' shap typ
+          var <-- funcall "tf.Variable" ([named "name" (string (show refId)), named "trainable" (bool varTrainable)] ++ ii)
+          return (pyVarRepr var)
 
 -- interpGen :: Gen a -> Python a
 -- interpGen (GPReturn x) = return x
@@ -473,24 +471,24 @@ compileAlreadyBatched Options{..} model = knownAppend @sy @ps ?> do
       (ModelOutput {..},finalState,genVars) = doExtractVars model'
       (parameters,placeHolders) = partition varTrainable genVars
   genFun "mkModel" [] $ do
-    gen (text "global " <> mconcat (punctuate comma (map pyVarInfoRepr parameters)))
-    generateVars parameters
+    -- gen (text "global " <> mconcat (punctuate comma (map pyVarInfoRepr parameters)))
+    vs <- generateParameters parameters
     gen (text "return " <> dict [("batch_size", (showDim @ bs))
-                                ,("parameters",list (map pyVarInfoRepr parameters))
-                                ,("paramsdict",dict [(varName, pyVarInfoRepr vi) | vi@VarInfo {..} <- parameters])
-                                ,("placeholders",dict [(varName,
+                                ,("parameters",list vs)
+                                ,("paramsdict",dict [(varName p, v) | (p,v) <- zip parameters vs])
+                                ,("placeholders",dict [(varName p,
                                                          case varRef of Ref _id shape typ ->
                                                                           dict [("shape",showSShape shape),
                                                                                  ("dtype",showSTyp typ)])
-                                                      | VarInfo {..} <- placeHolders])
+                                                      | p@VarInfo {..} <- placeHolders])
                                 ])
 
   modify $ \PyState {..} -> PyState {genAssignTable = M.empty,..} -- we can't re-use intermediate computations from initialisers
   gen (text "@tf.function")
-  genFun "runModel" (text "training_placeholder":map pyVarInfoRepr placeHolders) $ do
-    forM_ placeHolders $ \VarInfo{..} ->
-      varRef <-- case varRef of
-        Ref _ _shap typ -> funcall "tf.cast" [text varName,showSTyp typ]  -- load variables with python names into variables with internal names and correct types
+  genFun "runModel" (text "training_placeholder":map pyVarInfoRepr parameters++map pyVarInfoRepr placeHolders) $ do
+    -- forM_ (parameters ++ placeHolders) $ \VarInfo{..} ->
+    --   varRef <-- case varRef of
+    --     Ref _ _shap typ -> funcall "tf.cast" [text varName,showSTyp typ]  -- load variables with python names into variables with internal names and correct types
     loss <- generatePure (reduceSumAll modelLoss + sum (genRegularizers finalState))
     y_ <- generatePure modelY
     accuracy <- generatePure (reduceSumAll modelCorrect)
