@@ -37,7 +37,7 @@ Stability   : experimental
 {-# LANGUAGE UnicodeSyntax #-}
 {-# OPTIONS_GHC -fplugin GHC.TypeLits.KnownNat.Solver #-}
 
-module TypedFlow.Python (compile, compileGen, generateFile) where
+module TypedFlow.Python (compile, compileProbe, compileGen, generateFile) where
 
 import Data.Char (toLower)
 import Data.Proxy
@@ -397,6 +397,7 @@ clipByGlobalNorm maxNorm x = funcall "tf.clip_by_global_norm" [x,float maxNorm] 
 grad :: UntypedExpression -> UntypedExpression -> UntypedExpression
 grad y vars = funcall "tf.gradients" [y, vars]
 
+  
 toPython :: PreparedModel -> Python ()
 toPython PreparedModel {pmPlaceHolders = SomeSuch placeHolders,pmResults = SomeSuch returned,..} = do
   gen (text "import tensorflow as tf")
@@ -441,6 +442,12 @@ compileGen :: forall bs s st1 st2. KnownShape s => (KnownLen st1, KnownLen st2, 
            -> Python [VarInfo]
 compileGen options model = toPython pm >> return pmParams
   where pm@PreparedModel{..} = prepare @bs model
+
+-- | Batchify and compile a model with generic  input to output mapping and states
+compileProbe :: forall bs st1 st2. (KnownLen st1, KnownLen st2, All KnownPlaceholder st1, All KnownPlaceholder st2, KnownNat bs)
+           => Gen (Placeholders st1 -> Placeholders st2)
+           -> Python [VarInfo]
+compileProbe probe = toPython (prepareProbe @bs probe) >> return []
 
 
 pretty :: forall t. KnownTyp t => HaskType t -> DOC

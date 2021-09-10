@@ -42,7 +42,7 @@ module TypedFlow.Learn
     -- other
     simpleModel,
     addRegularizer,
-    prepare,
+    prepare, prepareProbe,
     -- utils
     placeholderName,
   ) where
@@ -210,25 +210,48 @@ data PreparedModel = PreparedModel {pmBatchSize :: Integer,
                                     pmPlaceHolders :: SomeSuch KnownPHS Placeholders,
                                     pmResults :: SomeSuch KnownPHS Placeholders}
 
--- | Prepare compilation by:
+-- | Prepare compilation of a model by:
 -- extracting and exposing parameters 
 -- batching the model
 -- exposing placeholders
 -- consolidating loss and accuracy
 -- adding regularizers to the loss
-prepare :: forall bs st1 st2 s. KnownShape s => (KnownLen st1, KnownLen st2, All KnownPlaceholder st1, All KnownPlaceholder st2, KnownNat bs)
-        => Gen (Placeholders st1 -> Placeholders ('("loss",s,Float32) ': '("accuracy",s,Float32) ': st2)) -> PreparedModel
+prepare :: forall bs st1 st2 s. (KnownShape s, KnownLen st1, KnownLen st2, All KnownPlaceholder st1, All KnownPlaceholder st2, KnownNat bs)
+        => Gen (Placeholders st1 -> Placeholders ('("loss",s,Float32) ': '("accuracy",s,Float32) ': st2))
+        -> PreparedModel
 prepare fGen =
   knownAll (knownBatchModel @bs (allKnown @KnownPlaceholder @st1)) $ -- prove known
   knownAll (knownBatchModel @bs (allKnown @KnownPlaceholder @st2)) $ -- prove known
   let placeHolders = genPlaceholders typeSList
+      batchedResults = batchModel @bs f placeHolders
   in PreparedModel
        {pmBatchSize = natVal (Proxy @bs)
        ,pmParams = filter varTrainable vars
        ,pmPlaceHolders = SomeSuch placeHolders
-       ,pmResults = SomeSuch (consolidate @(bs ': s) @(BPH bs st2) regular (batchModel @bs f placeHolders))
+       ,pmResults = SomeSuch (consolidate @(bs ': s) @(BPH bs st2) regular batchedResults)
        }
   where (f,finalState,vars) = doExtractVars fGen
         regular = sum (genRegularizers finalState)
+
+
+-- | Prepare compilation of a probe by:
+-- extracting and exposing parameters 
+-- batching the model
+-- exposing placeholders
+prepareProbe :: forall bs st1 st2. (KnownLen st1, KnownLen st2, All KnownPlaceholder st1, All KnownPlaceholder st2, KnownNat bs)
+        => Gen (Placeholders st1 -> Placeholders st2)
+        -> PreparedModel
+prepareProbe fGen =
+  knownAll (knownBatchModel @bs (allKnown @KnownPlaceholder @st1)) $ -- prove known
+  knownAll (knownBatchModel @bs (allKnown @KnownPlaceholder @st2)) $ -- prove known
+  let placeHolders = genPlaceholders typeSList
+      batchedResults = batchModel @bs f placeHolders
+  in PreparedModel
+       {pmBatchSize = natVal (Proxy @bs)
+       ,pmParams = filter varTrainable vars
+       ,pmPlaceHolders = SomeSuch placeHolders
+       ,pmResults = SomeSuch batchedResults
+       }
+  where (f,_,vars) = doExtractVars fGen
 
 
