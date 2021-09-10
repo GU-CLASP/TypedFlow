@@ -59,12 +59,12 @@ import GHC.TypeLits
 -- @t@ is the type of the prediction.
 -- @s@ is the shape of the loss and accuracy
 type ModelOutput t predictionShape s
-  = Placeholders '[ '("loss",s,Float32) -- ^ loss associated with the prediction
-                  , '("accuracy",s,Float32)  -- ^ is the above prediction correct?
-                  , '("y_",s++predictionShape,t) -- ^ prediction (which can contain prediction-shaped info)
+  = Placeholders '[ '("loss",s,Float32) -- loss associated with the prediction
+                  , '("accuracy",s,Float32)  -- is the prediction correct?
+                  , '("y_",s++predictionShape,t) -- prediction (which can contain prediction-shaped info)
                   ]
 
-pattern ModelOutput ::  T (s++predictionShape) t ->                T s Float32 ->                T s Float32 -> ModelOutput t predictionShape s
+pattern ModelOutput ::  T (s++predictionShape) t -> T s Float32 -> T s Float32 -> ModelOutput t predictionShape s
 pattern ModelOutput y loss accur = PHT loss :* PHT accur :* PHT y :* Unit
 
 -- | A standard modelling function: (input value, gold value) ↦ (prediction, accuracy, loss).
