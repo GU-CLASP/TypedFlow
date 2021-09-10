@@ -90,16 +90,6 @@ data GS = GS { gsUnique :: Integer,
 
 type G x = State GS x
 
-class Batched (f :: [Shape] -> Type) where
-  -- | Applying an expansion function to all the tensors in the given structure.
-  batchify :: forall n r. KnownNat n => All KnownShape r => Proxy n ->
-    (forall s t. KnownTyp t => KnownShape s => T s t -> G (T (n:s) t)) ->
-    f r -> G (f (Ap (FMap (Cons n)) r))
-
--- | Perform broadcast on all the tensors in the given structure
-broadcastGen  :: KnownNat n => Batched f => All KnownShape r => Unique -> Bool -> Proxy n -> f r -> G (f (Ap (FMap (Cons n)) r))
-broadcastGen u varyNoise n = batchify n (\x -> broadcast u varyNoise n <$> generateBC x)
-
 runBC :: Integer -> State GS a -> a
 runBC u a = fst $ runState a GS { gsUnique = u, gsTable = mempty}
 
@@ -196,18 +186,24 @@ protoFinished u varyNoise rec = \case
   Convolution _bs _inChans _outChans _filterShape _s x filters -> rec x && rec filters
   Pool _ _ _ _ _ x  -> rec x
 
-instance KnownTyp ty => Batched (HTV ty) where
-  batchify = batchifyHTV
 
+class ConsSh (x :: Nat) (p :: (Symbol,Shape,Typ))
+instance Fun (ConsSh x) where type Ap (ConsSh x) p = '(Frst3 p,x ': Scnd3 p,Thrd3 p)
 
-batchifyHTV :: forall n r ty. KnownTyp ty => KnownNat n => All KnownShape r => Proxy n -> (forall s t. KnownTyp t => KnownShape s => T s t -> G (T (n:s) t))
-  -> HTV ty r  -> G (HTV ty (Ap (FMap (Cons n)) r))
-batchifyHTV _ _ Unit = pure Unit
-batchifyHTV n bc (F x :* xs) = do
-  x' <- (bc x)
-  xs' <-  batchifyHTV n bc xs
-  return (F x' :* xs')
+type BPH n ps = (Ap (FMap (ConsSh n)) ps)
+type BatchedPlaceholders n ps = Placeholders (BPH n ps)
 
+batchifyPlaceholders :: forall n ps. KnownNat n => All KnownPlaceholder ps => Proxy n -> (forall s t. KnownTyp t => KnownShape s => T s t -> G (T (n:s) t))
+  -> Placeholders ps  -> G (BatchedPlaceholders n ps)
+batchifyPlaceholders _ _ Unit = pure Unit
+batchifyPlaceholders n bc (PHT x :* xs) = do
+  x' <- bc x
+  xs' <- batchifyPlaceholders n bc xs
+  return (PHT x' :* xs')
+  
+-- | Perform broadcast on all the tensors in the given structure
+broadcastGen  :: forall n (r :: [(Symbol,Shape,Typ)]). KnownNat n => All KnownPlaceholder r => Unique -> Bool -> Proxy n -> Placeholders r -> G (BatchedPlaceholders n r)
+broadcastGen u varyNoise n = batchifyPlaceholders n (\x -> broadcast u varyNoise n <$> generateBC x)
 
 
 -- | Turns a tensor of indices in a container into a tensor of indices

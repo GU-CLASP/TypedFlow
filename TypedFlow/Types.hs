@@ -158,6 +158,9 @@ allKnown' (_ :* xs) = Sat :* allKnown' xs
 allKnown :: forall k s. KnownLen s => All k s => NP (Sat k) s
 allKnown = allKnown' typeSList
 
+data SomeSuch k f where
+  SomeSuch :: k x => f x -> SomeSuch k f
+
 class Fun (c :: k -> Constraint)  where -- FIXME: use type, not constraint?
   type Ap c (t :: k) :: l
 
@@ -192,7 +195,7 @@ newtype F g t s = F {fromF :: g s t}
 -- | Tensor vector. (Elements in the indexing list are ignored.)
 type TV s t = NP (K (Tensor s t))
 
--- | Heterogeneous tensor vector with the same kind of elements
+-- | Heterogeneous tensor vector with varying shapes and the same kind of elements
 type HTV t = NP (F T t)
 
 class Scnd' (x::(a,b))
@@ -209,10 +212,14 @@ type family Frst3 (x :: (a,b,c)) where Frst3 '(x,y,z) = x
 type family Scnd3 (x :: (a,b,c)) where Scnd3 '(x,y,z) = y
 type family Thrd3 (x :: (a,b,c)) where Thrd3 '(x,y,z) = z
 
-class (KnownShape (Scnd3 r), KnownTyp (Thrd3 r), KnownSymbol (Frst3 r)) => KnownPlaceholder r
-instance (KnownShape y, KnownTyp z, KnownSymbol x) => KnownPlaceholder '(x,y,z)
+class (KnownShape (Scnd3 r), KnownTyp (Thrd3 r), KnownSymbol (Frst3 r)) => KnownPlaceholder r where
+  placeHolderRef :: proxy r -> Ref String (Scnd3 r) (Thrd3 r)
+
+instance (KnownShape y, KnownTyp z, KnownSymbol x) => KnownPlaceholder '(x,y,z) where
+  placeHolderRef _ = Ref (symbolVal (Proxy @x)) typeSShape typeSTyp
 class (KnownShape (Frst r), KnownTyp (Scnd r)) => KnownPair r
 instance (KnownShape x, KnownTyp y) => KnownPair '(x,y)
+
 
 newtype Uncurry g (s :: (a,b)) = Uncurry {fromUncurry :: g (Frst s) (Scnd s)}
 
@@ -220,8 +227,8 @@ newtype Uncurry g (s :: (a,b)) = Uncurry {fromUncurry :: g (Frst s) (Scnd s)}
 type HHTV = NP (Uncurry T)
 
 type Placeholders = NP Placeholder
-
-newtype Placeholder (s :: (Symbol,Shape,Typ)) = PHT (T (Scnd3 s) (Thrd3 s))
+type PH = (Symbol,Shape,Typ)
+newtype Placeholder (s :: PH) = PHT (T (Scnd3 s) (Thrd3 s))
 
 hhead :: NP f (x ': xs) -> f x
 hhead (x :* _) = x
@@ -254,6 +261,9 @@ hmapK :: forall k f g xs. All k xs => (forall x. k x => f x -> g x) -> NP f xs -
 hmapK _ Unit = Unit
 hmapK f (x :* xs) = f x :* hmapK @k f xs
 
+hMapToList :: forall k f xs a. All k xs => (forall x. k x => f x -> a) -> NP f xs -> [a]
+hMapToList f = htoList . hmapK @k (K . f)
+
 -- | If NP is in fact a vector, we have a "usual" map.
 kmap :: (a -> b) -> NP (K a) xs -> NP (K b) xs
 kmap _ Unit = Unit
@@ -285,13 +295,14 @@ hzipWith :: (forall x. f x -> g x -> h x) -> NP f xs -> NP g xs -> NP h xs
 hzipWith _ Unit Unit = Unit
 hzipWith f (x :* xs) (y :* ys) = f x y :* hzipWith f xs ys
 
-hfor_ :: Monad m => NP f xs -> (forall x. f x -> m a) -> m ()
-hfor_ Unit _  = return ()
-hfor_ (x :* xs) f = f x >> hfor_ xs f
+hfor :: forall k f xs m a. All k xs => Applicative m => NP f xs -> (forall x. k x => f x -> m a) -> m [a]
+hfor Unit _  = pure []
+hfor (x :* xs) f = (:) <$> f x <*> hfor @k xs f
 
 htoList :: NP (K a) xs -> [a]
 htoList Unit = []
 htoList (K x :* xs) = x : htoList xs
+
 
 hsplit' :: SPeano n -> NP f xs -> (NP f (Take n xs), NP f (Drop n xs))
 hsplit' SZero xs = (Unit,xs)

@@ -168,7 +168,7 @@ persistent trainable name initial = do
 -- | Modify a mutable tensor. Attention: for the assignment to happen,
 -- the resulting tensor must be evaluated!
 modifyPersistent :: (KnownShape s,KnownTyp t) => T s t -> T s t -> Gen (T s t)
-modifyPersistent (T (Variable v)) x = (GPModify v x) -- FIXME: pattern matching here is poor style.
+modifyPersistent (T (Variable v)) x = GPModify v x -- FIXME: pattern matching here is poor style.
 
 -- type family AddSpatialDims xs ys where
 --   AddSpatialDims '[x] '[] = '[x]
@@ -268,7 +268,6 @@ fillTriangular :: forall n l t.
 fillTriangular x = plusMinusAssoc @l @l @n #> tril 0 (inflate2 (concat0 x rr))
   where rr :: Tensor '[l - n] t
         rr = subIneq @l @n #> slice0 @0 @(l-n) (reverseT x) 
-
 
 
 lookupManyT :: forall s n t. KnownNat n => KnownShape s => (KnownNumeric t) => Scalar t -> T s Int32 -> T '[n] t -> T s t

@@ -171,10 +171,6 @@ pyVarRepr (Ref n _ _) = text ("var" <> show n)
 
 tuple :: [DOC] -> DOC
 tuple = parens . sep . punctuate comma
-
--- list :: [DOC] -> DOC
--- list = brackets . sep . punctuate comma
-
 dict :: [(String,DOC)] -> DOC
 dict xs = encloseSep "{" "}" "," [text (show k) <> ":" <> v | (k,v) <- xs]
 
@@ -199,12 +195,6 @@ withDOC f g = do
   after <- gets genText
   setGen (before $$ f after)
   return x
-
--- assignAny :: UntypedExpression -> Python UntypedExpression
--- assignAny x = do
---   v <- newPyVar @'[] @Float32
---   v <-- x
---   return (pyVarRepr v)
 
 generate :: Python [VarInfo] -> (String,[VarInfo])
 generate s = (renderWith (PP.Options 92 (const id)) genText, genPyVars)
@@ -398,35 +388,6 @@ generateParameters genVars = do
           var <-- funcall "tf.Variable" ([named "name" (string (show refId)), named "trainable" (bool varTrainable)] ++ ii)
           return (pyVarRepr var)
 
--- interpGen :: Gen a -> Python a
--- interpGen (GPReturn x) = return x
--- interpGen (GPApp a b) = do x <- interpGen a
---                            y <- interpGen b
---                            return (x y)
--- -- Variable already generated and initialized; here we use it only.
--- interpGen (GPVariable trainable name initial) = do
---   return (text ("self." ++ name))
--- -- interpGen (GPVariable trainable name initial) = do 
--- --   i <- mapM interpGen initial
--- --   v <- newPyVar
--- --   v <-- funcall "tf.Variable" [named "initial_value" i, named "name" (string (show (name))), named "trainable" (bool trainable)]
--- --   return v
--- -- interpGen (GPPlaceholder s t n) = do
--- --   name <- newPyVar' s t
--- --   name <-- funcall "tf.Variable" [named "dtype" (showSTyp t), named "shape" (showSShape s), named "name" (text (show n))]
--- --   return name
--- interpGen (GPModify ref value) = do
---   res <- newPyVar
---   v <- generatePure value
---   res <-- (funcall "tf.assign" [pyVarRepr ref,v])
---   return (T (Variable res))
--- -- interpGen (GPState f) = lift (state f)
-
--- TODO: get the parameters from the genParams field
--- -- | Return a list of parameters.
--- getParameters :: Python UntypedExpression
--- getParameters = return ("tf.trainable_variables()")
-
 -- | Clip a gradient
 clipByGlobalNorm :: Float -> UntypedExpression -> UntypedExpression
 clipByGlobalNorm maxNorm x = funcall "tf.clip_by_global_norm" [x,float maxNorm] <> brackets (int 0)
@@ -436,71 +397,51 @@ clipByGlobalNorm maxNorm x = funcall "tf.clip_by_global_norm" [x,float maxNorm] 
 grad :: UntypedExpression -> UntypedExpression -> UntypedExpression
 grad y vars = funcall "tf.gradients" [y, vars]
 
+toPython :: PreparedModel -> Python ()
+toPython PreparedModel {pmPlaceHolders = SomeSuch placeHolders,pmResults = SomeSuch returned,..} = do
+  gen (text "import tensorflow as tf")
+  -- Static stuff: construct and initialise parameters, list placeholders, etc.
+  genFun "mkModel" [] $ do
+    vs <- generateParameters pmParams
+    gen (text "return " <>
+         dict [("batch_size", integer pmBatchSize)
+              ,("parameters",list vs)
+              ,("paramsdict",dict [(varName p, v) | (p,v) <- zip pmParams vs])
+              ,("placeholders",
+                 dict $ hMapToList @KnownPlaceholder
+                           (\ph -> case placeHolderRef ph of
+                                     Ref nm shape typ ->
+                                        (nm, dict [("shape",showSShape shape), ("dtype",showSTyp typ)]))
+                            placeHolders)])
+  -- Loss/Accur/Predict function
+  modify $ \PyState {..} -> PyState {genAssignTable = M.empty,..} -- we can't re-use intermediate computations from initialisers
+  gen (text "@tf.function")
+  genFun "runModel" (text "training_placeholder":
+                     map pyVarInfoRepr pmParams++
+                     hMapToList @KnownPlaceholder (text . placeholderName) placeHolders) $
+    do returns <- hfor @KnownPlaceholder returned $ \ph@(PHT x) -> do
+         r <- generatePure x
+         return (placeholderName ph,r)
+       gen (text "return " <> dict returns)
+  return ()
+
+
 -- | Batchify and compile a model with simple input to output mapping.
 compile :: forall batchSize sx tx sy ty sy_ ty_ p
         .  (KnownNat batchSize, KnownShape sx, KnownTyp tx, KnownShape sy, KnownTyp ty, KnownShape sy_, KnownTyp ty_, KnownShape p, KnownLen p)
         => Options
         -> Gen (Tensor sx tx -> Tensor sy ty -> ModelOutput  ty_ p sy_)
         -> Python [VarInfo]
-compile options fGen = compileGen @batchSize options (simpleModel <$> fGen)
+compile options fGen = knownSShape (typeSShape @sy_ .+. typeSShape @p) ?> compileGen @batchSize options (simpleModel @p <$> fGen)
 
 -- | Batchify and compile a model with generic  input to output mapping and states
-compileGen :: forall batchSize shapesAndTypes sy_ ty_ ps stateShapes.
-           (KnownNat batchSize, All KnownPlaceholder shapesAndTypes, KnownLen stateShapes,
-            KnownLen shapesAndTypes,
-            All KnownShape stateShapes, KnownShape sy_, KnownTyp ty_, KnownShape ps, KnownLen ps)
-         => Options
-         -> Gen (Placeholders shapesAndTypes -> HTV ty_ stateShapes -> StateAndOutput ty_ ps (sy_ ': stateShapes))
-         -> Python [VarInfo]
-compileGen options fGen = knownAll known (compileAlreadyBatched @batchSize options batched)
-  where (known,batched) = batchModel @batchSize fGen
-
--- | Generic model compilation (do not use unless you know what you're doing)
-compileAlreadyBatched :: forall bs ty stateShapes sy ps. KnownNat bs
-           => KnownTyp ty
-           => KnownShape sy
-           => KnownShape ps
-           => All KnownShape stateShapes
+compileGen :: forall bs s st1 st2. KnownShape s => (KnownLen st1, KnownLen st2, All KnownPlaceholder st1, All KnownPlaceholder st2, KnownNat bs)
            => Options
-           -> (Gen (HTV ty stateShapes,HTV ty stateShapes -> (ModelOutput ty ps sy, HTV ty stateShapes))) -> Python [VarInfo]
-compileAlreadyBatched Options{..} model = knownAppend @sy @ps ?> do
-  gen (text "import tensorflow as tf")
-  let apply' (x,f) = f x
-      model' = fmap (fst . apply') model -- model run on state variables.
-      -- FIXME: run state updates
-      (ModelOutput {..},finalState,genVars) = doExtractVars model'
-      (parameters,placeHolders) = partition varTrainable genVars
-  genFun "mkModel" [] $ do
-    -- gen (text "global " <> mconcat (punctuate comma (map pyVarInfoRepr parameters)))
-    vs <- generateParameters parameters
-    gen (text "return " <> dict [("batch_size", (showDim @ bs))
-                                ,("parameters",list vs)
-                                ,("paramsdict",dict [(varName p, v) | (p,v) <- zip parameters vs])
-                                ,("placeholders",dict [(varName p,
-                                                         case varRef of Ref _id shape typ ->
-                                                                          dict [("shape",showSShape shape),
-                                                                                 ("dtype",showSTyp typ)])
-                                                      | p@VarInfo {..} <- placeHolders])
-                                ])
+           -> Gen (Placeholders st1 -> Placeholders ('("loss",s,Float32) ': '("accuracy",s,Float32) ': st2))
+           -> Python [VarInfo]
+compileGen options model = toPython pm >> return pmParams
+  where pm@PreparedModel{..} = prepare @bs model
 
-  modify $ \PyState {..} -> PyState {genAssignTable = M.empty,..} -- we can't re-use intermediate computations from initialisers
-  gen (text "@tf.function")
-  genFun "runModel" (text "training_placeholder":map pyVarInfoRepr parameters++map pyVarInfoRepr placeHolders) $ do
-    -- forM_ (parameters ++ placeHolders) $ \VarInfo{..} ->
-    --   varRef <-- case varRef of
-    --     Ref _ _shap typ -> funcall "tf.cast" [text varName,showSTyp typ]  -- load variables with python names into variables with internal names and correct types
-    loss <- generatePure (reduceSumAll modelLoss + sum (genRegularizers finalState))
-    y_ <- generatePure modelY
-    accuracy <- generatePure (reduceSumAll modelCorrect)
-    let returns = [("loss", loss)
-                  ,("accuracy", accuracy)
-                  ,("y_", y_)]
-    gen (text "return " <> dict returns)
-  return parameters
-
--- untypedExprs :: All KnownShape xs => KnownTyp t =>  HTV t xs -> Python [DOC]
--- untypedExprs Unit = return []
--- untypedExprs (F x :* xs) = (:) <$> generatePure x <*> untypedExprs xs
 
 pretty :: forall t. KnownTyp t => HaskType t -> DOC
 pretty = case kindVal @(TypKind t) of

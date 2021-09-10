@@ -72,118 +72,118 @@ def runModel(training_placeholder,
              x,
              y):
   
-  #[100,10]
-  var12366=y
   #[100,784]
-  var12367=x
+  var12366=x
   #[100,28,28,1]
-  var12368=tf.reshape(var12367, [100,28,28,1])
+  var12367=tf.reshape(var12366, [100,28,28,1])
   #[5,5,1,32]
-  var12369=f1_filters
+  var12368=f1_filters
   #[100,28,28,32]
-  var12370=tf.nn.convolution(var12368, var12369, padding="SAME", data_format="NHWC")
+  var12369=tf.nn.convolution(var12367, var12368, padding="SAME", data_format="NHWC")
   #[100,784,32]
-  var12371=tf.reshape(var12370, [100,784,32])
+  var12370=tf.reshape(var12369, [100,784,32])
   #[32]
-  var12372=f1_biases
+  var12371=f1_biases
   #[784,32]
-  var12373=tf.broadcast_to(tf.reshape(var12372, [1,32]), [784,32])
+  var12372=tf.broadcast_to(tf.reshape(var12371, [1,32]), [784,32])
   #[100,784,32]
-  var12374=tf.broadcast_to(tf.reshape(var12373, [1,784,32]), [100,784,32])
+  var12373=tf.broadcast_to(tf.reshape(var12372, [1,784,32]), [100,784,32])
   #[100,784,32]
-  var12375=tf.add(var12371, var12374)
+  var12374=tf.add(var12370, var12373)
   #[100,28,28,32]
-  var12376=tf.reshape(var12375, [100,28,28,32])
+  var12375=tf.reshape(var12374, [100,28,28,32])
   #[100,28,28,32]
-  var12377=tf.nn.relu(var12376)
+  var12376=tf.nn.relu(var12375)
   #[100,28,28,32]
-  var12378=tf.reshape(var12377, [100,28,28,32])
+  var12377=tf.reshape(var12376, [100,28,28,32])
   #[100,14,14,32]
-  var12379=tf.nn.pool(var12378, [2,2], "MAX", strides=[2,2], padding="SAME")
+  var12378=tf.nn.pool(var12377, [2,2], "MAX", strides=[2,2], padding="SAME")
   #[100,14,14,32]
-  var12380=tf.reshape(var12379, [100,14,14,32])
+  var12379=tf.reshape(var12378, [100,14,14,32])
   #[5,5,32,64]
-  var12381=f2_filters
+  var12380=f2_filters
   #[100,14,14,64]
-  var12382=tf.nn.convolution(var12380, var12381, padding="SAME", data_format="NHWC")
+  var12381=tf.nn.convolution(var12379, var12380, padding="SAME", data_format="NHWC")
   #[100,196,64]
-  var12383=tf.reshape(var12382, [100,196,64])
+  var12382=tf.reshape(var12381, [100,196,64])
   #[64]
-  var12384=f2_biases
+  var12383=f2_biases
   #[196,64]
-  var12385=tf.broadcast_to(tf.reshape(var12384, [1,64]), [196,64])
+  var12384=tf.broadcast_to(tf.reshape(var12383, [1,64]), [196,64])
   #[100,196,64]
-  var12386=tf.broadcast_to(tf.reshape(var12385, [1,196,64]), [100,196,64])
+  var12385=tf.broadcast_to(tf.reshape(var12384, [1,196,64]), [100,196,64])
   #[100,196,64]
-  var12387=tf.add(var12383, var12386)
+  var12386=tf.add(var12382, var12385)
   #[100,14,14,64]
-  var12388=tf.reshape(var12387, [100,14,14,64])
+  var12387=tf.reshape(var12386, [100,14,14,64])
   #[100,14,14,64]
-  var12389=tf.nn.relu(var12388)
+  var12388=tf.nn.relu(var12387)
   #[100,14,14,64]
-  var12390=tf.reshape(var12389, [100,14,14,64])
+  var12389=tf.reshape(var12388, [100,14,14,64])
   #[100,7,7,64]
-  var12391=tf.nn.pool(var12390, [2,2], "MAX", strides=[2,2], padding="SAME")
+  var12390=tf.nn.pool(var12389, [2,2], "MAX", strides=[2,2], padding="SAME")
   #[100,3136]
-  var12392=tf.reshape(var12391, [100,3136])
+  var12391=tf.reshape(var12390, [100,3136])
   #[3136,1024]
-  var12393=w1_w
+  var12392=w1_w
   #[100,1024]
-  var12394=tf.matmul(var12392, var12393)
+  var12393=tf.matmul(var12391, var12392)
   #[100,1024]
-  var12395=tf.reshape(var12394, [100,1024])
+  var12394=tf.reshape(var12393, [100,1024])
   #[1024]
-  var12396=w1_bias
+  var12395=w1_bias
   #[100,1024]
-  var12397=tf.broadcast_to(tf.reshape(var12396, [1,1024]), [100,1024])
+  var12396=tf.broadcast_to(tf.reshape(var12395, [1,1024]), [100,1024])
   #[100,1024]
-  var12398=tf.add(var12395, var12397)
+  var12397=tf.add(var12394, var12396)
   #[100,1024]
-  var12399=tf.nn.relu(var12398)
+  var12398=tf.nn.relu(var12397)
   #[100,1024]
-  var12400=tf.reshape(var12399, [100,1024])
+  var12399=tf.reshape(var12398, [100,1024])
   #[1024,10]
-  var12401=w2_w
+  var12400=w2_w
   #[100,10]
-  var12402=tf.matmul(var12400, var12401)
+  var12401=tf.matmul(var12399, var12400)
   #[100,10]
-  var12403=tf.reshape(var12402, [100,10])
+  var12402=tf.reshape(var12401, [100,10])
   #[10]
-  var12404=w2_bias
+  var12403=w2_bias
   #[100,10]
-  var12405=tf.broadcast_to(tf.reshape(var12404, [1,10]), [100,10])
+  var12404=tf.broadcast_to(tf.reshape(var12403, [1,10]), [100,10])
   #[100,10]
-  var12406=tf.add(var12403, var12405)
+  var12405=tf.add(var12402, var12404)
   #[100]
-  var12407=tf.nn.softmax_cross_entropy_with_logits(labels=var12366, logits=var12406)
+  var12406=tf.argmax(var12405, axis=1, output_type=tf.int32)
+  #[100,10]
+  var12407=y
   #[100]
-  var12408=tf.reshape(var12407, [100])
+  var12408=tf.argmax(var12407, axis=1, output_type=tf.int32)
+  #[100]
+  var12409=tf.equal(var12406, var12408)
+  #[100]
+  var12410=tf.cast(var12409, tf.float32)
+  #[100]
+  var12411=tf.reshape(var12410, [100])
   #[]
-  var12409=tf.reduce_sum(var12408, axis=0)
+  var12412=tf.reduce_mean(var12411, axis=0)
   #[]
-  var12410=tf.constant(0.0, shape=[], dtype=tf.float32)
+  var12413=tf.constant(0.0, shape=[], dtype=tf.float32)
   #[1]
-  var12411=tf.broadcast_to(tf.reshape(var12410, [1]), [1])
+  var12414=tf.broadcast_to(tf.reshape(var12413, [1]), [1])
   #[]
-  var12412=tf.reshape(var12411, [])
+  var12415=tf.reshape(var12414, [])
   #[]
-  var12413=tf.add(var12409, var12412)
-  #[100,10]
-  var12414=tf.reshape(var12406, [100,10])
-  #[100,10]
-  var12415=tf.nn.softmax(var12414, axis=1)
-  #[100,10]
-  var12416=tf.reshape(var12415, [100,10])
+  var12416=tf.add(var12412, var12415)
   #[100]
-  var12417=tf.argmax(var12406, axis=1, output_type=tf.int32)
+  var12417=tf.nn.softmax_cross_entropy_with_logits(labels=var12407, logits=var12405)
   #[100]
-  var12418=tf.argmax(var12366, axis=1, output_type=tf.int32)
-  #[100]
-  var12419=tf.equal(var12417, var12418)
-  #[100]
-  var12420=tf.cast(var12419, tf.float32)
-  #[100]
-  var12421=tf.reshape(var12420, [100])
+  var12418=tf.reshape(var12417, [100])
   #[]
-  var12422=tf.reduce_sum(var12421, axis=0)
-  return {"loss":var12413,"accuracy":var12422,"y_":var12416}
+  var12419=tf.reduce_mean(var12418, axis=0)
+  #[100,10]
+  var12420=tf.reshape(var12405, [100,10])
+  #[100,10]
+  var12421=tf.nn.softmax(var12420, axis=1)
+  #[100,10]
+  var12422=tf.reshape(var12421, [100,10])
+  return {"loss":var12416,"accuracy":var12419,"y_":var12422}
