@@ -1,3 +1,4 @@
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE PatternSynonyms #-}
 {-|
@@ -38,18 +39,20 @@ module TypedFlow.Learn
   (-- losses:
     sparseCategorical, binary, timedCategorical, categoricalDistribution,sparseCategoricalDensePredictions,
     -- types
-    Model,ModelOutput,PreparedModel(..), Options(..), defaultOptions,
+    Options(..), defaultOptions,
+    Function(..),Model,ModelOutput,
+    PreparedFunction(..), PreparedModel(..),
     -- other
-    simpleModel,
+    simpleModel, modelFunction, probeFunction,
     addRegularizer,
-    prepare, prepareProbe,
+    prepare,
     -- utils
     placeholderName,
   ) where
 
 import Data.Proxy
 import TypedFlow.Types
-import TypedFlow.Types.Proofs (knownAppend, knownAppendS, (?>))
+import TypedFlow.Types.Proofs (knownAppend, knownAppendS, (?>), knownSShape)
 import TypedFlow.Abstract (G,runBC,broadcastGen, type BatchedPlaceholders, type BPH, doExtractVars, ConsSh)
 import TypedFlow.TF
 import Prelude hiding (RealFrac(..))
@@ -166,11 +169,14 @@ genPlaceholders (ph :* names) = PHT (T (ExternalVar (Ref (placeholderName ph) ty
 placeholderName :: forall (ph :: PH)  p. KnownPlaceholder ph => p ph -> String
 placeholderName proxy = refName (placeHolderRef proxy)
 
-simpleModel :: forall p sx tx sy ty sy_ ty_. KnownLen sy_ => (Tensor sx tx -> Tensor sy ty -> ModelOutput  ty_ p sy_) ->
-            (Placeholders '[ '("x",sx, tx), '("y",sy, ty)] -> ModelOutput ty_ p sy_)
-simpleModel f = f'
+simpleModel :: forall p sx tx sy ty sy_ ty_.
+               (KnownShape sy_, KnownShape p, KnownShape sx, KnownTyp ty_, KnownShape sy, KnownTyp tx, KnownTyp ty)
+            => (Tensor sx tx -> Tensor sy ty -> ModelOutput  ty_ p sy_)
+            -> Function 
+simpleModel f = knownAppend @sy_ @p ?> modelFunction "runModel" f'
   where f' :: Placeholders '[ '("x",sx,tx), '("y",sy,ty)] -> ModelOutput ty_ p sy_
         f' (PHT x :* PHT y :* Unit) = f x y
+
 
 -- | Add a term to the loss. This function is intendend to add
 -- regularizers, ie. losses that do not depend on the predicted
@@ -205,10 +211,12 @@ consolidate extraLoss (PHT loss :* PHT accur :* rest) = (PHT (reduceMeanAll loss
 class (All KnownPlaceholder ps, KnownLen ps) => KnownPHS ps
 instance (All KnownPlaceholder ps, KnownLen ps) => KnownPHS ps
 
+data PreparedFunction = PreparedFunction {pfName :: String,
+                                          pfInputs, pfOutputs :: SomeSuch KnownPHS Placeholders}
 data PreparedModel = PreparedModel {pmBatchSize :: Integer,
                                     pmParams :: [VarInfo],
-                                    pmPlaceHolders :: SomeSuch KnownPHS Placeholders,
-                                    pmResults :: SomeSuch KnownPHS Placeholders}
+                                    pmFunctions :: [PreparedFunction]
+                                   }
 
 -- | Prepare compilation of a model by:
 -- extracting and exposing parameters 
@@ -216,42 +224,51 @@ data PreparedModel = PreparedModel {pmBatchSize :: Integer,
 -- exposing placeholders
 -- consolidating loss and accuracy
 -- adding regularizers to the loss
-prepare :: forall bs st1 st2 s. (KnownShape s, KnownLen st1, KnownLen st2, All KnownPlaceholder st1, All KnownPlaceholder st2, KnownNat bs)
-        => Gen (Placeholders st1 -> Placeholders ('("loss",s,Float32) ': '("accuracy",s,Float32) ': st2))
+prepare :: forall bs. (KnownNat bs)
+        => Gen [Function]
         -> PreparedModel
 prepare fGen =
-  knownAll (knownBatchModel @bs (allKnown @KnownPlaceholder @st1)) $ -- prove known
-  knownAll (knownBatchModel @bs (allKnown @KnownPlaceholder @st2)) $ -- prove known
-  let placeHolders = genPlaceholders typeSList
-      batchedResults = batchModel @bs f placeHolders
-  in PreparedModel
-       {pmBatchSize = natVal (Proxy @bs)
-       ,pmParams = filter varTrainable vars
-       ,pmPlaceHolders = SomeSuch placeHolders
-       ,pmResults = SomeSuch (consolidate @(bs ': s) @(BPH bs st2) regular batchedResults)
-       }
-  where (f,finalState,vars) = doExtractVars fGen
+  PreparedModel
+    {pmBatchSize = natVal (Proxy @bs)
+    ,pmParams = filter varTrainable vars
+    ,pmFunctions = flip map fs $ \case
+        ModelFn nm st1 st2 f ->
+          knownAll (knownBatchModel @bs st1) $
+          knownAll (knownBatchModel @bs st2) $
+          knownAll st1 $ 
+          knownAll st2 $ 
+          let placeHolders = genPlaceholders typeSList
+          in PreparedFunction nm
+               (SomeSuch placeHolders)
+               (SomeSuch (consolidate {-@(bs ': s) @(BPH bs st2)-} regular (batchModel @bs f placeHolders)))
+        ProbeFn nm st1 st2 f -> 
+          knownAll (knownBatchModel @bs st1) $
+          knownAll (knownBatchModel @bs st2) $
+          let placeHolders = genPlaceholders typeSList
+          in PreparedFunction nm (SomeSuch placeHolders) (SomeSuch (batchModel @bs f placeHolders))
+    }
+  where (fs,finalState,vars) = doExtractVars fGen
         regular = sum (genRegularizers finalState)
 
+data Function where
+  ModelFn :: (KnownShape s, KnownLen st1, KnownLen st2)
+          => String
+          -> NP (Sat KnownPlaceholder) st1 -> NP (Sat KnownPlaceholder) st2 
+          -> (Placeholders st1 -> Placeholders ('("loss",s,Float32) ': '("accuracy",s,Float32) ': st2)) -> Function
+  ProbeFn :: (KnownLen st1, KnownLen st2, All KnownPlaceholder st1, All KnownPlaceholder st2)
+          => String
+          -> NP (Sat KnownPlaceholder) st1 -> NP (Sat KnownPlaceholder) st2 
+          -> (Placeholders st1 -> Placeholders st2) -> Function
 
--- | Prepare compilation of a probe by:
--- extracting and exposing parameters 
--- batching the model
--- exposing placeholders
-prepareProbe :: forall bs st1 st2. (KnownLen st1, KnownLen st2, All KnownPlaceholder st1, All KnownPlaceholder st2, KnownNat bs)
-        => Gen (Placeholders st1 -> Placeholders st2)
-        -> PreparedModel
-prepareProbe fGen =
-  knownAll (knownBatchModel @bs (allKnown @KnownPlaceholder @st1)) $ -- prove known
-  knownAll (knownBatchModel @bs (allKnown @KnownPlaceholder @st2)) $ -- prove known
-  let placeHolders = genPlaceholders typeSList
-      batchedResults = batchModel @bs f placeHolders
-  in PreparedModel
-       {pmBatchSize = natVal (Proxy @bs)
-       ,pmParams = filter varTrainable vars
-       ,pmPlaceHolders = SomeSuch placeHolders
-       ,pmResults = SomeSuch batchedResults
-       }
-  where (f,_,vars) = doExtractVars fGen
+modelFunction :: (KnownShape s, KnownLen st1, KnownLen st2, All KnownPlaceholder st1, All KnownPlaceholder st2)
+          => String
+          -> (Placeholders st1 -> Placeholders ('("loss",s,Float32) ': '("accuracy",s,Float32) ': st2)) -> Function
+modelFunction nm f = ModelFn nm (allKnown @KnownPlaceholder) (allKnown @KnownPlaceholder) f
+
+
+probeFunction :: (KnownLen st1, KnownLen st2, All KnownPlaceholder st1, All KnownPlaceholder st2)
+          => String
+          -> (Placeholders st1 -> Placeholders st2) -> Function
+probeFunction nm f = ProbeFn nm (allKnown @KnownPlaceholder) (allKnown @KnownPlaceholder) f
 
 

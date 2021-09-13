@@ -37,7 +37,7 @@ Stability   : experimental
 {-# LANGUAGE UnicodeSyntax #-}
 {-# OPTIONS_GHC -fplugin GHC.TypeLits.KnownNat.Solver #-}
 
-module TypedFlow.Python (compile, compileProbe, compileGen, generateFile) where
+module TypedFlow.Python (compile, compileGen, generateFile) where
 
 import Data.Char (toLower)
 import Data.Proxy
@@ -397,9 +397,33 @@ clipByGlobalNorm maxNorm x = funcall "tf.clip_by_global_norm" [x,float maxNorm] 
 grad :: UntypedExpression -> UntypedExpression -> UntypedExpression
 grad y vars = funcall "tf.gradients" [y, vars]
 
+
+fnToPython :: [VarInfo] -> PreparedFunction -> Python ()
+fnToPython params PreparedFunction{pfInputs = SomeSuch placeHolders,
+                                   pfOutputs = SomeSuch returned,..} = do 
+  -- we can't re-use intermediate computations from initialisers or other functions:
+  modify $ \PyState {..} -> PyState {genAssignTable = M.empty,..}
+  gen (text "@tf.function")
+  genFun (pfName <> "_fn") (text "training_placeholder":
+                  map pyVarInfoRepr params ++
+                  hMapToList @KnownPlaceholder (text . placeholderName) placeHolders) $
+    do returns <- hfor @KnownPlaceholder returned $ \ph@(PHT x) -> do
+         r <- generatePure x
+         return (placeholderName ph,r)
+       gen (text "return " <> dict returns)
+       return ()
+  gen (text pfName <> " = " <>
+        dict [
+          ("function",text pfName <> "_fn"),
+          ("placeholders",dict (hMapToList @KnownPlaceholder
+        (\ph -> case placeHolderRef ph of
+                  Ref nm shape typ ->
+                    (nm, dict [("shape",showSShape shape), ("dtype",showSTyp typ)]))
+        placeHolders))])
+  return ()
   
 toPython :: PreparedModel -> Python ()
-toPython PreparedModel {pmPlaceHolders = SomeSuch placeHolders,pmResults = SomeSuch returned,..} = do
+toPython PreparedModel {..} = do
   gen (text "import tensorflow as tf")
   -- Static stuff: construct and initialise parameters, list placeholders, etc.
   genFun "mkModel" [] $ do
@@ -407,25 +431,10 @@ toPython PreparedModel {pmPlaceHolders = SomeSuch placeHolders,pmResults = SomeS
     gen (text "return " <>
          dict [("batch_size", integer pmBatchSize)
               ,("parameters",list vs)
-              ,("paramsdict",dict [(varName p, v) | (p,v) <- zip pmParams vs])
-              ,("placeholders",
-                 dict $ hMapToList @KnownPlaceholder
-                           (\ph -> case placeHolderRef ph of
-                                     Ref nm shape typ ->
-                                        (nm, dict [("shape",showSShape shape), ("dtype",showSTyp typ)]))
-                            placeHolders)])
+              ,("paramsdict",dict [(varName p, v) | (p,v) <- zip pmParams vs])])
   -- Loss/Accur/Predict function
-  modify $ \PyState {..} -> PyState {genAssignTable = M.empty,..} -- we can't re-use intermediate computations from initialisers
-  gen (text "@tf.function")
-  genFun "runModel" (text "training_placeholder":
-                     map pyVarInfoRepr pmParams++
-                     hMapToList @KnownPlaceholder (text . placeholderName) placeHolders) $
-    do returns <- hfor @KnownPlaceholder returned $ \ph@(PHT x) -> do
-         r <- generatePure x
-         return (placeholderName ph,r)
-       gen (text "return " <> dict returns)
+  forM_ pmFunctions (fnToPython pmParams)
   return ()
-
 
 -- | Batchify and compile a model with simple input to output mapping.
 compile :: forall batchSize sx tx sy ty sy_ ty_ p
@@ -433,21 +442,16 @@ compile :: forall batchSize sx tx sy ty sy_ ty_ p
         => Options
         -> Gen (Tensor sx tx -> Tensor sy ty -> ModelOutput  ty_ p sy_)
         -> Python [VarInfo]
-compile options fGen = knownSShape (typeSShape @sy_ .+. typeSShape @p) ?> compileGen @batchSize options (simpleModel @p <$> fGen)
+compile options fGen = knownSShape (typeSShape @sy_ .+. typeSShape @p) ?> compileGen @batchSize options (sequenceA [simpleModel @p <$> fGen])
 
 -- | Batchify and compile a model with generic  input to output mapping and states
-compileGen :: forall bs s st1 st2. KnownShape s => (KnownLen st1, KnownLen st2, All KnownPlaceholder st1, All KnownPlaceholder st2, KnownNat bs)
+compileGen :: forall bs. (KnownNat bs)
            => Options
-           -> Gen (Placeholders st1 -> Placeholders ('("loss",s,Float32) ': '("accuracy",s,Float32) ': st2))
+           -> Gen [Function]
            -> Python [VarInfo]
 compileGen options model = toPython pm >> return pmParams
   where pm@PreparedModel{..} = prepare @bs model
 
--- | Batchify and compile a model with generic  input to output mapping and states
-compileProbe :: forall bs st1 st2. (KnownLen st1, KnownLen st2, All KnownPlaceholder st1, All KnownPlaceholder st2, KnownNat bs)
-           => Gen (Placeholders st1 -> Placeholders st2)
-           -> Python [VarInfo]
-compileProbe probe = toPython (prepareProbe @bs probe) >> return []
 
 
 pretty :: forall t. KnownTyp t => HaskType t -> DOC

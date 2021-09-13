@@ -140,7 +140,7 @@ def train (optimizer, model_static, model_fn,
     '''
     batch_size = model_static["batch_size"]
     train_vars = model_static["parameters"]
-    placeholders_info = model_static["placeholders"]
+    placeholders_info = model_fn["placeholders"]
     stats = []
     def halfEpoch(isTraining):
         totalAccur = 0
@@ -154,7 +154,7 @@ def train (optimizer, model_static, model_fn,
             print(".",end="")
             sys.stdout.flush()
             with tf.GradientTape() as tape:
-                results = model_fn(tf.constant(isTraining, shape=[]), **{**(model_static["paramsdict"]), **cast_inputs})
+                results = model_fn["function"](tf.constant(isTraining, shape=[]), **{**(model_static["paramsdict"]), **cast_inputs})
                 loss = results["loss"]
                 accur = results["accuracy"]
                 grads = tape.gradient(loss, train_vars)
@@ -232,14 +232,16 @@ def predict (model_static, model_fn, xs, result="y_",modelPrefix=""):
     '''Evaluate the model for given input and result.
     Input is given as a dictionary of lists to pass to session.run'''
     bs = model_static["batch_size"]
-    phs = model_static["placeholders"]
+    phs = model_fn["placeholders"]
     k0 = next (iter (phs.keys())) # at least one placeholder is needed
     total_len = len(xs[k0])
     zeros = dict((k,tf.zeros(phs[k]["shape"], dtype=phs[k]["dtype"])) for k in phs.keys())
     results = []
     def run():
         for i in range(0, bs*(-(-total_len//bs)), bs):
-            chunks = dict((k,xs[k][i:i+bs]) for k in xs)
+            chunks = dict((k,tf.zeros(phs["y"]["shape"], dtype=phs["y"]["dtype"])) for k in phs)
+            for k in xs:
+                chunks[k] = xs[k][i:i+bs]
             if i + bs > total_len:
                 origLen = total_len - i
                 for k in xs:
@@ -247,9 +249,8 @@ def predict (model_static, model_fn, xs, result="y_",modelPrefix=""):
             else:
                 origLen = bs
             chunks = {k: tf.cast(v,dtype=phs[k]["dtype"]) for (k,v) in chunks.items()}
-            chunks["y"] = tf.zeros(model_static["placeholders"]["y"]["shape"], dtype=model_static["placeholders"]["y"]["dtype"])
             # print (".")
-            results =model_fn(tf.constant(False, shape=[]), **{**(model_static["paramsdict"]), **chunks}) 
+            results = model_fn["function"](tf.constant(False, shape=[]), **{**(model_static["paramsdict"]), **chunks}) 
             yield results[result][:origLen]
     return np.concatenate(list(run()))
 
