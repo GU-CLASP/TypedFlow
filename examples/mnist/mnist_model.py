@@ -56,21 +56,19 @@ def mkModel():
                        ,"w1_w":var12359
                        ,"w1_bias":var12361
                        ,"w2_w":var12363
-                       ,"w2_bias":var12365}
-         ,"placeholders":{"x":{"shape":[100,784],"dtype":tf.float32}
-                         ,"y":{"shape":[100,10],"dtype":tf.float32}}}
+                       ,"w2_bias":var12365}}
 @tf.function
-def runModel(training_placeholder,
-             f1_filters,
-             f1_biases,
-             f2_filters,
-             f2_biases,
-             w1_w,
-             w1_bias,
-             w2_w,
-             w2_bias,
-             x,
-             y):
+def runModel_fn(training_placeholder,
+                f1_filters,
+                f1_biases,
+                f2_filters,
+                f2_biases,
+                w1_w,
+                w1_bias,
+                w2_w,
+                w2_bias,
+                x,
+                y):
   
   #[100,784]
   var12366=x
@@ -187,3 +185,6 @@ def runModel(training_placeholder,
   #[100,10]
   var12422=tf.reshape(var12421, [100,10])
   return {"loss":var12416,"accuracy":var12419,"y_":var12422}
+runModel = {"function":runModel_fn
+           ,"placeholders":{"x":{"shape":[100,784],"dtype":tf.float32}
+                           ,"y":{"shape":[100,10],"dtype":tf.float32}}}

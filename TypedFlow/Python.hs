@@ -402,7 +402,7 @@ fnToPython :: [VarInfo] -> PreparedFunction -> Python ()
 fnToPython params PreparedFunction{pfInputs = SomeSuch placeHolders,
                                    pfOutputs = SomeSuch returned,..} = do 
   -- we can't re-use intermediate computations from initialisers or other functions:
-  modify $ \PyState {..} -> PyState {genAssignTable = M.empty,..}
+  modify $ \PyState {..} -> PyState {genPureTable = mempty, genAssignTable = M.empty,..}
   gen (text "@tf.function")
   genFun (pfName <> "_fn") (text "training_placeholder":
                   map pyVarInfoRepr params ++
@@ -464,8 +464,7 @@ pretty = case kindVal @(TypKind t) of
     SB32 -> float
     SB64 -> double
 
-data PyState = PyState {
-                       genId :: Integer
+data PyState = PyState {genId :: Integer
                        ,genText :: DOC
                        ,genPureTable :: SSNMap2 Shape Typ T DOC
                        -- ^ Table mapping pointers to their
