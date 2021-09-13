@@ -228,31 +228,38 @@ def Save(sess,saver,ckptfile):
 ################################################################################################
 # Prediction and evaluation
 
-def predict (model_static, model_fn, xs, result="y_",modelPrefix=""):
+def evaluate (model_static, model_fn, xs, result="y_"):
     '''Evaluate the model for given input and result.
     Input is given as a dictionary of lists to pass to session.run'''
     bs = model_static["batch_size"]
     phs = model_fn["placeholders"]
-    k0 = next (iter (phs.keys())) # at least one placeholder is needed
-    total_len = len(xs[k0])
+    if phs:
+        k0 = next (iter (phs.keys())) # 1st placeholder
+        total_len = len(xs[k0]) # total length
+
     zeros = dict((k,tf.zeros(phs[k]["shape"], dtype=phs[k]["dtype"])) for k in phs.keys())
     results = []
     def run():
-        for i in range(0, bs*(-(-total_len//bs)), bs):
-            chunks = dict((k,tf.zeros(phs["y"]["shape"], dtype=phs["y"]["dtype"])) for k in phs)
-            for k in xs:
-                chunks[k] = xs[k][i:i+bs]
-            if i + bs > total_len:
-                origLen = total_len - i
+        if phs:
+            for i in range(0, bs*(-(-total_len//bs)), bs):
+                chunks = dict((k,tf.zeros(phs["y"]["shape"], dtype=phs["y"]["dtype"])) for k in phs)
                 for k in xs:
-                    chunks[k] = list(chunks[k]) + [zeros[k]] * (bs - origLen)  # pad the last chunk
-            else:
-                origLen = bs
+                    chunks[k] = xs[k][i:i+bs]
+                if i + bs > total_len:
+                    origLen = total_len - i
+                    for k in xs:
+                        chunks[k] = list(chunks[k]) + [zeros[k]] * (bs - origLen)  # pad the last chunk
+                else:
+                    origLen = bs
             chunks = {k: tf.cast(v,dtype=phs[k]["dtype"]) for (k,v) in chunks.items()}
-            # print (".")
-            results = model_fn["function"](tf.constant(False, shape=[]), **{**(model_static["paramsdict"]), **chunks}) 
-            yield results[result][:origLen]
+        else:
+            origLen = 1 #
+            chunks = {}
+        results = model_fn["function"](tf.constant(False, shape=[]), **{**(model_static["paramsdict"]), **chunks}) 
+        yield results[result][:origLen]
     return np.concatenate(list(run()))
+
+predict = evaluate
 
 def beam_translate(session, model, k, x, xlen, start_symbol, stop_symbol, debug=None):
     '''Beam translation of ONE input sentence.'''
