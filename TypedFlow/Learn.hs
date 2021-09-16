@@ -86,7 +86,7 @@ sparseCategorical logits y =
   let y_ = argmax0 logits
       modelCorrect = cast (equal y_ y)
       modelLoss = sparseSoftmaxCrossEntropyWithLogits y logits
-  in ModelOutput y_ modelCorrect modelLoss
+  in ModelOutput y_ modelLoss modelCorrect
 
 -- | First type argument is the number of classes.  @categorical
 -- logits gold@ return (prediction, accuracy, loss)
@@ -99,7 +99,7 @@ sparseCategoricalDensePredictions logits y =
       y_ = softmax0 logits
       modelCorrect = cast (equal (argmax0 logits) y)
       modelLoss = sparseSoftmaxCrossEntropyWithLogits y logits
-  in ModelOutput y_ modelCorrect modelLoss
+  in ModelOutput y_ modelLoss modelCorrect
 
 
 -- | First type argument is the number of classes.
@@ -109,8 +109,8 @@ sparseCategoricalDensePredictions logits y =
 categoricalDistribution :: forall nCat. KnownNat nCat => Model '[nCat] Float32 '[nCat] '[nCat] '[] Float32
 categoricalDistribution logits y =
   ModelOutput (softmax0 logits)
-              (cast (equal (argmax0 @'B32 logits) (argmax0 y)))
               (softmaxCrossEntropyWithLogits y logits)
+              (cast (equal (argmax0 @'B32 logits) (argmax0 y)))
   
 
 -- | @timedCategorical targetWeights logits y@
@@ -147,8 +147,8 @@ binary logits y =
   let y_ = cast @Int32 (round sigy_)
       sigy_ = sigmoid logits
   in ModelOutput (y_)
-                 (cast (equal y_ y))
                  (sigmoidCrossEntropyWithLogits (cast @Float32 y) logits)
+                 (cast (equal y_ y))
 
 -- | Model compiler options
 data Options = Options {maxGradientNorm :: Maybe Prelude.Float -- ^ apply gradient clipping
