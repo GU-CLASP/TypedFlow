@@ -185,8 +185,6 @@ addRegularizer :: Scalar Float32 -> Gen ()
 addRegularizer r = GPState  $ \GState{..} -> ((),GState{genRegularizers=r:genRegularizers,..})
 
 
-genBC' :: forall r. (All KnownPlaceholder r) => Placeholders r -> Placeholders r
-genBC' ps = runBC 0 (generateBCMany ps)
        
 knownBatchModel :: forall n ps. KnownNat n => NP (Sat KnownPlaceholder) ps -> NP (Sat KnownPlaceholder) (Ap (FMap (ConsSh n)) ps)
 knownBatchModel Unit = Unit
@@ -234,12 +232,12 @@ prepare fGen =
           in PreparedFunction nm
                True
                (SomeSuch placeHolders)
-               (SomeSuch (consolidate {-@(bs ': s) @(BPH bs st2)-} regular (genBC' (mapPlaceHolders @bs u True f placeHolders))))
+               (SomeSuch (consolidate {-@(bs ': s) @(BPH bs st2)-} regular (runBC 0 (mapPlaceHolders @bs u True f placeHolders))))
         ProbeFn nm st1 st2 f -> 
           knownAll st1 $
           knownAll st2 $
           let placeHolders = genPlaceholders typeSList
-          in PreparedFunction nm False (SomeSuch placeHolders) (SomeSuch (genBC' (f placeHolders)))
+          in PreparedFunction nm False (SomeSuch placeHolders) (SomeSuch (runBC 0 (generateBCMany (f placeHolders))))
     }
   where (fs,finalState,vars) = doExtractVars fGen
         regular = sum (genRegularizers finalState)

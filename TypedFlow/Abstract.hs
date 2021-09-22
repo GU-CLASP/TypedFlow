@@ -801,22 +801,25 @@ broadcastTT x = prodHomo @a @s #>
 type BatchedPlaceholders n ps = Placeholders (BPH n ps)
 type BPH n ps = (Ap (FMap (ConsSh n)) ps)
 
--- | Batch the model (adding one dimension)
+-- | Batch the model (adding one dimension). TODO: this is in fact a generalisaton of mapT, zipT, etc. So this should become a primitive operation and the other ones should be removed.
 mapPlaceHolders :: forall batchSize shapesAndTypes resShapesAndTypes.
            (KnownNat batchSize, KnownLen shapesAndTypes, KnownLen resShapesAndTypes, All KnownPlaceholder shapesAndTypes, All KnownPlaceholder resShapesAndTypes)
          => Unique
          -> Bool
          -> (Placeholders shapesAndTypes -> Placeholders resShapesAndTypes)
-         -> BatchedPlaceholders batchSize shapesAndTypes -> BatchedPlaceholders batchSize resShapesAndTypes
+         -> BatchedPlaceholders batchSize shapesAndTypes -> G (BatchedPlaceholders batchSize resShapesAndTypes)
 mapPlaceHolders u varyNoise f xs = broadcastPlacehoders @batchSize typeSList (f (unbroadcastPlacehoders @batchSize typeSList xs))
  where unbroadcastPlacehoders :: forall n r. KnownNat n => SList r -> BatchedPlaceholders n r -> Placeholders r
        unbroadcastPlacehoders Unit Unit = Unit
        unbroadcastPlacehoders (_ :* ss) (PHT x :* xs) = PHT (Unbroadcast batchSize u x) :* unbroadcastPlacehoders @n ss xs
          where batchSize = natSat @n
 
-       broadcastPlacehoders :: forall n r. All KnownPlaceholder r => KnownNat n => SList r -> Placeholders r -> BatchedPlaceholders n r
-       broadcastPlacehoders Unit Unit = Unit
-       broadcastPlacehoders (_ :* ss) (PHT x :* xs) = PHT (broadcast u varyNoise batchSize x) :* broadcastPlacehoders @n ss xs
+       broadcastPlacehoders :: forall n r. All KnownPlaceholder r => KnownNat n => SList r -> Placeholders r -> G (BatchedPlaceholders n r)
+       broadcastPlacehoders Unit Unit = return Unit
+       broadcastPlacehoders (_ :* ss) (PHT x :* xs) = do
+         x' <- broadcast u varyNoise batchSize <$> generateBC x
+         xs' <- broadcastPlacehoders @n ss xs
+         return (PHT x' :* xs') 
          where batchSize = natSat @n
 
 
