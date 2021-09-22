@@ -242,7 +242,7 @@ def evaluate (model_static, model_fn, xs, result="y_"):
                              dtype=phs[k]["dtype"])) for k in phs.keys())
     results = []
     if model_fn["batched"]:
-      def run():
+        def run():
           bs = model_static["batch_size"]
           for i in range(0, bs*(-(-total_len//bs)), bs):
               print(".",end="")
@@ -261,11 +261,11 @@ def evaluate (model_static, model_fn, xs, result="y_"):
               yield results[result][:origLen]
         return np.concatenate(list(run()))
     else:
-      def run():
-          for i in range(total[len]):
-              inputs = {k: tf.cast(xs[i][k], dtype=phs[k]["dtype"]) for k in phs}
-              yield model_fn["function"](tf.constant(False, shape=[]), **{**(model_static["paramsdict"]), **inputs})
-      return run()
+        def run():
+            for i in range(total[len]):
+                inputs = {k: tf.cast(xs[i][k], dtype=phs[k]["dtype"]) for k in phs}
+                yield model_fn["function"](tf.constant(False, shape=[]), **{**(model_static["paramsdict"]), **inputs})
+        return run()
         
 
 predict = evaluate
