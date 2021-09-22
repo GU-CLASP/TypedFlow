@@ -418,7 +418,7 @@ fnToPython params PreparedFunction{pfInputs = SomeSuch placeHolders,
   gen (text pfName <> " = " <>
         dict [
           ("function",text pfName <> "_fn"),
-          ("batched",text (map toLower (show pfBatched))),
+          ("batched",bool pfBatched),
           ("placeholders",dict (hMapToList @KnownPlaceholder
         (\ph -> case placeHolderRef ph of
                   Ref nm shape typ ->
