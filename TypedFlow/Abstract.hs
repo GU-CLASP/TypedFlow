@@ -277,7 +277,9 @@ protoBroadcast :: forall n s t.
 protoBroadcast u varyNoise n@(Sat) rec finished ty s tensor
   | finished tensor = simpleBC
   | otherwise = knownTyp ty $ case tensor of
-  MapT _ _ _ _ -> error "MapT case remaining, this should have been dealt with by generateBC"
+  MapT {} -> error "MapT case remaining, this should have been dealt with by generateBC"
+  ZipT {} -> error "ZipT case remaining, this should have been dealt with by generateBC"
+  Zip3T {} -> error "Zip3T case remaining, this should have been dealt with by generateBC"
   Softmax bs@Sat m@Sat x -> prodAssocS n bs m #> reshapeAuto (Softmax (satMul n bs) m ((reshapeAuto (rec (typeSShape) x))))
   DirectBroadcast s0 s1 s2 s3 x -> DirectBroadcast (n :* s0) s1 s2 s3 (rec (s0 .+. s2) x)
   GatherND cs es is x ix
