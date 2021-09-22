@@ -288,3 +288,20 @@ def beam_translate(session, model, k, x, xlen, start_symbol, stop_symbol, debug=
         (probs,ys,hist) = zip(*continued)
     return sorted(results)
 
+######################################################
+# Saving and loading
+
+def save(model_static, file):
+  numpy_tensors = {k:v.numpy() for (k,v) in model_static["paramsdict"].items()}
+  print("Saving parameters: ", model_static["paramsdict"].keys())
+  np.savez(file,**numpy_tensors)
+  print("Done")
+
+
+def load(model_static, file):
+  print("Loading parameters")
+  numpy_tensors = np.load(file)
+  print("Loaded parameters: ", list(numpy_tensors.keys()))
+  for k,v in model_static["paramsdict"].items():
+      v.assign(numpy_tensors[k])
+  print("Done")
