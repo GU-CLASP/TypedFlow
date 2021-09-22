@@ -228,10 +228,10 @@ def Save(sess,saver,ckptfile):
 ################################################################################################
 # Prediction and evaluation
 
+
 def evaluate (model_static, model_fn, xs, result="y_"):
     '''Evaluate the model for given input and result.
     Input is given as a dictionary of lists to pass to session.run'''
-    bs = model_static["batch_size"]
     phs = model_fn["placeholders"]
     if phs:
         k0 = next (iter (phs.keys())) # 1st placeholder
@@ -241,23 +241,32 @@ def evaluate (model_static, model_fn, xs, result="y_"):
     zeros = dict((k,tf.zeros(phs[k]["shape"][1:], # remove the batch size
                              dtype=phs[k]["dtype"])) for k in phs.keys())
     results = []
-    def run():
-        for i in range(0, bs*(-(-total_len//bs)), bs):
-            print(".",end="")
-            chunks = dict()
-            for k in phs:
-                chunks[k] = xs[k][i:i+bs]
-            if i + bs > total_len:
-                # dealing with an incomplete last chunk
-                origLen = total_len - i
-                for k in chunks:
-                    chunks[k] = list(chunks[k]) + [zeros[k]] * (bs - origLen)  # pad the last chunk
-            else:
-                origLen = bs
-            chunks = {k: tf.cast(v,dtype=phs[k]["dtype"]) for (k,v) in chunks.items()}
-            results = model_fn["function"](tf.constant(False, shape=[]), **{**(model_static["paramsdict"]), **chunks}) 
-            yield results[result][:origLen]
-    return np.concatenate(list(run()))
+    if model_fn["batched"]:
+      def run():
+          bs = model_static["batch_size"]
+          for i in range(0, bs*(-(-total_len//bs)), bs):
+              print(".",end="")
+              chunks = dict()
+              for k in phs:
+                  chunks[k] = xs[k][i:i+bs]
+              if i + bs > total_len:
+                  # dealing with an incomplete last chunk
+                  origLen = total_len - i
+                  for k in chunks:
+                      chunks[k] = list(chunks[k]) + [zeros[k]] * (bs - origLen)  # pad the last chunk
+              else:
+                  origLen = bs
+              chunks = {k: tf.cast(v,dtype=phs[k]["dtype"]) for (k,v) in chunks.items()}
+              results = model_fn["function"](tf.constant(False, shape=[]), **{**(model_static["paramsdict"]), **chunks}) 
+              yield results[result][:origLen]
+        return np.concatenate(list(run()))
+    else:
+      def run():
+          for i in range(total[len]):
+              inputs = {k: tf.cast(xs[i][k], dtype=phs[k]["dtype"]) for k in phs}
+              yield model_fn["function"](tf.constant(False, shape=[]), **{**(model_static["paramsdict"]), **inputs})
+      return run()
+        
 
 predict = evaluate
 
