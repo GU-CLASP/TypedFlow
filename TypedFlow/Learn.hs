@@ -53,7 +53,7 @@ module TypedFlow.Learn
 import Data.Proxy
 import TypedFlow.Types
 import TypedFlow.Types.Proofs (knownAppend, knownAppendS, (?>), knownSShape)
-import TypedFlow.Abstract (G,runBC,broadcastGen, type BatchedPlaceholders, type BPH, doExtractVars, ConsSh)
+import TypedFlow.Abstract (G,runBC, generateBCMany,doExtractVars, ConsSh, generateBC, broadcast, mapPlaceHolders)
 import TypedFlow.TF
 import Prelude hiding (RealFrac(..))
 import GHC.TypeLits
@@ -184,18 +184,9 @@ simpleModel f = knownAppend @sy_ @p ?> modelFunction "runModel" f'
 addRegularizer :: Scalar Float32 -> Gen ()
 addRegularizer r = GPState  $ \GState{..} -> ((),GState{genRegularizers=r:genRegularizers,..})
 
--- | Batch the model (adding one dimension)
-batchModel :: forall batchSize shapesAndTypes resShapesAndTypes.
-           (KnownNat batchSize, KnownLen shapesAndTypes, All KnownPlaceholder shapesAndTypes, All KnownPlaceholder resShapesAndTypes)
-         => (Placeholders shapesAndTypes -> Placeholders resShapesAndTypes)
-         -> (BatchedPlaceholders batchSize shapesAndTypes -> BatchedPlaceholders batchSize resShapesAndTypes)
-batchModel f xs = runBC u (broadcastGen @batchSize @resShapesAndTypes u True (Proxy @batchSize) (f (unbroadcastPlacehoders @batchSize typeSList xs)))
- where u = -777 -- unique identifier for the batch dimension
 
-       unbroadcastPlacehoders :: forall n r. KnownNat n => SList r -> BatchedPlaceholders n r -> Placeholders r
-       unbroadcastPlacehoders Unit Unit = Unit
-       unbroadcastPlacehoders (_ :* ss) (PHT x :* xs) = PHT (Unbroadcast batchSize u x) :* unbroadcastPlacehoders @n ss xs
-         where batchSize = natSat @n
+genBC' :: forall r. (All KnownPlaceholder r) => Placeholders r -> Placeholders r
+genBC' ps = runBC 0 (generateBCMany ps)
        
 knownBatchModel :: forall n ps. KnownNat n => NP (Sat KnownPlaceholder) ps -> NP (Sat KnownPlaceholder) (Ap (FMap (ConsSh n)) ps)
 knownBatchModel Unit = Unit
@@ -239,15 +230,16 @@ prepare fGen =
           knownAll st1 $ 
           knownAll st2 $ 
           let placeHolders = genPlaceholders typeSList
+              u = -777 -- magic unique identifier for the batch dimension
           in PreparedFunction nm
                True
                (SomeSuch placeHolders)
-               (SomeSuch (consolidate {-@(bs ': s) @(BPH bs st2)-} regular (batchModel @bs f placeHolders)))
+               (SomeSuch (consolidate {-@(bs ': s) @(BPH bs st2)-} regular (genBC' (mapPlaceHolders @bs u True f placeHolders))))
         ProbeFn nm st1 st2 f -> 
           knownAll st1 $
           knownAll st2 $
           let placeHolders = genPlaceholders typeSList
-          in PreparedFunction nm False (SomeSuch placeHolders) (SomeSuch (f placeHolders))
+          in PreparedFunction nm False (SomeSuch placeHolders) (SomeSuch (genBC' (f placeHolders)))
     }
   where (fs,finalState,vars) = doExtractVars fGen
         regular = sum (genRegularizers finalState)

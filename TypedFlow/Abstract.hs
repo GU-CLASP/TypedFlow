@@ -190,21 +190,13 @@ protoFinished u varyNoise rec = \case
 class ConsSh (x :: Nat) (p :: (Symbol,Shape,Typ))
 instance Fun (ConsSh x) where type Ap (ConsSh x) p = '(Frst3 p,x ': Scnd3 p,Thrd3 p)
 
-type BPH n ps = (Ap (FMap (ConsSh n)) ps)
-type BatchedPlaceholders n ps = Placeholders (BPH n ps)
 
-batchifyPlaceholders :: forall n ps. KnownNat n => All KnownPlaceholder ps => Proxy n -> (forall s t. KnownTyp t => KnownShape s => T s t -> G (T (n:s) t))
-  -> Placeholders ps  -> G (BatchedPlaceholders n ps)
-batchifyPlaceholders _ _ Unit = pure Unit
-batchifyPlaceholders n bc (PHT x :* xs) = do
-  x' <- bc x
-  xs' <- batchifyPlaceholders n bc xs
+generateBCMany :: All KnownPlaceholder ps => Placeholders ps -> G (Placeholders ps)
+generateBCMany Unit = return Unit
+generateBCMany (PHT x :* xs) = do
+  x' <- generateBC x
+  xs' <- generateBCMany xs
   return (PHT x' :* xs')
-  
--- | Perform broadcast on all the tensors in the given structure
-broadcastGen  :: forall n (r :: [(Symbol,Shape,Typ)]). KnownNat n => All KnownPlaceholder r => Unique -> Bool -> Proxy n -> Placeholders r -> G (BatchedPlaceholders n r)
-broadcastGen u varyNoise n = batchifyPlaceholders n (\x -> broadcast u varyNoise n <$> generateBC x)
-
 
 -- | Turns a tensor of indices in a container into a tensor of indices
 -- in a container of higher rank. The added indexed dimension
@@ -801,6 +793,28 @@ broadcastTT x = prodHomo @a @s #>
                 knownProduct @a ?>
                 knownAppend @a @s ?>
                 reshape (broadcastT @(Product a) x)
+
+type BatchedPlaceholders n ps = Placeholders (BPH n ps)
+type BPH n ps = (Ap (FMap (ConsSh n)) ps)
+
+-- | Batch the model (adding one dimension)
+mapPlaceHolders :: forall batchSize shapesAndTypes resShapesAndTypes.
+           (KnownNat batchSize, KnownLen shapesAndTypes, KnownLen resShapesAndTypes, All KnownPlaceholder shapesAndTypes, All KnownPlaceholder resShapesAndTypes)
+         => Unique
+         -> Bool
+         -> (Placeholders shapesAndTypes -> Placeholders resShapesAndTypes)
+         -> BatchedPlaceholders batchSize shapesAndTypes -> BatchedPlaceholders batchSize resShapesAndTypes
+mapPlaceHolders u varyNoise f xs = broadcastPlacehoders @batchSize typeSList (f (unbroadcastPlacehoders @batchSize typeSList xs))
+ where unbroadcastPlacehoders :: forall n r. KnownNat n => SList r -> BatchedPlaceholders n r -> Placeholders r
+       unbroadcastPlacehoders Unit Unit = Unit
+       unbroadcastPlacehoders (_ :* ss) (PHT x :* xs) = PHT (Unbroadcast batchSize u x) :* unbroadcastPlacehoders @n ss xs
+         where batchSize = natSat @n
+
+       broadcastPlacehoders :: forall n r. All KnownPlaceholder r => KnownNat n => SList r -> Placeholders r -> BatchedPlaceholders n r
+       broadcastPlacehoders Unit Unit = Unit
+       broadcastPlacehoders (_ :* ss) (PHT x :* xs) = PHT (broadcast u varyNoise batchSize x) :* broadcastPlacehoders @n ss xs
+         where batchSize = natSat @n
+
 
 -- | Map a function along the first dimension of a tensor
 mapT :: forall n s r t u. KnownShape s => KnownNat n => KnownTyp t => KnownLen r => KnownLen s
