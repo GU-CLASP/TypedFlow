@@ -398,7 +398,7 @@ grad :: UntypedExpression -> UntypedExpression -> UntypedExpression
 grad y vars = funcall "tf.gradients" [y, vars]
 
 
-fnToPython :: [VarInfo] -> PreparedFunction -> Python ()
+fnToPython ::[VarInfo] -> PreparedFunction -> Python ()
 fnToPython params PreparedFunction{pfInputs = SomeSuch placeHolders,
                                    pfOutputs = SomeSuch returned,..} = do 
   -- we can't re-use intermediate computations from initialisers or other functions:
@@ -415,6 +415,7 @@ fnToPython params PreparedFunction{pfInputs = SomeSuch placeHolders,
   gen (text pfName <> " = " <>
         dict [
           ("function",text pfName <> "_fn"),
+          ("batched",text (map toLower (show pfBatched))),
           ("placeholders",dict (hMapToList @KnownPlaceholder
         (\ph -> case placeHolderRef ph of
                   Ref nm shape typ ->

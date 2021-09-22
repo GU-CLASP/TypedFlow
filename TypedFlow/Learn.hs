@@ -212,6 +212,7 @@ class (All KnownPlaceholder ps, KnownLen ps) => KnownPHS ps
 instance (All KnownPlaceholder ps, KnownLen ps) => KnownPHS ps
 
 data PreparedFunction = PreparedFunction {pfName :: String,
+                                          pfBatched :: Bool,
                                           pfInputs, pfOutputs :: SomeSuch KnownPHS Placeholders}
 data PreparedModel = PreparedModel {pmBatchSize :: Integer,
                                     pmParams :: [VarInfo],
@@ -239,13 +240,14 @@ prepare fGen =
           knownAll st2 $ 
           let placeHolders = genPlaceholders typeSList
           in PreparedFunction nm
+               True
                (SomeSuch placeHolders)
                (SomeSuch (consolidate {-@(bs ': s) @(BPH bs st2)-} regular (batchModel @bs f placeHolders)))
         ProbeFn nm st1 st2 f -> 
-          knownAll (knownBatchModel @bs st1) $
-          knownAll (knownBatchModel @bs st2) $
+          knownAll st1 $
+          knownAll st2 $
           let placeHolders = genPlaceholders typeSList
-          in PreparedFunction nm (SomeSuch placeHolders) (SomeSuch (batchModel @bs f placeHolders))
+          in PreparedFunction nm False (SomeSuch placeHolders) (SomeSuch (f placeHolders))
     }
   where (fs,finalState,vars) = doExtractVars fGen
         regular = sum (genRegularizers finalState)
