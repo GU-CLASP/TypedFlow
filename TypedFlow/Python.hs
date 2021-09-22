@@ -229,7 +229,10 @@ genDistr d sh s1 = case d of
 
 generatePure' :: forall s t. KnownTyp t => (forall s' t'. KnownTyp t' => SShape s' -> T s' t' -> Python DOC) -> SShape s -> T s t -> Python DOC
 generatePure' rec sR = knownSShape sR ?> \case
-  Unbroadcast{} -> error "broadcasting operation did not complete!"
+  Unbroadcast{} -> error "broadcasting operation did not complete (Unbroadcast)!"
+  MapT {} -> error "broadcasting operation did not complete (mapT)!"
+  ZipT {} -> error "broadcasting operation did not complete (ZipT)!"
+  Zip3T {} -> error "broadcasting operation did not complete (Zip3T)!"
   If c x y -> do
     rc <- rec typeSShape c
     rx <- rec typeSShape x
@@ -369,7 +372,7 @@ generatePure' rec sR = knownSShape sR ?> \case
   Softmax _ _ x -> do
      rx <- rec typeSShape x
      return $ func "tf.nn.softmax" [rx] [("axis","1")]
-
+  _ -> error "Python compiler: case not covered"
 type Python a = State PyState a
 
 generateParameters :: [VarInfo] -> Python [DOC]
