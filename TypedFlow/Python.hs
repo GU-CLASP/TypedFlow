@@ -372,7 +372,7 @@ generatePure' rec sR = knownSShape sR ?> \case
   Softmax _ _ x -> do
      rx <- rec typeSShape x
      return $ func "tf.nn.softmax" [rx] [("axis","1")]
-  _ -> error "Python compiler: case not covered"
+  -- _ -> error "Python compiler: case not covered"
 type Python a = State PyState a
 
 generateParameters :: [VarInfo] -> Python [DOC]

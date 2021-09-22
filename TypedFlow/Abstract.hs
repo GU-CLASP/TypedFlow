@@ -168,6 +168,8 @@ genTrainingPlaceholder = T (ExternalVar (Ref "training_placeholder" typeSShape t
 protoFinished :: Unique -> Bool -> (forall s' t'. T s' t' -> Bool) -> T s t -> Bool
 protoFinished u varyNoise rec = \case
   MapT _ s f x -> rec x && rec (f (T (Variable (Ref 0 s typeSTyp))))
+  ZipT _ s0 s1 f x y -> rec x && rec y && rec (f (T (Variable (Ref 0 s0 typeSTyp))) (T (Variable (Ref 0 s1 typeSTyp))))  
+  Zip3T _ s0 s1 s2 f x y z -> rec x && rec y && rec z && rec (f (T (Variable (Ref 0 s0 typeSTyp))) (T (Variable (Ref 0 s1 typeSTyp))) (T (Variable (Ref 0 s2 typeSTyp))))  
   Softmax _ _ x -> rec x
   DirectBroadcast _ _ _ _ x -> rec x
   GatherND _ _ _ x y -> rec x && rec y
