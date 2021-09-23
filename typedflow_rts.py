@@ -262,10 +262,11 @@ def evaluate (model_static, model_fn, xs, result="y_"):
         return np.concatenate(list(run()))
     else:
         def run():
-            for i in range(total[len]):
-                inputs = {k: tf.cast(xs[i][k], dtype=phs[k]["dtype"]) for k in phs}
-                yield model_fn["function"](tf.constant(False, shape=[]), **{**(model_static["paramsdict"]), **inputs})
-        return run()
+            for i in range(total_len):
+                inputs = {k: tf.cast(xs[k][i], dtype=phs[k]["dtype"]) for k in phs}
+                results = model_fn["function"](tf.constant(False, shape=[]), **{**(model_static["paramsdict"]), **inputs})
+                yield results[result]
+        return list(run())
         
 
 predict = evaluate
