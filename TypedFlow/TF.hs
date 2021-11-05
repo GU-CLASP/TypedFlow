@@ -83,7 +83,8 @@ module TypedFlow.TF (
   stack0, unstack0,
   stack1,
   concatT, concat0, concat1,
-  consT0, snocT0, tailT0, initT0,
+  consT0, snocT0,
+  headT0, tailT0, initT0,
   -- ** Reshaping
   expandDim,
   expandDim0, squeeze0,
@@ -229,6 +230,9 @@ consT0 x xs = plusComm @1 @n #> concat0 (expandDim0 x) xs
 snocT0 :: forall n s t. KnownTyp t => KnownShape s => KnownNat n =>  KnownLen s => T (n ': s) t -> T s t -> T (n+1 ': s) t
 snocT0 xs x = concat0 xs (expandDim0 x)
 
+headT0 :: forall n s t. KnownTyp t => KnownShape s => KnownNat n =>  T (n+1 ': s) t -> T (s) t
+headT0 xs = lookupT zeros xs
+
 tailT0 :: forall n s t. KnownTyp t => KnownShape s => KnownNat n =>  T (n+1 ': s) t -> T (n ': s) t
 tailT0 xs = incrPos @n              #> -- 0 < n+1
             plusMinusAssoc @n @1 @1 #> -- (n+1) - 1 = -- n+ (1 - 1)
@@ -252,10 +256,14 @@ infixl 7 ∙
 x · y = reduceSum0 (x ⊙ y)
 infixl 7 ·
 
-
+-- | 2-Norm of a vector
 norm :: KnownBits t => KnownNat n
      => T '[n] (Flt t) -> Scalar (Flt t)
-norm = sqrt . reduceSumAll . square
+norm = frobNorm
+
+-- | 2-Norm of a tensor
+frobNorm :: KnownShape s => KnownBits t => T s (Flt t) -> Scalar (Flt t)
+frobNorm = sqrt . reduceSumAll . square
 
 normalize :: (KnownNat n, KnownBits t) =>
                    T '[n] (Flt t) -> T '[n] (Flt t)
@@ -270,12 +278,13 @@ fillTriangular x = plusMinusAssoc @l @l @n #> tril 0 (inflate2 (concat0 x rr))
         rr = subIneq @l @n #> slice0 @0 @(l-n) (reverseT x) 
 
 
+-- @lookupManyT def indices array@ lokup indices in array, returning def if the index is -1
 lookupManyT :: forall s n t. KnownNat n => KnownShape s => (KnownNumeric t) => Scalar t -> T s Int32 -> T '[n] t -> T s t
 lookupManyT def indices array =
   appRUnit @s #> mapTT @s (\idx -> where_ (equal idx (-1)) def (lookupT idx array)) indices
 
 
--- | A flexible upper-triangular matrix function. 
+-- | A flexible upper-triangular matrix function: fill the upper triangle with l elements. 
 fillUpperTriangular :: forall n l t. KnownNumeric t => KnownNat n => KnownNat l => T '[l] t -> T '[n,n] t
 fillUpperTriangular x =
   zipWithTT @'[n,n]
