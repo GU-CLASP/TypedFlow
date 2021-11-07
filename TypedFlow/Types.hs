@@ -845,7 +845,7 @@ data BinOp s1 t1 s2 t2 s3 t3 where
 -- deriving instance Show (BinOp a b c d e f)
 
 data Permutation (s :: [k]) (t :: [k]) where
-  PermId :: Permutation s t
+  PermId :: Permutation s s
   PermSkip :: Permutation s t -> Permutation (n ': s) (n ': t)
   PermSwap :: Permutation (n ': m ': s) (m ': n ': s)
   PermTrans :: Permutation s t -> Permutation t u -> Permutation s u

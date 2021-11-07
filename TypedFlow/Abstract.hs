@@ -763,21 +763,26 @@ permN01 :: SList s -> Proxy m -> Proxy n -> Permutation (s ++ [m,n]) (s ++ [n,m]
 permN01 Unit _ _ = PermSwap
 permN01 ((:*) _n s) m n = PermSkip (permN01 s m n)
 
+doTranspose :: SShape s0 -> Permutation s0 s -> T s0 t -> T s t
+doTranspose _  p (Transpose sh' q x) = doTranspose sh' (PermTrans q p) x
+doTranspose sh p x = Transpose sh p x
+
+
 -- | Transposition. See the type for the permutation of dimensions.
 transposeN :: ∀ s n t. KnownNat n => KnownShape s => T (n ': s) t -> T (s ++ '[n]) t
-transposeN  = Transpose typeSShape (permN (typeSList @s))
+transposeN  = doTranspose typeSShape (permN (typeSList @s))
 
 -- | Transposition. See the type for the permutation of dimensions.
 transposeN' :: ∀ s n t. KnownNat n => KnownShape s => T (s ++ '[n]) t -> T (n ': s) t
-transposeN' = Transpose (typeSShape @s *: (natSat @n)) (inversePerm (permN (typeSList @s)))
+transposeN' = doTranspose (typeSShape @s *: (natSat @n)) (inversePerm (permN (typeSList @s)))
 
 -- | Transposition. See the type for the permutation of dimensions.
 transpose01 :: ∀ s m n t. KnownNat n => KnownNat m => KnownShape s => T (m ': n ': s) t -> T (n ': m ': s) t
-transpose01 = Transpose typeSShape PermSwap
+transpose01 = doTranspose typeSShape PermSwap
 
 -- | Transposition. See the type for the permutation of dimensions.
 transposeN01 :: ∀ s m n t. KnownNat n => KnownNat m => KnownShape s => T (s ++ [m,n]) t -> T (s ++ [n,m]) t
-transposeN01 = Transpose (typeSShape @s .+. typeSShape @'[m,n]) (permN01 (typeSList @s) (Proxy @m) (Proxy @n))
+transposeN01 = doTranspose (typeSShape @s .+. typeSShape @'[m,n]) (permN01 (typeSList @s) (Proxy @m) (Proxy @n))
 
 -- | Generate a mask of given length for each sequence.
 sequenceMask :: forall maxlen. KnownNat maxlen => Tensor '[] Int32 -> Tensor '[maxlen] TFBool
