@@ -771,10 +771,11 @@ type Tensor shape = T shape
 
 data ReduceOp = Mean | Max | Min | Sum
 data Axis1Op s1 t s2 u where
-  ReverseT :: Sat KnownNat n -> SShape s -> Axis1Op (n ': s) t (n ': s) t 
-  ArgMax :: KnownNumeric t => Sat KnownNat n -> SShape s -> Axis1Op (n ': s) t s ('Typ 'Int b)
-  OneHot :: KnownNumeric t => Sat KnownNat n -> SShape s -> Axis1Op s ('Typ 'Int b) (n ': s) t
-  ReduceOp :: KnownNumeric t => Sat KnownNat n -> SShape s -> ReduceOp -> Axis1Op (n ': s) t s t
+  ReverseT :: Sat KnownNat n ->  Axis1Op '[n] t '[n] t 
+  ArgMax :: KnownNumeric t => Sat KnownNat n ->  Axis1Op '[n] t '[] ('Typ 'Int b)
+  OneHot :: KnownNumeric t => Sat KnownNat n ->  Axis1Op '[] ('Typ 'Int b) '[n] t
+  ReduceOp :: KnownNumeric t => Sat KnownNat n ->  ReduceOp -> Axis1Op '[n] t '[] t
+  SliceOp :: forall m n t proxy. proxy m -> Sat KnownNat n -> Integer -> Integer -> Axis1Op '[n] t '[m] t
 
 data Float1Op
   = ClipByValue Float Float
@@ -813,8 +814,7 @@ data UnOp (s1 :: Shape) (t :: Typ) (s2 :: Shape) (u :: Typ) where
   RealPart  :: UnOp '[] ('Typ 'Cmplx w) '[] ('Typ 'Float w)
   Num1Op :: KnownNumeric t => Num1Op -> UnOp '[] t '[] t
   Float1Op :: Float1Op -> UnOp '[] (Flt w) '[] (Flt w)
-  SliceOp :: forall m n s t proxy. proxy m -> Sat KnownNat n -> SShape s -> Integer -> Integer -> UnOp (n ': s) t (m ': s) t
-  Axis1Op :: Axis1Op s1 t s2 u -> UnOp s1 t s2 u
+  Axis1Op :: SShape s -> Axis1Op s1 t s2 u -> UnOp (s1 ++ s) t (s2 ++ s) u
              -- deriving Show
 
 data CompOp = Less | Greater | LessOrEqual | GreaterOrEqual

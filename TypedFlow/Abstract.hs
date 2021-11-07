@@ -44,7 +44,7 @@ module TypedFlow.Abstract where
 
 import Control.Monad.RWS (RWS, tell, runRWS)
 import Control.Monad.State
-import Data.Kind (Type,)
+-- import Data.Kind (Type,)
 import Data.Proxy
 import Data.Type.Equality
 import GHC.TypeLits
@@ -200,16 +200,16 @@ generateBCMany (PHT x :* xs) = do
   xs' <- generateBCMany xs
   return (PHT x' :* xs')
 
--- | Turns a tensor of indices in a container into a tensor of indices
--- in a container of higher rank. The added indexed dimension
--- corresponds to the first dimension of the index.
-broadcastIndex :: forall n containerShape indexShape w.
-  KnownBits w => Sat KnownNat n ->
-  SShape containerShape ->
-  SShape indexShape ->
-  IndexTensor (n ': indexShape) containerShape w ->
-  IndexTensor (n ': indexShape) (n ': containerShape) w
-broadcastIndex n cs = broadcastIndex' n (sListLenAsNat cs)
+-- -- | Turns a tensor of indices in a container into a tensor of indices
+-- -- in a container of higher rank. The added indexed dimension
+-- -- corresponds to the first dimension of the index.
+-- broadcastIndex :: forall n containerShape indexShape w.
+--   KnownBits w => Sat KnownNat n ->
+--   SShape containerShape ->
+--   SShape indexShape ->
+--   IndexTensor (n ': indexShape) containerShape w ->
+--   IndexTensor (n ': indexShape) (n ': containerShape) w
+-- broadcastIndex n cs = broadcastIndex' n (sListLenAsNat cs)
 
 broadcastIndex' :: forall n containerRank indexShape w.
   KnownBits w => Sat KnownNat n ->
@@ -221,44 +221,47 @@ broadcastIndex' n@Sat cr is ix = concatT' ((:*) n is) (natSat @1) cr Unit nIndex
   where nIndex :: T (n ': indexShape ++ '[1]) ('Typ 'Int w)
         nIndex = DirectBroadcast Unit Unit ((:*) n Unit) (is .+. (:*) (natSat @1) Unit) range
 
-directBroadcast0 :: forall n s t. KnownShape s => KnownNat n => T s t -> T (n:s) t
-directBroadcast0 = appRUnit @s #> DirectBroadcast Unit ((:*) (natSat @n) Unit) (typeSShape @s) Unit
+-- directBroadcast0 :: forall n s t. KnownShape s => KnownNat n => T s t -> T (n:s) t
+-- directBroadcast0 = appRUnit @s #> DirectBroadcast Unit ((:*) (natSat @n) Unit) (typeSShape @s) Unit
 
-broadcastIndexMany :: forall n containerShape indexShape w.
-  KnownBits w =>
-  Sat KnownNat n ->
-  SShape containerShape ->
-  SShape indexShape ->
-  IndexTensor indexShape '[n] w ->
-  IndexTensor (containerShape ++ indexShape) (containerShape ++ '[n]) w
-broadcastIndexMany _ Unit _ x = x
-broadcastIndexMany n ((:*) m@Sat cs) is x =
-  knownSShape (cs .+. (*:) is (sListLenAsNat (cs *: n))) ?>
-  -- (m : cs ++ is ++  '[(Length (m : cs ++ [n]))])
-  (broadcastIndex m ((*:) cs n) (cs .+. is) $
-  -- (m : (cs ++ is ++  '[Length (cs ++ [n])]))
-  (appAssocS cs is ((:*) (sListLenAsNat (cs *: n)) Unit) #>
-  -- (m : cs ++ is ++ '[Length (cs ++ [n])])
-  directBroadcast0 $
-  -- (cs ++ is ++  '[Length (cs ++ [n])])
-  broadcastIndexMany n cs is x))
-  -- is
+-- broadcastIndexMany :: forall n containerShape indexShape w.
+--   KnownBits w =>
+--   Sat KnownNat n ->
+--   SShape containerShape ->
+--   SShape indexShape ->
+--   IndexTensor indexShape '[n] w ->
+--   IndexTensor (containerShape ++ indexShape) (containerShape ++ '[n]) w
+-- broadcastIndexMany _ Unit _ x = x
+-- broadcastIndexMany n ((:*) m@Sat cs) is x =
+--   knownSShape (cs .+. (*:) is (sListLenAsNat (cs *: n))) ?>
+--   -- (m : cs ++ is ++  '[(Length (m : cs ++ [n]))])
+--   (broadcastIndex m ((*:) cs n) (cs .+. is) $
+--   -- (m : (cs ++ is ++  '[Length (cs ++ [n])]))
+--   (appAssocS cs is ((:*) (sListLenAsNat (cs *: n)) Unit) #>
+--   -- (m : cs ++ is ++ '[Length (cs ++ [n])])
+--   directBroadcast0 $
+--   -- (cs ++ is ++  '[Length (cs ++ [n])])
+--   broadcastIndexMany n cs is x))
+--   -- is
 
 --  Product (filterSpatialShape ++ '[inChannels, outChannels * n])
 -- Product ((filterSpatialShape ++ '[inChannels, outChannels]) ++ '[n])
 
+axisOpInputShape :: Axis1Op s1 t s2 u -> SShape s1
+axisOpInputShape o = case o of
+  ArgMax n -> HSingle n
+  OneHot _n -> Unit
+  ReduceOp n _ -> HSingle n
+  ReverseT n -> HSingle n
+  SliceOp _ n _ _ -> HSingle n
+
 unopInputShape :: UnOp s t s' t' -> SShape s
 unopInputShape (Diag n) = n :* Unit
 unopInputShape Cast = Unit
-unopInputShape (Axis1Op o) = case o of
-  ArgMax n s -> n :* s
-  OneHot _n s -> s
-  ReduceOp n s _ -> n :* s
-  ReverseT n s -> n :* s
+unopInputShape (Axis1Op s o) = axisOpInputShape o .+. s
 unopInputShape StopGradient = Unit
 unopInputShape (Num1Op _) = Unit
 unopInputShape (Float1Op _) = Unit
-unopInputShape (SliceOp _ n s _ _) = n :* s
 unopInputShape (ExpM n) = n :* n :* Unit
 unopInputShape (ZeroTriangle n _ _) = n :* n :* Unit
 unopInputShape Conjugate = Unit
@@ -448,7 +451,7 @@ sShapeDropSucc (AxSucc n) (_ :* xs) = sShapeDropSucc n xs
 -- | Internal. Use 'reduceSum', etc. instead.
 reduce :: ∀ n s t. KnownNumeric t => (KnownShape s) => ReduceOp -> Axis n s -> T s t -> T (Take n s ++ Drop ('Succ n) s) t
 reduce op n x = case axisSplitApp' n of
-  Refl -> UnOp (Axis1Op (ReduceOp (hlookup n s) (sShapeDropSucc n s) op)) (sShapeTake' n s) x
+  Refl -> UnOp (Axis1Op (sShapeDropSucc n s) (ReduceOp (hlookup n s) op)) (sShapeTake' n s) x
  where s = typeSShape @s
 
 -- | Reduce along a given dimension
@@ -585,7 +588,7 @@ floor = unFlOp Floor
 slice :: forall i j s t n. KnownTyp t => KnownShape s => KnownNat j => KnownNat i => (i <= j, j <= At n s, KnownLen s) =>
          Axis n s -> Tensor s t -> Tensor (Take n s ++ ((j-i) ': Drop ('Succ n) s)) t
 slice n = case axisSplitApp' n of
-  Refl -> UnOp (SliceOp (Proxy @(j-i)) (hlookup n s) (sShapeDropSucc n s) (natVal (Proxy @i)) (natVal (Proxy @j)))
+  Refl -> UnOp (Axis1Op (sShapeDropSucc n s) (SliceOp (Proxy @(j-i)) (hlookup n s) (natVal (Proxy @i)) (natVal (Proxy @j))))
                (sShapeTake' n s)
  where s = typeSShape @s
 
@@ -709,7 +712,7 @@ last0 = nth0 (natVal (Proxy @n) - 1)
 
 -- | Access the nth element in a tensor (in the 0th dimension)
 nth0 :: ∀ n s t. KnownTyp t => KnownNat n => KnownShape s => Integer -> T (n ': s) t -> Tensor s t
-nth0 i x = reshapeAuto @s @(1 ': s) (UnOp (SliceOp (Proxy @1) (natSat @n) typeSShape i (i+1)) Unit x)
+nth0 i x = reshapeAuto @s @(1 ': s) (UnOp (Axis1Op (typeSShape @s) (SliceOp (Proxy @1) (natSat @n) i (i+1))) Unit x)
 
 -- | Access the nth element in a tensor (in the 0th dimension), with a static index
 nth0' :: ∀ n m s t. KnownNat m => KnownTyp t => KnownShape s => KnownNat n => KnownLen s => n < m => T (m ': s) t -> Tensor s t
@@ -908,7 +911,7 @@ softmax1 :: forall n m w.  KnownBits w => KnownNat n => KnownNat m
 softmax1 = mapT softmax0
 
 argmaxInternal :: forall n s0 s1 t u. KnownNat n => KnownNumeric t => KnownBits u => Sat KnownNat n -> SShape s0 -> SShape s1 -> T (s0 ++ (n ': s1)) t -> T (s0 ++ s1) ('Typ 'Int u)
-argmaxInternal _n s0 s1 = UnOp (Axis1Op (ArgMax (natSat @n) s1)) s0
+argmaxInternal _n s0 s1 = UnOp (Axis1Op s1 (ArgMax (natSat @n))) s0
 
 axisSplitApp :: Axis n s -> (Take n s ++ Drop n s) :~: s
 axisSplitApp AxZero = Refl
@@ -975,13 +978,13 @@ sparseSoftmaxCrossEntropyWithLogits  =
   BinOp SparseSoftmaxCrossEntropyWithLogits Unit Unit typeSTyp (typeSShape @ '[numClasses]) typeSTyp
 
 reverseT :: KnownTyp t => KnownNat n => T '[n] t -> T '[n] t
-reverseT = UnOp (Axis1Op (ReverseT Sat Unit)) Unit
+reverseT = UnOp (Axis1Op Unit (ReverseT Sat)) Unit
 
 -- | One hot vector along axis 0
 oneHot0 :: forall numClasses w s t. KnownNat numClasses => KnownNumeric t => KnownBits w =>
   (KnownShape s) =>
   Tensor s ('Typ 'Int w) -> Tensor (numClasses ': s) t
-oneHot0 = UnOp (Axis1Op (OneHot Sat (typeSShape @s))) Unit
+oneHot0 = UnOp (Axis1Op (typeSShape @s) (OneHot Sat)) Unit
 
 -- | One hot vector along axis 1
 oneHot1 :: forall numClasses w s m t. KnownBits w =>KnownShape s => KnownNat numClasses => KnownNat m => KnownNumeric t => Tensor (m ': s) ('Typ 'Int w) -> Tensor (m ': numClasses ': s) t

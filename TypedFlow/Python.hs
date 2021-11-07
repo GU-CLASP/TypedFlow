@@ -276,19 +276,21 @@ generatePure' rec sR = knownSShape sR ?> \case
     ZeroTriangle _ side k  -> funcall ("tf.experemental.numpy.tri" ++ case side of Upper -> "u"; Lower -> "l") [recx, integer k]
     Conjugate -> funcall "tf.math.conj" [recx]
     RealPart -> funcall "tf.math.real" [recx]
-    Axis1Op op' ->
+    Axis1Op _ (SliceOp _ _ lo hi) -> recx <> list (replicate (fromIntegral (sListLength s0)) (text ":") ++ [integer lo <> text ":" <> integer hi])
+    Axis1Op _ op' ->
        let (op,args) = case op' of
-                         ReverseT _ _ -> ("tf.reverse",[])
-                         OneHot depth _ -> ("tf.one_hot",[("dtype",showTyp @t), ("depth", showDimS depth)])
+                         SliceOp {} -> error "Python: panic: sliceop is special"
+                         ReverseT _ -> ("tf.reverse",[])
+                         OneHot depth -> ("tf.one_hot",[("dtype",showTyp @t), ("depth", showDimS depth)])
                          ArgMax{} -> ("tf.argmax",[("output_type",showTyp @t)])
-                         ReduceOp _ _ r -> ("tf.reduce_" ++ rop, [])
+                         ReduceOp _ r -> ("tf.reduce_" ++ rop, [])
                             where rop = case r of
                                            Max -> "max"
                                            Min -> "min"
                                            Sum -> "sum"
                                            Mean -> "mean"
            axisName = if op == "tf.nn.softmax" then "dim" else "axis"  -- use dim before TF 1.5
-           useAxisList = case op' of ReverseT _ _ -> True; _ -> False
+           useAxisList = case op' of ReverseT _ -> True; _ -> False
        in func op [recx] ((axisName,(if useAxisList then (list . (:[])) else id) (integer (sListLength s0))):args)
     Float1Op op' -> funcall op (recx:args)
        where (op,args) = case op' of
@@ -300,7 +302,6 @@ generatePure' rec sR = knownSShape sR ?> \case
        where (op,args) = case op' of
                 Negate -> ("tf.negative",[])
                 _ -> ("tf." ++ map toLower (show op'), [])
-    SliceOp _ _ _ lo hi -> recx <> list (replicate (fromIntegral (sListLength s0)) (text ":") ++ [integer lo <> text ":" <> integer hi])
   MatMul s0 a b c x y  -> do
     recx <- rec (s0 .+. (:*) a ((:*) b Unit)) x
     recy <- rec (s0 .+. (:*) b ((:*) c Unit)) y
