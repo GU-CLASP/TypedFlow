@@ -231,7 +231,7 @@ snocT0 :: forall n s t. KnownTyp t => KnownShape s => KnownNat n =>  KnownLen s 
 snocT0 xs x = concat0 xs (expandDim0 x)
 
 headT0 :: forall n s t. KnownTyp t => KnownShape s => KnownNat n =>  T (n+1 ': s) t -> T (s) t
-headT0 xs = lookupT zeros xs
+headT0 xs = nth0 0 xs
 
 tailT0 :: forall n s t. KnownTyp t => KnownShape s => KnownNat n =>  T (n+1 ': s) t -> T (n ': s) t
 tailT0 xs = incrPos @n              #> -- 0 < n+1
