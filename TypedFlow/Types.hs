@@ -358,6 +358,15 @@ data SPeano n where
   SZero :: SPeano 'Zero
   SSucc :: SPeano n -> SPeano ('Succ n)
 
+class KnownPeano n where
+  knownPeano :: SPeano n
+
+instance KnownPeano 'Zero where
+  knownPeano = SZero
+
+instance KnownPeano n => KnownPeano ('Succ n) where
+  knownPeano = SSucc knownPeano
+
 type family Take n xs where
    Take 'Zero xs            =  '[]
    Take ('Succ n) '[] =  '[]

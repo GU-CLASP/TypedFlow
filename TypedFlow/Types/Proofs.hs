@@ -149,9 +149,13 @@ knownProduct' (_ :* n) = knownProduct' n ?> Sat
 knownProduct :: forall s. KnownShape s => Sat KnownNat (Product s)
 knownProduct = knownProduct' @s typeSList
 
+knownSumS :: forall s. NP (Sat KnownNat) s -> Sat KnownNat (Sum s)
+knownSumS Unit = Sat
+knownSumS (Sat :* n) = knownSumS n ?> Sat
+
 knownSum' :: forall s f. All KnownNat s => NP f s -> Sat KnownNat (Sum s)
-knownSum' Unit = Sat
-knownSum' (_ :* n) = knownSum' n ?> Sat
+knownSum' proxies = knownSumS (allKnown' proxies)
+
 knownSum :: forall s. KnownShape s => Sat KnownNat (Sum s)
 knownSum = knownSum' @s typeSList
 
