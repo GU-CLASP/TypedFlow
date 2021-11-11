@@ -163,6 +163,8 @@ def train (optimizer, model_static, model_fn,
                 totalLoss += loss
                 totalAccur += accur
         end_time = time()
+        totalAccur = totalAccur.numpy()
+        totalLoss = totalLoss.numpy()
         if n > 0:
             avgLoss = totalLoss / float(n)
             avgAccur = totalAccur / float(n)
