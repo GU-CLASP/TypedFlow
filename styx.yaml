@@ -6,8 +6,8 @@ nix-deps:
     - QuickCheck
     - hscolour
 
-non-haskell-deps:
-    - glibcLocales
+# non-haskell-deps:
+#     - glibcLocales
 
 nixpkgs:
   # commit: 80812af9e46167e3104038f2af6de251f90823a8
