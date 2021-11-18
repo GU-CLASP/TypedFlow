@@ -52,6 +52,9 @@ import Text.PrettyPrint.Compact hiding (All,Last,Product,Sum,Options)
 import qualified Text.PrettyPrint.Compact as PP
 import qualified Data.Map as M
 import TypedFlow.Learn
+import qualified Data.Sequence as S
+import Data.Sequence (Seq, (|>), (<|))
+import Data.Foldable
 
 first :: (t -> a) -> (t, b) -> (a, b)
 first f (x,y) = (f x,y)
@@ -126,9 +129,9 @@ showDimS :: forall n. Sat KnownNat n -> DOC
 showDimS Sat = showDim @n
 
 gen :: DOC -> Python ()
-gen s = modify $ \PyState{..} -> PyState {genText=genText $$ s,..}
+gen s = modify $ \PyState{..} -> PyState {genText=genText |> s,..}
 
-setGen :: DOC -> Python ()
+setGen :: Seq DOC -> Python ()
 setGen d = modify $ \PyState{..} -> PyState {genText=d,..}
 
 (<--) :: Ref Int s t -> UntypedExpression -> Python ()
@@ -193,16 +196,16 @@ withDOC f g = do
   setGen mempty
   x <- g
   after <- gets genText
-  setGen (before $$ f after)
+  setGen (before |> f (vcat $ toList after))
   return x
 
 generate :: Python [VarInfo] -> (String,[VarInfo])
-generate s = (renderWith (PP.Options 92 (const id)) genText, genPyVars)
+generate s = (renderWith (PP.Options 92 (const id)) (vcat $ toList genText), genPyVars)
   where (genPyVars,PyState{..}) = runState s initPyState
         initPyState = PyState {genPureTable = mempty
                               ,genAssignTable = mempty
                               ,genText = mempty
-                              ,genId = 12345}
+                              ,genId = 10000}
 
 generatePure :: forall s t. KnownTyp t => KnownShape s => T s t -> Python DOC
 generatePure x = do
@@ -257,7 +260,7 @@ generatePure' rec sR = knownSShape sR ?> \case
   T op -> return $ case op of
     ExternalVar (Ref v _ _) -> text v
     Variable v -> pyVarRepr v
-    (Constant c) -> funcall "tf.constant" [pretty @t c, named "shape" (showSShape sR), named "dtype" (showTyp @t)]
+    (Constant c) -> funcall "tf.constant" [prettyT @t c, named "shape" (showSShape sR), named "dtype" (showTyp @t)]
     (Range n@Sat) -> (func "tf.range" [] [("start",integer 0),
                                ("limit",integer (natVal n)),
                                ("dtype",showTyp @t)])
@@ -461,8 +464,8 @@ compileGen options model = toPython pm >> return pmParams
 
 
 
-pretty :: forall t. KnownTyp t => HaskType t -> DOC
-pretty = case kindVal @(TypKind t) of
+prettyT :: forall t. KnownTyp t => HaskType t -> DOC
+prettyT = case kindVal @(TypKind t) of
   SInt -> case bitsVal @(TypBits t) of
     SB32 -> int . fromIntegral
     SB64 -> int . fromIntegral
@@ -472,7 +475,7 @@ pretty = case kindVal @(TypKind t) of
     SB64 -> double
 
 data PyState = PyState {genId :: Integer
-                       ,genText :: DOC
+                       ,genText :: S.Seq DOC
                        ,genPureTable :: SSNMap2 Shape Typ T DOC
                        -- ^ Table mapping pointers to their
                        -- interpretations, so that sharing in the data
