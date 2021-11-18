@@ -251,10 +251,10 @@ memo2' Map2{..} f = do
           key <- liftIO $ m2Key arg
           case m2lk key tbl of
             Just result -> do
-              liftIO $ putStrLn "memo2': hit"
+              -- liftIO $ putStrLn "memo2': hit"
               return result
             Nothing -> do
-              liftIO $ putStrLn ("memo2: miss " <> m2showKey key) --  <> " from " <> m3showTbl (const ".") tbl
+              -- liftIO $ putStrLn ("memo2: miss " <> m2showKey key) --  <> " from " <> m3showTbl (const ".") tbl
               res <- f finished arg extra
               liftIO $ modifyIORef tblRef (m2upd key $ \_ -> res)
               return res
