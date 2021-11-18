@@ -144,10 +144,13 @@ cache x = do
   let x' = renderWith (PP.Options 92 (const id)) x
   mcache <- M.lookup x' <$> gets genAssignTable
   case mcache of
-    Just y -> return y
+    Just y -> do
+      -- comment ("cache hit: " <> text x')
+      return y
     Nothing -> do
+      -- comment ("cache miss")
       v <- newPyVar @s @t
-      gen ("#" <> (showShapeType @s))
+      comment ("shape: " <> (showShapeType @s))
       v <-- x
       modify $ (\g -> g {genAssignTable = M.insert x' (pyVarRepr v) (genAssignTable g)})
       return (pyVarRepr v)
@@ -212,8 +215,11 @@ generatePure x = do
   let sn = makeSn2 x
   mv <- snMapLookup2 sn <$> gets genPureTable
   case mv of
-    Just v -> return v
+    Just v -> do
+        -- comment ("gp hit:" <> v)
+        return v
     Nothing -> do
+      -- comment ("gp miss")
       e <- generatePure' (\s x' -> knownSShape s ?> generatePure x') typeSShape x
       v <- cache @s @t e
       modify (\g -> g {genPureTable = (snMapInsert2 sn v) (genPureTable g)})
