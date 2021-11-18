@@ -785,6 +785,7 @@ data Axis1Op s1 t s2 u where
   OneHot :: KnownNumeric t => Sat KnownNat n ->  Axis1Op '[] ('Typ 'Int b) '[n] t
   ReduceOp :: KnownNumeric t => Sat KnownNat n ->  ReduceOp -> Axis1Op '[n] t '[] t
   SliceOp :: forall m n t proxy. proxy m -> Sat KnownNat n -> Integer -> Integer -> Axis1Op '[n] t '[m] t
+  AccessOp :: forall n t. Sat KnownNat n -> Integer -> Axis1Op '[n] t '[] t
 
 data Float1Op
   = ClipByValue Float Float

@@ -277,9 +277,11 @@ generatePure' rec sR = knownSShape sR ?> \case
     Conjugate -> funcall "tf.math.conj" [recx]
     RealPart -> funcall "tf.math.real" [recx]
     Axis1Op _ (SliceOp _ _ lo hi) -> recx <> list (replicate (fromIntegral (sListLength s0)) (text ":") ++ [integer lo <> text ":" <> integer hi])
+    Axis1Op _ (AccessOp _ idx) -> recx <> list (replicate (fromIntegral (sListLength s0)) (text ":") ++ [integer idx])
     Axis1Op _ op' ->
        let (op,args) = case op' of
                          SliceOp {} -> error "Python: panic: sliceop is special"
+                         AccessOp {} -> error "Python: panic: accessop is special"
                          ReverseT _ -> ("tf.reverse",[])
                          OneHot depth -> ("tf.one_hot",[("dtype",showTyp @t), ("depth", showDimS depth)])
                          ArgMax{} -> ("tf.argmax",[("output_type",showTyp @t)])
