@@ -53,7 +53,7 @@ module TypedFlow.Learn
 import Data.Proxy
 import TypedFlow.Types
 import TypedFlow.Types.Proofs (knownAppend, knownAppendS, (?>), knownSShape)
-import TypedFlow.Abstract (G,runBC, generateBCMany,doExtractVars, ConsSh, generateBC, broadcast, mapPlaceHolders)
+import TypedFlow.Abstract (doBroadcast, doExtractVars, ConsSh, mapPlaceHolders)
 import TypedFlow.TF
 import Prelude hiding (RealFrac(..))
 import GHC.TypeLits
@@ -188,9 +188,9 @@ addRegularizer r = GPState  $ \GState{..} -> ((),GState{genRegularizers=r:genReg
        
 knownBatchModel :: forall n ps. KnownNat n => NP (Sat KnownPlaceholder) ps -> NP (Sat KnownPlaceholder) (Ap (FMap (ConsSh n)) ps)
 knownBatchModel Unit = Unit
-knownBatchModel (Sat :* xs) = Sat :* knownBatchModel @n xs
+knownBatchModel (Comp Dict :* xs) = Sat :* knownBatchModel @n xs
 
--- | take the mean of loss/accur, and add regulariser to loss
+-- | take the mean of loss/accur over the batch, etc. and add regulariser to loss
 consolidate :: forall s rest. KnownShape s
             => Scalar Float32
             -> Placeholders ( '("loss",s  ,Float32) ': '("accuracy",s  ,Float32) ': rest)
@@ -232,12 +232,12 @@ prepare fGen =
           in PreparedFunction nm
                True
                (SomeSuch placeHolders)
-               (SomeSuch (consolidate {-@(bs ': s) @(BPH bs st2)-} regular (runBC 0 (mapPlaceHolders @bs u True f placeHolders))))
+               (SomeSuch $ doBroadcast (consolidate {-@(bs ': s) @(BPH bs st2)-} regular (mapPlaceHolders @bs u True f placeHolders)))
         ProbeFn nm st1 st2 f -> 
           knownAll st1 $
           knownAll st2 $
           let placeHolders = genPlaceholders typeSList
-          in PreparedFunction nm False (SomeSuch placeHolders) (SomeSuch (runBC 0 (generateBCMany (f placeHolders))))
+          in PreparedFunction nm False (SomeSuch placeHolders) (SomeSuch (doBroadcast (f placeHolders)))
     }
   where (fs,finalState,vars) = doExtractVars fGen
         regular = sum (genRegularizers finalState)

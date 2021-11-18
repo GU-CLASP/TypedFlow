@@ -239,6 +239,10 @@ genDistr d sh s1 = case d of
 generatePure' :: forall s t. KnownTyp t => (forall s' t'. KnownTyp t' => SShape s' -> T s' t' -> Python DOC) -> SShape s -> T s t -> Python DOC
 generatePure' rec sR = knownSShape sR ?> \case
   Unbroadcast{} -> error "broadcasting operation did not complete (Unbroadcast)!"
+  BroadcastT _ _ _ _sh _x -> error "broadcasting operation did not complete (BroadcastT)!"
+     -- debug help
+     -- rx <- rec sh x
+     -- return (funcall "ERROR:BroadcastT" [rx])
   MapT {} -> error "broadcasting operation did not complete (mapT)!"
   ZipT {} -> error "broadcasting operation did not complete (ZipT)!"
   Zip3T {} -> error "broadcasting operation did not complete (Zip3T)!"

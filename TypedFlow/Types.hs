@@ -712,9 +712,10 @@ data Catable s1 s2 t n = Catable (Sat KnownNat n) (T (s1 ++ (n ': s2)) t)
   -- deriving Show
 
 
-type Unique = Integer
+type Unique = Int
 
 data T (s :: Shape) (t :: Typ) where
+  BroadcastT :: KnownTyp t => Maybe Unique -> Bool -> Sat KnownNat n -> SShape s -> T s t ->  T (n ': s) t
   MapT :: KnownTyp t => Sat KnownNat n -> SShape s -> (T s t -> T r u) ->  T (n ': s) t -> T (n ': r) u
   ZipT :: (KnownTyp t, KnownTyp u) => Sat KnownNat n -> SShape s -> SShape r -> (T s t -> T r u -> T q v) ->  T (n ': s) t -> T (n ': r) u -> T (n ': q) v
   Zip3T :: (KnownTyp t, KnownTyp u, KnownTyp v) => Sat KnownNat n -> SShape s -> SShape r -> SShape q -> (T s t -> T r u -> T q v -> T p w) ->  T (n ': s) t -> T (n ': r) u -> T (n ': q) v -> T (n ': p) w
