@@ -51,3 +51,4 @@ library
         TypedFlow.Memo
         TypedFlow.Memo2
         TypedFlow.Abstract
+        TypedFlow.Broadcast

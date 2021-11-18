@@ -41,11 +41,11 @@ module TypedFlow.Python (compile, compileGen, generateFile) where
 
 import Data.Char (toLower)
 import Data.Proxy
-import Data.List (genericReplicate, partition)
+import Data.List (genericReplicate, )
 import GHC.TypeLits
 import Control.Monad.State
 import TypedFlow.Types
-import TypedFlow.Abstract (permToFun,unopInputShape,reduceSumAll,doExtractVars)
+import TypedFlow.Broadcast (permToFun,unopInputShape)
 import TypedFlow.Types.Proofs
 import TypedFlow.Memo
 import Text.PrettyPrint.Compact hiding (All,Last,Product,Sum,Options)
@@ -53,7 +53,7 @@ import qualified Text.PrettyPrint.Compact as PP
 import qualified Data.Map as M
 import TypedFlow.Learn
 import qualified Data.Sequence as S
-import Data.Sequence (Seq, (|>), (<|))
+import Data.Sequence (Seq, (|>), )
 import Data.Foldable
 
 first :: (t -> a) -> (t, b) -> (a, b)

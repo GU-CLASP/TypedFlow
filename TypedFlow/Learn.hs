@@ -52,8 +52,9 @@ module TypedFlow.Learn
 
 import Data.Proxy
 import TypedFlow.Types
-import TypedFlow.Types.Proofs (knownAppend, knownAppendS, (?>), knownSShape)
-import TypedFlow.Abstract (doBroadcast, doExtractVars, ConsSh, mapPlaceHolders)
+import TypedFlow.Types.Proofs (knownAppend,  (?>), )
+import TypedFlow.Broadcast (doBroadcast, mapPlaceHolders, ConsSh)
+import TypedFlow.Abstract (doExtractVars)
 import TypedFlow.TF
 import Prelude hiding (RealFrac(..))
 import GHC.TypeLits

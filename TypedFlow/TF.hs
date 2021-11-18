@@ -135,6 +135,7 @@ import Data.Proxy
 import TypedFlow.Types
 import TypedFlow.Types.Proofs
 import TypedFlow.Abstract
+import TypedFlow.Broadcast
 
 -- | Repeat a flexible-shape constant vector to form a heterogeneous tensor vector.
 repeatT :: forall (ss :: [Shape]) t. All KnownShape ss => KnownLen ss =>
