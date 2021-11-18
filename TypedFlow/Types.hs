@@ -249,7 +249,7 @@ hmap :: (forall x. f x -> g x) -> NP f xs -> NP g xs
 hmap _ Unit = Unit
 hmap f (x :* xs) = f x :* hmap f xs
 
-hTraverse :: Applicative m => (forall x. f x -> m (g x)) -> NP f xs -> m (NP g xs)
+hTraverse :: forall f g xs m. Applicative m => (forall x. f x -> m (g x)) -> NP f xs -> m (NP g xs)
 hTraverse _ Unit = pure Unit
 hTraverse f (x :* xs) = do
   x' <- f x
