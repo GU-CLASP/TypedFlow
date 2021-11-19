@@ -48,8 +48,8 @@ import TypedFlow.Types
 import TypedFlow.Broadcast (permToFun,unopInputShape)
 import TypedFlow.Types.Proofs
 import TypedFlow.Memo
-import Text.PrettyPrint.Compact hiding (All,Last,Product,Sum,Options)
-import qualified Text.PrettyPrint.Compact as PP
+import Prettyprinter as PP
+import Prettyprinter.Render.String as PP
 import qualified Data.Map as M
 import TypedFlow.Learn
 import qualified Data.Sequence as S
@@ -68,21 +68,25 @@ paramDType (VarInfo {varRef = Ref _ _ t}) = sTypTyp t
 paramName :: VarInfo -> String
 paramName (VarInfo {varRef = Ref {..}}) = refName
 
+
 generateFile :: String -> Python [VarInfo] -> IO ()
 generateFile fname g = do
   putStrLn ("Parameters (total " ++ show (sum [product (paramShape' p) | p <- params]) ++ "):")
   forM_ params printParam
   writeFile fname output
   where (output,params) = generate g
-        printParam p = putStrLn (paramName p ++ ": " ++ "T " ++ render (showShape' (paramShape' p))  ++ " " ++ showT (paramDType p))
+        printParam p = putStrLn (paramName p ++ ": " ++ "T " ++ renderSimple (showShape' (paramShape' p))  ++ " " ++ showT (paramDType p))
 
 named :: String -> DOC -> DOC
 named fname x = text (fname <> "=") <> x
 
+text :: String -> DOC
+text = pretty
+
 genFun :: forall b. String -> [DOC] -> Python b -> Python b
 genFun name args body = do
-  gen (text "def " <> text name <> tuple args <> text ":")
-  withDOC (\b -> text "  " <> b) body
+  gen (text "def " <> text name <> align (tuple args) <> text ":")
+  withDOC (\b -> "  " <> align b) body
 
 
 showTyp :: forall t. KnownTyp t => DOC
@@ -137,11 +141,15 @@ setGen d = modify $ \PyState{..} -> PyState {genText=d,..}
 (<--) :: Ref Int s t -> UntypedExpression -> Python ()
 x <-- y = gen (pyVarRepr x <> text "=" <>  y)
 
+
+renderSimple :: Doc ann -> String
+renderSimple = renderString . layoutPretty (LayoutOptions Unbounded)
+
 -- | save an intermediate result to a variable and save it to
 -- genAssignTable for future re-use.
 cache :: forall s t. KnownTyp t => KnownShape s => DOC  -> Python DOC
 cache x = do
-  let x' = renderWith (PP.Options 92 (const id)) x
+  let x' = renderSimple x
   mcache <- M.lookup x' <$> gets genAssignTable
   case mcache of
     Just y -> do
@@ -176,16 +184,15 @@ pyVarRepr :: Ref Int s t -> DOC
 pyVarRepr (Ref n _ _) = text ("var" <> show n)
 
 tuple :: [DOC] -> DOC
-tuple = parens . sep . punctuate comma
+tuple = parens . align . sep . punctuate comma
 dict :: [(String,DOC)] -> DOC
-dict xs = encloseSep "{" "}" "," [text (show k) <> ":" <> v | (k,v) <- xs]
+dict xs = braces $ align $ sep $ punctuate comma [text (show k) <> ":" <> v | (k,v) <- xs]
 
 funcall :: String -> [DOC] -> DOC
 funcall = funcall' . text
 
 funcall' :: DOC -> [DOC] -> DOC
-funcall' f args = hangWith "" 2 (f <> "(") (as <> ")")
-  where as = sep (punctuate comma args)
+funcall' f args =  f <> tuple args
 
 comment :: DOC -> Python ()
 comment c = gen ("#" <> c)
@@ -203,7 +210,8 @@ withDOC f g = do
   return x
 
 generate :: Python [VarInfo] -> (String,[VarInfo])
-generate s = (renderWith (PP.Options 92 (const id)) (vcat $ toList genText), genPyVars)
+generate s = (renderString (layoutPretty (LayoutOptions (AvailablePerLine 92 1)) (vcat $ toList genText)),
+              genPyVars)
   where (genPyVars,PyState{..}) = runState s initPyState
         initPyState = PyState {genPureTable = mempty
                               ,genAssignTable = mempty
@@ -239,10 +247,11 @@ genDistr d sh s1 = case d of
 generatePure' :: forall s t. KnownTyp t => (forall s' t'. KnownTyp t' => SShape s' -> T s' t' -> Python DOC) -> SShape s -> T s t -> Python DOC
 generatePure' rec sR = knownSShape sR ?> \case
   Unbroadcast{} -> error "broadcasting operation did not complete (Unbroadcast)!"
-  BroadcastT _ _ _ _sh _x -> error "broadcasting operation did not complete (BroadcastT)!"
+  BroadcastT _ _ _ sh x -> --- error "broadcasting operation did not complete (BroadcastT)!"
+    do
      -- debug help
-     -- rx <- rec sh x
-     -- return (funcall "ERROR:BroadcastT" [rx])
+     rx <- rec sh x
+     return (funcall "ERROR:BroadcastT" [rx])
   MapT {} -> error "broadcasting operation did not complete (mapT)!"
   ZipT {} -> error "broadcasting operation did not complete (ZipT)!"
   Zip3T {} -> error "broadcasting operation did not complete (Zip3T)!"
@@ -484,6 +493,8 @@ prettyT = case kindVal @(TypKind t) of
     SB32 -> float
     SB64 -> double
 
+
+
 data PyState = PyState {genId :: Integer
                        ,genText :: S.Seq DOC
                        ,genPureTable :: SSNMap2 Shape Typ T DOC
@@ -499,3 +510,14 @@ data PyState = PyState {genId :: Integer
 type UntypedExpression = DOC
 type DOC = Doc ()
 
+double :: Double -> DOC
+double = pretty
+float :: Float -> DOC
+float = pretty
+integer :: Integer -> DOC
+integer = pretty
+int :: Int -> DOC
+int = pretty
+bool = pretty
+string :: String -> DOC
+string = dquotes . text 
