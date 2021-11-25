@@ -7,14 +7,14 @@ def mkModel():
                              dtype=tf.float32) # 0
   #shape: [5, 5, 1, 32]
   var10001=tf.reshape(var10000, [5, 5, 1, 32])
-  var10002=tf.Variable(name=""f1_filters"", trainable=True, initial_value=var10001)
+  var10002=tf.Variable(name="f1_filters", trainable=True, initial_value=var10001)
   #shape: []
   var10003=tf.constant(0.1, shape=[], dtype=tf.float32)
   #shape: [32]
   var10004=ERROR:BroadcastT(var10003)
   #shape: [32]
   var10005=tf.reshape(var10004, [32])
-  var10006=tf.Variable(name=""f1_biases"", trainable=True, initial_value=var10005)
+  var10006=tf.Variable(name="f1_biases", trainable=True, initial_value=var10005)
   #shape: [800, 64]
   var10007=tf.random.uniform([800, 64],
                              minval=-8.3333336e-2,
@@ -22,28 +22,28 @@ def mkModel():
                              dtype=tf.float32) # 1
   #shape: [5, 5, 32, 64]
   var10008=tf.reshape(var10007, [5, 5, 32, 64])
-  var10009=tf.Variable(name=""f2_filters"", trainable=True, initial_value=var10008)
+  var10009=tf.Variable(name="f2_filters", trainable=True, initial_value=var10008)
   #shape: [64]
   var10010=tf.reshape(var10004, [64])
-  var10011=tf.Variable(name=""f2_biases"", trainable=True, initial_value=var10010)
+  var10011=tf.Variable(name="f2_biases", trainable=True, initial_value=var10010)
   #shape: [3136, 1024]
   var10012=tf.random.uniform([3136, 1024],
                              minval=-3.7977725e-2,
                              maxval=3.7977725e-2,
                              dtype=tf.float32) # 2
-  var10013=tf.Variable(name=""w1_w"", trainable=True, initial_value=var10012)
+  var10013=tf.Variable(name="w1_w", trainable=True, initial_value=var10012)
   #shape: [1024]
   var10014=tf.random.truncated_normal([1024], stddev=0.1, dtype=tf.float32) # 3
-  var10015=tf.Variable(name=""w1_bias"", trainable=True, initial_value=var10014)
+  var10015=tf.Variable(name="w1_bias", trainable=True, initial_value=var10014)
   #shape: [1024, 10]
   var10016=tf.random.uniform([1024, 10],
                              minval=-7.61755e-2,
                              maxval=7.61755e-2,
                              dtype=tf.float32) # 4
-  var10017=tf.Variable(name=""w2_w"", trainable=True, initial_value=var10016)
+  var10017=tf.Variable(name="w2_w", trainable=True, initial_value=var10016)
   #shape: [10]
   var10018=tf.random.truncated_normal([10], stddev=0.1, dtype=tf.float32) # 5
-  var10019=tf.Variable(name=""w2_bias"", trainable=True, initial_value=var10018)
+  var10019=tf.Variable(name="w2_bias", trainable=True, initial_value=var10018)
   return {"batch_size":100,
           "parameters":[ var10002
           , var10006

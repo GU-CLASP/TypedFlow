@@ -413,7 +413,7 @@ generateParameters genVars = do
                 Sat -> knownTyp typ $ generatePure iii
               return [named "initial_value" iiii]
           var <- newPyVar' shap typ
-          var <-- funcall "tf.Variable" ([named "name" (string (show refId)), named "trainable" (bool varTrainable)] ++ ii)
+          var <-- funcall "tf.Variable" ([named "name" (string refId), named "trainable" (bool varTrainable)] ++ ii)
           return (pyVarRepr var)
 
 -- | Clip a gradient
