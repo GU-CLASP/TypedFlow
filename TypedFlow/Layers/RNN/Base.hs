@@ -131,7 +131,12 @@ mkCell cell = C . flip (curry cell)
 -- | Convert a pure function (feed-forward layer) to an RNN cell by
 -- ignoring the RNN state.
 timeDistribute :: (a -> b) -> RnnCell t '[] a b
-timeDistribute stateLess a = returnC (stateLess a)
+timeDistribute = constantOverSteps
+
+-- | Convert a pure function (feed-forward layer) to an RNN cell by
+-- ignoring the RNN state.
+constantOverSteps :: (a -> b) -> RnnCell t '[] a b
+constantOverSteps stateLess a = returnC (stateLess a)
 
 --------------------------------------
 -- Combinators
