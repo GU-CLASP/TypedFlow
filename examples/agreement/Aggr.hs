@@ -10,7 +10,6 @@
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UnicodeSyntax #-}
 
-module Main where
 
 import TypedFlow
 import TypedFlow.Python
@@ -20,7 +19,7 @@ onFST :: (Tensor s1 t -> Tensor s t) -> HTV t '[s1, s'] -> HTV t '[s, s']
 onFST f (VecPair h c) = (VecPair (f h) c)
 
 mkLSTM :: ∀ n x. KnownNat x => KnownNat n => 
-        String -> DropProb -> Gen (RnnCell 'B32 '[ '[n], '[n]] (Tensor '[x] Float32) (Tensor '[n] Float32))
+        String -> DropProb -> Gen (RnnCell Float32 '[ '[n], '[n]] (Tensor '[x] Float32) (Tensor '[n] Float32))
 mkLSTM pName dropProb = do
   params <- parameterDefault pName
   drp1 <- mkDropout dropProb
