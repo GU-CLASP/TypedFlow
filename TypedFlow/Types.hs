@@ -642,7 +642,7 @@ type None = 514229 --  fibonnaci prime.
 --------------------------------
 -- Generation Effects (TODO: move to other module)
 
-data VarInfo = forall s t. VarInfo {varTrainable :: Bool,
+data VarInfo = forall s t. (KnownShape s, KnownTyp t) => VarInfo {varTrainable :: Bool,
                                     varRef :: Ref String s t,
                                     varInitial :: Maybe (T s t)} 
 

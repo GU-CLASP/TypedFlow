@@ -42,7 +42,7 @@ tensor operations. It is not normally imported directly by users.
 
 module TypedFlow.Broadcast (
   -- * broadcasting
-  doBroadcast,mapPlaceHolders, ConsSh, unopInputShape,
+  doBroadcast,doBroadcastSingle,mapPlaceHolders, ConsSh, unopInputShape,
   -- * helpers which are also useful elsewhere
   -- ** reshapes
   reshape, reshapeAuto, reshapeFrom, reshapeTo, inflate2, flatten2,
@@ -73,6 +73,12 @@ type G = StateT GS IO
 
 runG :: Unique -> G x -> x
 runG u m = fst (unsafePerformIO  (runStateT m GS { gsUnique = u }))
+
+doBroadcastSingle :: forall s t. (KnownShape s, KnownTyp t) => T s t -> T s t
+doBroadcastSingle x = case doBroadcast @'[ '("_doBroadcastSingle" , s , t) ] (PHT x :* Unit) of
+  PHT x' :* Unit -> x'
+  
+  
 
 doBroadcast :: All KnownPlaceholder ps => Placeholders ps -> Placeholders ps
 doBroadcast phs = runG 0 $ do

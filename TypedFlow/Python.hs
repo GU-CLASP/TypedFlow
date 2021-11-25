@@ -518,6 +518,7 @@ integer :: Integer -> DOC
 integer = pretty
 int :: Int -> DOC
 int = pretty
+bool :: Bool -> DOC
 bool = pretty
 string :: String -> DOC
 string = dquotes . text 

@@ -53,7 +53,7 @@ module TypedFlow.Learn
 import Data.Proxy
 import TypedFlow.Types
 import TypedFlow.Types.Proofs (knownAppend,  (?>), )
-import TypedFlow.Broadcast (doBroadcast, mapPlaceHolders, ConsSh)
+import TypedFlow.Broadcast (doBroadcast, mapPlaceHolders, ConsSh,doBroadcastSingle)
 import TypedFlow.Abstract (doExtractVars)
 import TypedFlow.TF
 import Prelude hiding (RealFrac(..))
@@ -221,7 +221,7 @@ prepare :: forall bs. (KnownNat bs)
 prepare fGen =
   PreparedModel
     {pmBatchSize = natVal (Proxy @bs)
-    ,pmParams = filter varTrainable vars
+    ,pmParams = [VarInfo{varInitial=fmap doBroadcastSingle varInitial,..} | VarInfo{..} <- filter varTrainable vars]
     ,pmFunctions = flip map fs $ \case
         ModelFn nm st1 st2 f ->
           knownAll (knownBatchModel @bs st1) $
