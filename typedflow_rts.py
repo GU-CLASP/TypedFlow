@@ -157,8 +157,9 @@ def train (optimizer, model_static, model_fn,
                 results = model_fn["function"](tf.constant(isTraining, shape=[]), **{**(model_static["paramsdict"]), **cast_inputs})
                 loss = results["loss"]
                 accur = results["accuracy"]
-                grads = tape.gradient(loss, train_vars)
-                optimizer.apply_gradients(zip(grads, train_vars))
+                if isTraining:
+                   grads = tape.gradient(loss, train_vars)
+                   optimizer.apply_gradients(zip(grads, train_vars))
                 n+=1
                 totalLoss += loss
                 totalAccur += accur
