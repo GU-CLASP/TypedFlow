@@ -2,6 +2,7 @@ name:           typedflow
 version:        0.9
 category:       Deep Learning
 synopsis:       Typed frontend to TensorFlow and higher-order deep learning
+homepage:       https://github.com/GU-CLASP/TypedFlow
 description: TypedFlow is a typed, higher-order frontend to TensorFlow and a high-level library for deep-learning.
              .
              The main design principles are:
